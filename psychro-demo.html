@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Psychrometric Demo</title>
+<style>
+  :root {
+    --bg:#0d1b2a; --surface:#13263a; --border:#1f3a52;
+    --accent:#00a9ce; --text:#e6edf3; --muted:#7d96ad;
+    --dot:#f0a500; --sat:#3fb950;
+    --mono:'Courier New',monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--text); font-family:var(--sans);
+    min-height:100vh; padding-bottom:24px;
+  }
+  header {
+    padding:20px 18px 14px; border-bottom:2px solid var(--accent);
+  }
+  header h1 { margin:0 0 4px; font-size:1.3rem; }
+  header p { margin:0; color:var(--muted); font-size:.82rem; }
+  .card {
+    margin:16px; padding:16px; background:var(--surface);
+    border:1px solid var(--border); border-radius:12px;
+  }
+  .unit-toggle { display:flex; gap:6px; margin-bottom:14px; }
+  .unit-toggle button {
+    flex:1; padding:8px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text); font-weight:700; cursor:pointer;
+  }
+  .unit-toggle button.active { background:var(--accent); color:#03222c; border-color:var(--accent); }
+  .row { margin-bottom:16px; }
+  .row:last-child { margin-bottom:0; }
+  .row-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+  .row-head .label { font-weight:700; }
+  .row-head .computed-flag {
+    font-size:.66rem; color:var(--accent); font-family:var(--mono);
+    text-transform:uppercase; letter-spacing:.03em;
+  }
+  .row-controls { display:flex; align-items:center; gap:10px; }
+  .row-controls input[type=range] { flex:1; accent-color:var(--accent); }
+  .row-controls input[type=number] {
+    width:78px; padding:8px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text); font-size:1rem; font-family:var(--mono);
+    text-align:right;
+  }
+  .row-controls .unit { color:var(--muted); font-size:.85rem; width:22px; }
+  .chart-card { padding:12px 12px 16px; }
+  canvas { width:100%; display:block; touch-action:none; }
+  .legend {
+    display:flex; flex-wrap:wrap; gap:12px; margin-top:10px; font-size:.72rem; color:var(--muted);
+  }
+  .legend span { display:inline-flex; align-items:center; gap:5px; }
+  .swatch { width:14px; height:2px; display:inline-block; }
+  .note { font-size:.72rem; color:var(--muted); padding:0 16px; line-height:1.5; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Psychrometric Demo</h1>
+  <p>Enter any two of temperature, relative humidity, and dew point — the third is calculated. Standard sea-level pressure (101.325 kPa).</p>
+</header>
+
+<div class="card">
+  <div class="unit-toggle">
+    <button id="unit-f" class="active">°F</button>
+    <button id="unit-c">°C</button>
+  </div>
+
+  <div class="row" id="row-temp">
+    <div class="row-head">
+      <span class="label">Temperature</span>
+      <span class="computed-flag" id="flag-temp"></span>
+    </div>
+    <div class="row-controls">
+      <input type="range" id="slider-temp" min="30" max="110" step="1">
+      <input type="number" id="input-temp" step="any">
+      <span class="unit tunit">°F</span>
+    </div>
+  </div>
+
+  <div class="row" id="row-rh">
+    <div class="row-head">
+      <span class="label">Relative Humidity</span>
+      <span class="computed-flag" id="flag-rh"></span>
+    </div>
+    <div class="row-controls">
+      <input type="range" id="slider-rh" min="1" max="100" step="1">
+      <input type="number" id="input-rh" step="any">
+      <span class="unit">%</span>
+    </div>
+  </div>
+
+  <div class="row" id="row-dp">
+    <div class="row-head">
+      <span class="label">Dew Point</span>
+      <span class="computed-flag" id="flag-dp"></span>
+    </div>
+    <div class="row-controls">
+      <input type="range" id="slider-dp" min="0" max="110" step="1">
+      <input type="number" id="input-dp" step="any">
+      <span class="unit tunit">°F</span>
+    </div>
+  </div>
+</div>
+
+<div class="card chart-card">
+  <canvas id="chart" height="320"></canvas>
+  <div class="legend">
+    <span><span class="swatch" style="background:var(--sat)"></span> Saturation (100% RH)</span>
+    <span><span class="swatch" style="background:var(--muted)"></span> 20 / 40 / 60 / 80% RH</span>
+    <span><span class="swatch" style="background:var(--dot); height:8px; width:8px; border-radius:50%"></span> Current point</span>
+  </div>
+</div>
+
+<p class="note">
+  The two fields you touched most recently are treated as the inputs; the third recomputes.
+  Edit that third field directly and it becomes an input again, bumping out whichever of the
+  other two you touched longest ago. The dashed lines on the chart show how the dew point is
+  read off the saturation curve at the same moisture content as the current point.
+</p>
+
+<script>
+// ── ASHRAE Fundamentals Ch.1 psychrometric equations (sea-level, 101.325 kPa) ──
+const P = 101.325; // kPa, standard atmosphere
+const fToC = f => (f - 32) * 5 / 9;
+const cToF = c => c * 9 / 5 + 32;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// ASHRAE Eq. 5 (water, t>=0C) / Eq. 6 (ice, t<0C) — saturation pressure, kPa
+function satPressure(tc) {
+  const T = tc + 273.15;
+  let lnP;
+  if (tc >= 0) {
+    const C8=-5800.2206, C9=1.3914993, C10=-0.048640239, C11=4.1764768e-5, C12=-1.4452093e-8, C13=6.5459673;
+    lnP = C8/T + C9 + C10*T + C11*T*T + C12*T*T*T + C13*Math.log(T);
+  } else {
+    const C1=-5674.5359, C2=6.3925247, C3=-0.009677843, C4=6.2215701e-7, C5=2.0747825e-9, C6=-9.484024e-13, C7=4.1635019;
+    lnP = C1/T + C2 + C3*T + C4*T*T + C5*T*T*T + C6*T*T*T*T + C7*Math.log(T);
+  }
+  return Math.exp(lnP) / 1000;
+}
+// ASHRAE Eq. 37/39 (0-93C) & Eq. 40 (sub-freezing) — inverse of satPressure: temp (C) at which pw is the saturation pressure
+function satTemp(pw) {
+  if (pw <= 0) return -60;
+  const alpha = Math.log(pw);
+  const C14=6.54, C15=14.526, C16=0.7389, C17=0.09486, C18=0.4569;
+  let t = C14 + C15*alpha + C16*alpha*alpha + C17*alpha*alpha*alpha + C18*Math.pow(pw, 0.1984);
+  if (t < 0) t = 6.09 + 12.608*alpha + 0.4959*alpha*alpha;
+  return t;
+}
+const vaporPressure = (tc, rh) => satPressure(tc) * rh / 100;
+function humidityRatioG(pw, p) { return 1000 * 0.621945 * pw / (p - pw); }
+
+function solveDP(tempF, rh) {
+  const pw = vaporPressure(fToC(tempF), rh);
+  return cToF(satTemp(pw));
+}
+function solveRH(tempF, dpF) {
+  const pw = satPressure(fToC(dpF));
+  const rh = pw / satPressure(fToC(tempF)) * 100;
+  return clamp(rh, 1, 100);
+}
+function solveTemp(rh, dpF) {
+  const pw = satPressure(fToC(dpF));
+  const target = pw / (rh / 100);
+  return cToF(satTemp(target));
+}
+
+// ── State (canonical: °F, %) ──
+const state = { tempF: 75, rh: 50, dpF: 0, unit: 'F' };
+state.dpF = solveDP(state.tempF, state.rh);
+
+// recency[0] = most recently edited (input), recency[2] = least recently edited (computed)
+let recency = ['rh', 'temp', 'dp'];
+
+const els = {
+  sliderTemp: document.getElementById('slider-temp'), inputTemp: document.getElementById('input-temp'),
+  sliderRh: document.getElementById('slider-rh'), inputRh: document.getElementById('input-rh'),
+  sliderDp: document.getElementById('slider-dp'), inputDp: document.getElementById('input-dp'),
+  flagTemp: document.getElementById('flag-temp'), flagRh: document.getElementById('flag-rh'), flagDp: document.getElementById('flag-dp'),
+  unitF: document.getElementById('unit-f'), unitC: document.getElementById('unit-c'),
+  tunits: document.querySelectorAll('.tunit'),
+  canvas: document.getElementById('chart'),
+};
+
+function dispT(f) { return state.unit === 'F' ? f : fToC(f); }
+function toF(v) { return state.unit === 'F' ? v : cToF(v); }
+
+function onEdit(key) {
+  recency = [key, ...recency.filter(k => k !== key)];
+  const computedKey = recency[2];
+  if (computedKey === 'temp') state.tempF = solveTemp(state.rh, state.dpF);
+  else if (computedKey === 'rh') state.rh = solveRH(state.tempF, state.dpF);
+  else state.dpF = solveDP(state.tempF, state.rh);
+  // dew point can never physically exceed dry-bulb temp
+  if (state.dpF > state.tempF) state.dpF = state.tempF;
+  syncUI();
+  drawChart();
+}
+
+function syncUI() {
+  const tempDisp = dispT(state.tempF), dpDisp = dispT(state.dpF);
+  els.sliderTemp.value = Math.round(tempDisp);
+  els.inputTemp.value = Math.round(tempDisp * 10) / 10;
+  els.sliderRh.value = Math.round(state.rh);
+  els.inputRh.value = Math.round(state.rh * 10) / 10;
+  els.sliderDp.max = Math.round(tempDisp);
+  els.sliderDp.value = Math.round(dpDisp);
+  els.inputDp.value = Math.round(dpDisp * 10) / 10;
+
+  const computedKey = recency[2];
+  els.flagTemp.textContent = computedKey === 'temp' ? 'calculated' : '';
+  els.flagRh.textContent = computedKey === 'rh' ? 'calculated' : '';
+  els.flagDp.textContent = computedKey === 'dp' ? 'calculated' : '';
+}
+
+function wireRow(sliderEl, inputEl, key, fromDisplay) {
+  sliderEl.addEventListener('input', () => {
+    const v = fromDisplay(Number(sliderEl.value));
+    if (key === 'temp') state.tempF = v; else if (key === 'rh') state.rh = v; else state.dpF = v;
+    onEdit(key);
+  });
+  inputEl.addEventListener('change', () => {
+    let v = fromDisplay(Number(inputEl.value));
+    if (key === 'rh') v = clamp(v, 1, 100);
+    if (key === 'temp') state.tempF = v; else if (key === 'rh') state.rh = v; else state.dpF = v;
+    onEdit(key);
+  });
+}
+wireRow(els.sliderTemp, els.inputTemp, 'temp', toF);
+wireRow(els.sliderRh, els.inputRh, 'rh', v => v);
+wireRow(els.sliderDp, els.inputDp, 'dp', toF);
+
+function setUnit(u) {
+  state.unit = u;
+  els.unitF.classList.toggle('active', u === 'F');
+  els.unitC.classList.toggle('active', u === 'C');
+  els.tunits.forEach(el => el.textContent = u === 'F' ? '°F' : '°C');
+  els.sliderTemp.min = u === 'F' ? 30 : Math.round(fToC(30));
+  els.sliderTemp.max = u === 'F' ? 110 : Math.round(fToC(110));
+  els.sliderDp.min = u === 'F' ? 0 : Math.round(fToC(0));
+  syncUI();
+  drawChart();
+}
+els.unitF.addEventListener('click', () => setUnit('F'));
+els.unitC.addEventListener('click', () => setUnit('C'));
+
+// ── Chart: dry-bulb temp (x) vs humidity ratio g/kg (y), sea-level pressure ──
+function drawChart() {
+  const canvas = els.canvas;
+  const cssW = canvas.clientWidth || 340;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW * dpr; canvas.height = 320 * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = cssW, H = 320, pad = { l: 56, r: 14, t: 14, b: 40 };
+
+  ctx.clearRect(0, 0, W, H);
+
+  const tMinF = 30, tMaxF = 110;
+  const wMax = humidityRatioG(satPressure(fToC(tMaxF)), P) * 1.05;
+
+  const toXY = (tF, w) => {
+    const x = pad.l + (tF - tMinF) / (tMaxF - tMinF) * (W - pad.l - pad.r);
+    const y = H - pad.b - (w / wMax) * (H - pad.t - pad.b);
+    return [x, y];
+  };
+
+  // axes
+  ctx.strokeStyle = '#1f3a52'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, H - pad.b); ctx.lineTo(W - pad.r, H - pad.b); ctx.stroke();
+
+  ctx.fillStyle = '#7d96ad'; ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  for (let tF = tMinF; tF <= tMaxF; tF += 20) {
+    const [x] = toXY(tF, 0);
+    const label = state.unit === 'F' ? Math.round(tF) : Math.round(fToC(tF));
+    ctx.fillText(label, x, H - pad.b + 14);
+  }
+  ctx.textAlign = 'right';
+  for (let w = 0; w <= wMax; w += 5) {
+    const [, y] = toXY(tMinF, w);
+    ctx.fillText(Math.round(w), pad.l - 8, y + 3);
+  }
+  ctx.textAlign = 'left';
+  ctx.save();
+  ctx.translate(12, H / 2); ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.fillText('Humidity ratio (g/kg)', 0, 0);
+  ctx.restore();
+  ctx.textAlign = 'center';
+  ctx.fillText(state.unit === 'F' ? 'Dry-bulb (°F)' : 'Dry-bulb (°C)', (pad.l + W - pad.r) / 2, H - 6);
+  ctx.textAlign = 'left';
+
+  // reference RH curves
+  const curve = (rhVal, color, width, dash) => {
+    ctx.strokeStyle = color; ctx.lineWidth = width;
+    ctx.setLineDash(dash || []);
+    ctx.beginPath();
+    for (let tF = tMinF; tF <= tMaxF; tF += 1) {
+      const w = humidityRatioG(vaporPressure(fToC(tF), rhVal), P);
+      const [x, y] = toXY(tF, Math.min(w, wMax));
+      tF === tMinF ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  };
+  curve(20, '#5a7185', 1, [3, 3]);
+  curve(40, '#5a7185', 1, [3, 3]);
+  curve(60, '#5a7185', 1, [3, 3]);
+  curve(80, '#5a7185', 1, [3, 3]);
+  curve(100, '#3fb950', 1.8);
+
+  // current point + guide lines
+  const tempDisp = dispT(state.tempF), dpDisp = dispT(state.dpF);
+  const w = humidityRatioG(vaporPressure(fToC(state.tempF), state.rh), P);
+  const [px, py] = toXY(tempDisp, w);
+  const [dpx] = toXY(dpDisp, w);
+
+  ctx.strokeStyle = '#f0a500'; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(pad.l, py); ctx.lineTo(px, py); ctx.lineTo(px, H - pad.b); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(dpx, py); ctx.lineTo(dpx, H - pad.b); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = '#f0a500';
+  ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(dpx, H - pad.b, 3.5, 0, Math.PI * 2); ctx.fill();
+}
+
+syncUI();
+drawChart();
+window.addEventListener('resize', drawChart);
+</script>
+</body>
+</html>
