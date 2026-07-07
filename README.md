@@ -1,8 +1,27 @@
-# Stream Psychrometric Tool — Phone App (PWA)
+# Stream Hall Environment Planner
+
+A phone-installable psychrometric tool (ASHRAE TC 9.9) for planning
+temperature and humidity moves in data center halls while staying within
+SLA envelopes.
 
 This folder is a complete installable web app: `index.html`, `manifest.webmanifest`,
 `sw.js` (offline cache), and two icons. Host these five files anywhere and the tool
 installs to phones like a native app — Stream icon, fullscreen, works offline.
+
+## Run locally (development)
+
+No build step — it's a single static app.
+
+- **Quick check:** open `index.html` directly in a browser.
+- **Full check** (installing, offline mode, and the service worker all require
+  an `http(s)` origin, not `file://`): serve the folder with any static server,
+  e.g.
+
+  ```
+  python3 -m http.server 8080
+  ```
+
+  then visit `http://localhost:8080/`.
 
 ## Fastest free hosting: GitHub Pages (~10 minutes, once)
 
@@ -24,9 +43,9 @@ Share the link with coworkers — each person installs it the same way in ~5 sec
 
 ## Updating the tool later
 
-Replace `index.html` in the repo with a new version and bump the cache name in
-`sw.js` (change `sdc-psychro-v1` to `-v2`). Installed phones pick up the new
-version on their next online launch.
+Replace `index.html` in the repo and bump the version suffix in `sw.js`'s
+`CACHE` constant (currently `sdc-psychro-v9` → next would be `sdc-psychro-v10`).
+Installed phones pick up the new version on their next online launch.
 
 ## Notes
 
