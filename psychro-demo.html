@@ -8,7 +8,7 @@
   :root {
     --bg:#0d1b2a; --surface:#13263a; --border:#1f3a52;
     --accent:#00a9ce; --text:#e6edf3; --muted:#7d96ad;
-    --dot:#f0a500; --sat:#3fb950;
+    --dot:#f0a500;
     --mono:'Courier New',monospace;
     --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   }
@@ -32,14 +32,11 @@
     background:var(--bg); color:var(--text); font-weight:700; cursor:pointer;
   }
   .unit-toggle button.active { background:var(--accent); color:#03222c; border-color:var(--accent); }
-  .row { margin-bottom:16px; }
+  .row { margin-bottom:18px; }
   .row:last-child { margin-bottom:0; }
-  .row-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+  .row-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px; }
   .row-head .label { font-weight:700; }
-  .row-head .computed-flag {
-    font-size:.66rem; color:var(--accent); font-family:var(--mono);
-    text-transform:uppercase; letter-spacing:.03em;
-  }
+  .row-hint { font-size:.7rem; color:var(--muted); margin-bottom:8px; line-height:1.4; }
   .row-controls { display:flex; align-items:center; gap:10px; }
   .row-controls input[type=range] { flex:1; accent-color:var(--accent); }
   .row-controls input[type=number] {
@@ -47,14 +44,12 @@
     background:var(--bg); color:var(--text); font-size:1rem; font-family:var(--mono);
     text-align:right;
   }
+  .row-controls input[type=number]:disabled {
+    color:var(--muted); background:#0a1622; border-style:dashed;
+  }
   .row-controls .unit { color:var(--muted); font-size:.85rem; width:22px; }
   .chart-card { padding:12px 12px 16px; }
-  canvas { width:100%; display:block; touch-action:none; }
-  .legend {
-    display:flex; flex-wrap:wrap; gap:12px; margin-top:10px; font-size:.72rem; color:var(--muted);
-  }
-  .legend span { display:inline-flex; align-items:center; gap:5px; }
-  .swatch { width:14px; height:2px; display:inline-block; }
+  canvas { width:100%; display:block; touch-action:none; border-radius:8px; }
   .note { font-size:.72rem; color:var(--muted); padding:0 16px; line-height:1.5; }
 </style>
 </head>
@@ -62,7 +57,7 @@
 
 <header>
   <h1>Psychrometric Demo</h1>
-  <p>Enter any two of temperature, relative humidity, and dew point — the third is calculated. Standard sea-level pressure (101.325 kPa).</p>
+  <p>Type a starting temperature and relative humidity, then drag any slider to explore. Standard sea-level pressure (101.325 kPa).</p>
 </header>
 
 <div class="card">
@@ -72,10 +67,8 @@
   </div>
 
   <div class="row" id="row-temp">
-    <div class="row-head">
-      <span class="label">Temperature</span>
-      <span class="computed-flag" id="flag-temp"></span>
-    </div>
+    <div class="row-head"><span class="label">Temperature</span></div>
+    <div class="row-hint">Dragging keeps dew point fixed — relative humidity moves.</div>
     <div class="row-controls">
       <input type="range" id="slider-temp" min="30" max="110" step="1">
       <input type="number" id="input-temp" step="any">
@@ -84,10 +77,8 @@
   </div>
 
   <div class="row" id="row-rh">
-    <div class="row-head">
-      <span class="label">Relative Humidity</span>
-      <span class="computed-flag" id="flag-rh"></span>
-    </div>
+    <div class="row-head"><span class="label">Relative Humidity</span></div>
+    <div class="row-hint">Dragging keeps temperature fixed — dew point moves.</div>
     <div class="row-controls">
       <input type="range" id="slider-rh" min="1" max="100" step="1">
       <input type="number" id="input-rh" step="any">
@@ -96,32 +87,27 @@
   </div>
 
   <div class="row" id="row-dp">
-    <div class="row-head">
-      <span class="label">Dew Point</span>
-      <span class="computed-flag" id="flag-dp"></span>
-    </div>
+    <div class="row-head"><span class="label">Dew Point</span></div>
+    <div class="row-hint">Dragging keeps temperature fixed — relative humidity moves. (Derived, not typed directly.)</div>
     <div class="row-controls">
       <input type="range" id="slider-dp" min="0" max="110" step="1">
-      <input type="number" id="input-dp" step="any">
+      <input type="number" id="input-dp" step="any" disabled>
       <span class="unit tunit">°F</span>
     </div>
   </div>
 </div>
 
 <div class="card chart-card">
-  <canvas id="chart" height="320"></canvas>
-  <div class="legend">
-    <span><span class="swatch" style="background:var(--sat)"></span> Saturation (100% RH)</span>
-    <span><span class="swatch" style="background:var(--muted)"></span> 20 / 40 / 60 / 80% RH</span>
-    <span><span class="swatch" style="background:var(--dot); height:8px; width:8px; border-radius:50%"></span> Current point</span>
-  </div>
+  <canvas id="chart" height="360"></canvas>
 </div>
 
 <p class="note">
-  The two fields you touched most recently are treated as the inputs; the third recomputes.
-  Edit that third field directly and it becomes an input again, bumping out whichever of the
-  other two you touched longest ago. The dashed lines on the chart show how the dew point is
-  read off the saturation curve at the same moisture content as the current point.
+  Temperature and relative humidity are the values you type to set a starting point (dew point
+  follows automatically). From there, each slider moves the point on the chart along a fixed rule:
+  the Temperature slider rides a constant-moisture line (dew point unchanged, RH updates); the
+  Relative Humidity and Dew Point sliders both move moisture content at a constant temperature.
+  Cooling below the current dew point pins relative humidity at 100% and drags the dew point down
+  with it, the way real condensation would.
 </p>
 
 <script>
@@ -165,24 +151,46 @@ function solveRH(tempF, dpF) {
   const rh = pw / satPressure(fToC(tempF)) * 100;
   return clamp(rh, 1, 100);
 }
-function solveTemp(rh, dpF) {
-  const pw = satPressure(fToC(dpF));
-  const target = pw / (rh / 100);
-  return cToF(satTemp(target));
+
+// "nice" tick step for a given span and target tick count (mirrors the main app's tickStep)
+function tickStep(span, target) {
+  const raw = span / target;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  const nice = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
+  return nice * mag;
+}
+// Label a curve wherever it's actually visible in the plot rectangle right now.
+function labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB) {
+  const margin = 6;
+  let bestStart = -1, bestLen = 0, curStart = -1, curLen = 0;
+  for (let i = 0; i < pxPts.length; i++) {
+    const [x, y] = pxPts[i];
+    const inside = x >= plotL + margin && x <= plotR - margin && y >= plotT + margin && y <= plotB - margin;
+    if (inside) { if (curStart < 0) curStart = i; curLen++; if (curLen > bestLen) { bestLen = curLen; bestStart = curStart; } }
+    else { curStart = -1; curLen = 0; }
+  }
+  if (bestLen === 0) return null;
+  // Bias toward the higher-temperature end of the visible run, where the RH
+  // curves fan out and are less likely to sit under the plotted point.
+  const spot = bestStart + Math.floor(bestLen * 0.82);
+  return pxPts[Math.min(spot, pxPts.length - 1)];
+}
+// Text with a dark halo so it stays legible over grid lines / curves underneath.
+function haloText(ctx, text, x, y, color) {
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(13,17,23,0.9)'; ctx.lineJoin = 'round';
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = color; ctx.fillText(text, x, y);
 }
 
 // ── State (canonical: °F, %) ──
 const state = { tempF: 75, rh: 50, dpF: 0, unit: 'F' };
 state.dpF = solveDP(state.tempF, state.rh);
 
-// recency[0] = most recently edited (input), recency[2] = least recently edited (computed)
-let recency = ['rh', 'temp', 'dp'];
-
 const els = {
   sliderTemp: document.getElementById('slider-temp'), inputTemp: document.getElementById('input-temp'),
   sliderRh: document.getElementById('slider-rh'), inputRh: document.getElementById('input-rh'),
   sliderDp: document.getElementById('slider-dp'), inputDp: document.getElementById('input-dp'),
-  flagTemp: document.getElementById('flag-temp'), flagRh: document.getElementById('flag-rh'), flagDp: document.getElementById('flag-dp'),
   unitF: document.getElementById('unit-f'), unitC: document.getElementById('unit-c'),
   tunits: document.querySelectorAll('.tunit'),
   canvas: document.getElementById('chart'),
@@ -191,17 +199,28 @@ const els = {
 function dispT(f) { return state.unit === 'F' ? f : fToC(f); }
 function toF(v) { return state.unit === 'F' ? v : cToF(v); }
 
-function onEdit(key) {
-  recency = [key, ...recency.filter(k => k !== key)];
-  const computedKey = recency[2];
-  if (computedKey === 'temp') state.tempF = solveTemp(state.rh, state.dpF);
-  else if (computedKey === 'rh') state.rh = solveRH(state.tempF, state.dpF);
-  else state.dpF = solveDP(state.tempF, state.rh);
-  // dew point can never physically exceed dry-bulb temp
-  if (state.dpF > state.tempF) state.dpF = state.tempF;
-  syncUI();
-  drawChart();
+// Fixed physical rules — no "last touched" tracking. Each control has one job:
+//  Temperature -> holds dew point fixed, recomputes RH   (constant-moisture / horizontal move)
+//  RH          -> holds temperature fixed, recomputes DP (vertical move)
+//  Dew Point   -> holds temperature fixed, recomputes RH (vertical move, alternate handle)
+function setTemp(newTempF) {
+  state.tempF = newTempF;
+  state.rh = solveRH(state.tempF, state.dpF);
+  if (state.rh >= 100) { state.rh = 100; state.dpF = state.tempF; } // can't cool below the dew point without condensing
+  afterChange();
 }
+function setRh(newRh) {
+  state.rh = clamp(newRh, 1, 100);
+  state.dpF = solveDP(state.tempF, state.rh);
+  afterChange();
+}
+function setDp(newDpF) {
+  state.dpF = Math.min(newDpF, state.tempF); // dew point can't exceed dry-bulb temp
+  state.rh = solveRH(state.tempF, state.dpF);
+  afterChange();
+}
+
+function afterChange() { syncUI(); drawChart(); }
 
 function syncUI() {
   const tempDisp = dispT(state.tempF), dpDisp = dispT(state.dpF);
@@ -212,29 +231,13 @@ function syncUI() {
   els.sliderDp.max = Math.round(tempDisp);
   els.sliderDp.value = Math.round(dpDisp);
   els.inputDp.value = Math.round(dpDisp * 10) / 10;
-
-  const computedKey = recency[2];
-  els.flagTemp.textContent = computedKey === 'temp' ? 'calculated' : '';
-  els.flagRh.textContent = computedKey === 'rh' ? 'calculated' : '';
-  els.flagDp.textContent = computedKey === 'dp' ? 'calculated' : '';
 }
 
-function wireRow(sliderEl, inputEl, key, fromDisplay) {
-  sliderEl.addEventListener('input', () => {
-    const v = fromDisplay(Number(sliderEl.value));
-    if (key === 'temp') state.tempF = v; else if (key === 'rh') state.rh = v; else state.dpF = v;
-    onEdit(key);
-  });
-  inputEl.addEventListener('change', () => {
-    let v = fromDisplay(Number(inputEl.value));
-    if (key === 'rh') v = clamp(v, 1, 100);
-    if (key === 'temp') state.tempF = v; else if (key === 'rh') state.rh = v; else state.dpF = v;
-    onEdit(key);
-  });
-}
-wireRow(els.sliderTemp, els.inputTemp, 'temp', toF);
-wireRow(els.sliderRh, els.inputRh, 'rh', v => v);
-wireRow(els.sliderDp, els.inputDp, 'dp', toF);
+els.sliderTemp.addEventListener('input', () => setTemp(toF(Number(els.sliderTemp.value))));
+els.inputTemp.addEventListener('change', () => setTemp(toF(Number(els.inputTemp.value))));
+els.sliderRh.addEventListener('input', () => setRh(Number(els.sliderRh.value)));
+els.inputRh.addEventListener('change', () => setRh(Number(els.inputRh.value)));
+els.sliderDp.addEventListener('input', () => setDp(toF(Number(els.sliderDp.value))));
 
 function setUnit(u) {
   state.unit = u;
@@ -244,92 +247,98 @@ function setUnit(u) {
   els.sliderTemp.min = u === 'F' ? 30 : Math.round(fToC(30));
   els.sliderTemp.max = u === 'F' ? 110 : Math.round(fToC(110));
   els.sliderDp.min = u === 'F' ? 0 : Math.round(fToC(0));
-  syncUI();
-  drawChart();
+  afterChange();
 }
 els.unitF.addEventListener('click', () => setUnit('F'));
 els.unitC.addEventListener('click', () => setUnit('C'));
 
 // ── Chart: dry-bulb temp (x) vs humidity ratio g/kg (y), sea-level pressure ──
+// Styled after the main app's chart: dark plot background, faint grid, RH
+// iso-curves labeled inline on the curve, halo'd text for legibility.
 function drawChart() {
   const canvas = els.canvas;
   const cssW = canvas.clientWidth || 340;
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = cssW * dpr; canvas.height = 320 * dpr;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const H = 360;
+  canvas.width = cssW * dpr; canvas.height = H * dpr;
+  canvas.style.height = H + 'px';
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const W = cssW, H = 320, pad = { l: 56, r: 14, t: 14, b: 40 };
+  const W = cssW, pad = { l: 50, r: 14, t: 16, b: 40 };
+  const plotL = pad.l, plotR = W - pad.r, plotT = pad.t, plotB = H - pad.b;
 
-  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.beginPath(); ctx.rect(plotL, plotT, plotR - plotL, plotB - plotT); ctx.clip();
 
   const tMinF = 30, tMaxF = 110;
   const wMax = humidityRatioG(satPressure(fToC(tMaxF)), P) * 1.05;
+  const toXY = (tF, w) => [plotL + (tF - tMinF) / (tMaxF - tMinF) * (plotR - plotL), plotB - (w / wMax) * (plotB - plotT)];
 
-  const toXY = (tF, w) => {
-    const x = pad.l + (tF - tMinF) / (tMaxF - tMinF) * (W - pad.l - pad.r);
-    const y = H - pad.b - (w / wMax) * (H - pad.t - pad.b);
-    return [x, y];
-  };
-
-  // axes
-  ctx.strokeStyle = '#1f3a52'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, H - pad.b); ctx.lineTo(W - pad.r, H - pad.b); ctx.stroke();
-
-  ctx.fillStyle = '#7d96ad'; ctx.font = '10px monospace';
-  ctx.textAlign = 'center';
-  for (let tF = tMinF; tF <= tMaxF; tF += 20) {
-    const [x] = toXY(tF, 0);
-    const label = state.unit === 'F' ? Math.round(tF) : Math.round(fToC(tF));
-    ctx.fillText(label, x, H - pad.b + 14);
+  // grid
+  const tStep = tickStep(tMaxF - tMinF, 8), wStep = tickStep(wMax, 7);
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 0.5;
+  for (let t = Math.ceil(tMinF / tStep) * tStep; t <= tMaxF; t += tStep) {
+    const [x1, y1] = toXY(t, 0), [, y2] = toXY(t, wMax);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1, y2); ctx.stroke();
   }
-  ctx.textAlign = 'right';
-  for (let w = 0; w <= wMax; w += 5) {
-    const [, y] = toXY(tMinF, w);
-    ctx.fillText(Math.round(w), pad.l - 8, y + 3);
+  for (let w = 0; w <= wMax; w += wStep) {
+    const [x1, y1] = toXY(tMinF, w), [x2] = toXY(tMaxF, w);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y1); ctx.stroke();
   }
-  ctx.textAlign = 'left';
-  ctx.save();
-  ctx.translate(12, H / 2); ctx.rotate(-Math.PI / 2);
-  ctx.textAlign = 'center';
-  ctx.fillText('Humidity ratio (g/kg)', 0, 0);
-  ctx.restore();
-  ctx.textAlign = 'center';
-  ctx.fillText(state.unit === 'F' ? 'Dry-bulb (°F)' : 'Dry-bulb (°C)', (pad.l + W - pad.r) / 2, H - 6);
-  ctx.textAlign = 'left';
 
-  // reference RH curves
-  const curve = (rhVal, color, width, dash) => {
-    ctx.strokeStyle = color; ctx.lineWidth = width;
-    ctx.setLineDash(dash || []);
+  // RH iso-curves, labeled inline on the curve like the main chart
+  [20, 40, 60, 80, 100].forEach(rh => {
+    const color = rh === 100 ? 'rgba(100,180,255,0.9)' : rh === 80 ? 'rgba(248,81,73,0.55)' : `rgba(80,130,200,${0.25 + rh * 0.0025})`;
+    const labelColor = rh === 100 ? '#8fc4ff' : rh === 80 ? '#ff8a80' : '#7fa8e0';
+    ctx.strokeStyle = color; ctx.lineWidth = rh === 100 || rh === 80 ? 1.8 : 1;
     ctx.beginPath();
+    const pts = [];
     for (let tF = tMinF; tF <= tMaxF; tF += 1) {
-      const w = humidityRatioG(vaporPressure(fToC(tF), rhVal), P);
-      const [x, y] = toXY(tF, Math.min(w, wMax));
-      tF === tMinF ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      const w = Math.min(humidityRatioG(vaporPressure(fToC(tF), rh), P), wMax * 1.1);
+      const xy = toXY(tF, w);
+      pts.push(xy);
+      tF === tMinF ? ctx.moveTo(xy[0], xy[1]) : ctx.lineTo(xy[0], xy[1]);
     }
     ctx.stroke();
-    ctx.setLineDash([]);
-  };
-  curve(20, '#5a7185', 1, [3, 3]);
-  curve(40, '#5a7185', 1, [3, 3]);
-  curve(60, '#5a7185', 1, [3, 3]);
-  curve(80, '#5a7185', 1, [3, 3]);
-  curve(100, '#3fb950', 1.8);
+    const spot = labelSpotOnCurve(pts, plotL, plotR, plotT, plotB);
+    if (spot) { ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; haloText(ctx, rh + '%', spot[0], spot[1] - 8, labelColor); }
+  });
 
-  // current point + guide lines
+  // current point + dew-point guide lines
   const tempDisp = dispT(state.tempF), dpDisp = dispT(state.dpF);
   const w = humidityRatioG(vaporPressure(fToC(state.tempF), state.rh), P);
   const [px, py] = toXY(tempDisp, w);
   const [dpx] = toXY(dpDisp, w);
 
-  ctx.strokeStyle = '#f0a500'; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
-  ctx.beginPath(); ctx.moveTo(pad.l, py); ctx.lineTo(px, py); ctx.lineTo(px, H - pad.b); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(dpx, py); ctx.lineTo(dpx, H - pad.b); ctx.stroke();
+  ctx.strokeStyle = 'rgba(240,165,0,0.7)'; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(plotL, py); ctx.lineTo(px, py); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(dpx, py); ctx.lineTo(dpx, plotB); ctx.stroke();
   ctx.setLineDash([]);
+  ctx.restore(); // end clip — axes/labels live in the margins
 
-  ctx.fillStyle = '#f0a500';
-  ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(dpx, H - pad.b, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(dpx, plotB, 3.5, 0, Math.PI * 2); ctx.fillStyle = '#f0a500'; ctx.fill();
+  ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fillStyle = '#f0a500'; ctx.fill();
+  ctx.strokeStyle = '#0d1117'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#f0a500';
+  ctx.fillText(`${Math.round(tempDisp)}°${state.unit} / ${Math.round(state.rh)}% RH`, px, py - 13);
+
+  // axes
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(plotL, plotT); ctx.lineTo(plotL, plotB); ctx.lineTo(plotR, plotB); ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  for (let t = Math.ceil(tMinF / tStep) * tStep; t <= tMaxF; t += tStep) {
+    const [x] = toXY(t, 0);
+    ctx.fillText(Math.round(state.unit === 'F' ? t : fToC(t)), x, plotB + 14);
+  }
+  ctx.textAlign = 'right';
+  for (let wv = 0; wv <= wMax; wv += wStep) {
+    const [, y] = toXY(tMinF, wv);
+    ctx.fillText(Math.round(wv), plotL - 8, y + 3);
+  }
+  ctx.textAlign = 'center'; ctx.font = '11px sans-serif';
+  ctx.fillText(state.unit === 'F' ? 'Dry-bulb (°F)' : 'Dry-bulb (°C)', (plotL + plotR) / 2, H - 6);
+  ctx.save(); ctx.translate(12, (plotT + plotB) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Humidity ratio (g/kg)', 0, 0); ctx.restore();
 }
 
 syncUI();
