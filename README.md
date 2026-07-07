@@ -44,7 +44,7 @@ Share the link with coworkers — each person installs it the same way in ~5 sec
 ## Updating the tool later
 
 Replace `index.html` in the repo and bump the version suffix in `sw.js`'s
-`CACHE` constant (currently `sdc-psychro-v9` → next would be `sdc-psychro-v10`).
+`CACHE` constant (currently `sdc-psychro-v14` → next would be `sdc-psychro-v15`).
 Installed phones pick up the new version on their next online launch.
 
 ## Notes
