@@ -26,28 +26,38 @@
     margin:16px; padding:16px; background:var(--surface);
     border:1px solid var(--border); border-radius:12px;
   }
+  .card-title { font-weight:700; margin-bottom:2px; }
+  .card-sub { font-size:.72rem; color:var(--muted); margin-bottom:14px; line-height:1.4; }
   .unit-toggle { display:flex; gap:6px; margin-bottom:14px; }
   .unit-toggle button {
     flex:1; padding:8px; border-radius:8px; border:1px solid var(--border);
     background:var(--bg); color:var(--text); font-weight:700; cursor:pointer;
   }
   .unit-toggle button.active { background:var(--accent); color:#03222c; border-color:var(--accent); }
+
+  /* Starting point: text-only entry */
+  .start-grid { display:flex; gap:12px; }
+  .start-field { flex:1; }
+  .start-field label { display:block; font-size:.78rem; font-weight:700; margin-bottom:6px; }
+  .start-field .field-row { display:flex; align-items:center; gap:8px; }
+  .start-field input[type=number] {
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text); font-size:1.1rem; font-family:var(--mono);
+    text-align:right;
+  }
+  .start-field .unit { color:var(--muted); font-size:.85rem; }
+
+  /* Explore: sliders only, no typing */
   .row { margin-bottom:18px; }
   .row:last-child { margin-bottom:0; }
   .row-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px; }
   .row-head .label { font-weight:700; }
+  .row-head .value-badge {
+    font-family:var(--mono); font-size:.95rem; color:var(--dot); font-weight:700;
+  }
   .row-hint { font-size:.7rem; color:var(--muted); margin-bottom:8px; line-height:1.4; }
-  .row-controls { display:flex; align-items:center; gap:10px; }
-  .row-controls input[type=range] { flex:1; accent-color:var(--accent); }
-  .row-controls input[type=number] {
-    width:78px; padding:8px; border-radius:8px; border:1px solid var(--border);
-    background:var(--bg); color:var(--text); font-size:1rem; font-family:var(--mono);
-    text-align:right;
-  }
-  .row-controls input[type=number]:disabled {
-    color:var(--muted); background:#0a1622; border-style:dashed;
-  }
-  .row-controls .unit { color:var(--muted); font-size:.85rem; width:22px; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+
   .chart-card { padding:12px 12px 16px; }
   canvas { width:100%; display:block; touch-action:none; border-radius:8px; }
   .note { font-size:.72rem; color:var(--muted); padding:0 16px; line-height:1.5; }
@@ -57,57 +67,66 @@
 
 <header>
   <h1>Psychrometric Demo</h1>
-  <p>Type a starting temperature and relative humidity, then drag any slider to explore. Standard sea-level pressure (101.325 kPa).</p>
+  <p>Standard sea-level pressure (101.325 kPa).</p>
 </header>
 
 <div class="card">
+  <div class="card-title">Starting point</div>
+  <div class="card-sub">Type a temperature and relative humidity to set where the point starts. Dew point follows automatically.</div>
   <div class="unit-toggle">
     <button id="unit-f" class="active">°F</button>
     <button id="unit-c">°C</button>
   </div>
+  <div class="start-grid">
+    <div class="start-field">
+      <label>Temperature</label>
+      <div class="field-row">
+        <input type="number" id="start-temp" step="any">
+        <span class="unit tunit">°F</span>
+      </div>
+    </div>
+    <div class="start-field">
+      <label>Relative Humidity</label>
+      <div class="field-row">
+        <input type="number" id="start-rh" step="any">
+        <span class="unit">%</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Explore</div>
+  <div class="card-sub">Drag any slider — the other two values update to match. No typing here, sliders only.</div>
 
   <div class="row" id="row-temp">
-    <div class="row-head"><span class="label">Temperature</span></div>
+    <div class="row-head"><span class="label">Temperature</span><span class="value-badge" id="val-temp"></span></div>
     <div class="row-hint">Dragging keeps dew point fixed — relative humidity moves.</div>
-    <div class="row-controls">
-      <input type="range" id="slider-temp" min="30" max="110" step="1">
-      <input type="number" id="input-temp" step="any">
-      <span class="unit tunit">°F</span>
-    </div>
+    <input type="range" id="slider-temp" min="20" max="120" step="1">
   </div>
 
   <div class="row" id="row-rh">
-    <div class="row-head"><span class="label">Relative Humidity</span></div>
+    <div class="row-head"><span class="label">Relative Humidity</span><span class="value-badge" id="val-rh"></span></div>
     <div class="row-hint">Dragging keeps temperature fixed — dew point moves.</div>
-    <div class="row-controls">
-      <input type="range" id="slider-rh" min="1" max="100" step="1">
-      <input type="number" id="input-rh" step="any">
-      <span class="unit">%</span>
-    </div>
+    <input type="range" id="slider-rh" min="1" max="100" step="1">
   </div>
 
   <div class="row" id="row-dp">
-    <div class="row-head"><span class="label">Dew Point</span></div>
-    <div class="row-hint">Dragging keeps temperature fixed — relative humidity moves. (Derived, not typed directly.)</div>
-    <div class="row-controls">
-      <input type="range" id="slider-dp" min="0" max="110" step="1">
-      <input type="number" id="input-dp" step="any" disabled>
-      <span class="unit tunit">°F</span>
-    </div>
+    <div class="row-head"><span class="label">Dew Point</span><span class="value-badge" id="val-dp"></span></div>
+    <div class="row-hint">Dragging keeps temperature fixed — relative humidity moves.</div>
+    <input type="range" id="slider-dp" min="0" max="120" step="1">
   </div>
 </div>
 
 <div class="card chart-card">
-  <canvas id="chart" height="360"></canvas>
+  <canvas id="chart" height="440"></canvas>
 </div>
 
 <p class="note">
-  Temperature and relative humidity are the values you type to set a starting point (dew point
-  follows automatically). From there, each slider moves the point on the chart along a fixed rule:
-  the Temperature slider rides a constant-moisture line (dew point unchanged, RH updates); the
-  Relative Humidity and Dew Point sliders both move moisture content at a constant temperature.
-  Cooling below the current dew point pins relative humidity at 100% and drags the dew point down
-  with it, the way real condensation would.
+  Each slider moves the point along a fixed rule: the Temperature slider rides a constant-moisture
+  line (dew point unchanged, RH updates); the Relative Humidity and Dew Point sliders both move
+  moisture content at a constant temperature. Cooling below the current dew point pins relative
+  humidity at 100% and drags the dew point down with it, the way real condensation would.
 </p>
 
 <script>
@@ -140,7 +159,8 @@ function satTemp(pw) {
   return t;
 }
 const vaporPressure = (tc, rh) => satPressure(tc) * rh / 100;
-function humidityRatioG(pw, p) { return 1000 * 0.621945 * pw / (p - pw); }
+function humidityRatio(pw, p) { return 0.621945 * pw / (p - pw); } // kg/kg
+function humidityRatioG(pw, p) { return humidityRatio(pw, p) * 1000; } // g/kg
 
 function solveDP(tempF, rh) {
   const pw = vaporPressure(fToC(tempF), rh);
@@ -152,7 +172,7 @@ function solveRH(tempF, dpF) {
   return clamp(rh, 1, 100);
 }
 
-// "nice" tick step for a given span and target tick count (mirrors the main app's tickStep)
+// "nice" tick step for a given span and target tick count (matches the main app's tickStep)
 function tickStep(span, target) {
   const raw = span / target;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
@@ -161,7 +181,7 @@ function tickStep(span, target) {
   return nice * mag;
 }
 // Label a curve wherever it's actually visible in the plot rectangle right now.
-function labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB) {
+function labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB, bias) {
   const margin = 6;
   let bestStart = -1, bestLen = 0, curStart = -1, curLen = 0;
   for (let i = 0; i < pxPts.length; i++) {
@@ -171,9 +191,7 @@ function labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB) {
     else { curStart = -1; curLen = 0; }
   }
   if (bestLen === 0) return null;
-  // Bias toward the higher-temperature end of the visible run, where the RH
-  // curves fan out and are less likely to sit under the plotted point.
-  const spot = bestStart + Math.floor(bestLen * 0.82);
+  const spot = bestStart + Math.floor(bestLen * (bias == null ? 0.82 : bias));
   return pxPts[Math.min(spot, pxPts.length - 1)];
 }
 // Text with a dark halo so it stays legible over grid lines / curves underneath.
@@ -188,9 +206,9 @@ const state = { tempF: 75, rh: 50, dpF: 0, unit: 'F' };
 state.dpF = solveDP(state.tempF, state.rh);
 
 const els = {
-  sliderTemp: document.getElementById('slider-temp'), inputTemp: document.getElementById('input-temp'),
-  sliderRh: document.getElementById('slider-rh'), inputRh: document.getElementById('input-rh'),
-  sliderDp: document.getElementById('slider-dp'), inputDp: document.getElementById('input-dp'),
+  startTemp: document.getElementById('start-temp'), startRh: document.getElementById('start-rh'),
+  sliderTemp: document.getElementById('slider-temp'), sliderRh: document.getElementById('slider-rh'), sliderDp: document.getElementById('slider-dp'),
+  valTemp: document.getElementById('val-temp'), valRh: document.getElementById('val-rh'), valDp: document.getElementById('val-dp'),
   unitF: document.getElementById('unit-f'), unitC: document.getElementById('unit-c'),
   tunits: document.querySelectorAll('.tunit'),
   canvas: document.getElementById('chart'),
@@ -198,8 +216,18 @@ const els = {
 
 function dispT(f) { return state.unit === 'F' ? f : fToC(f); }
 function toF(v) { return state.unit === 'F' ? v : cToF(v); }
+function fmtT(f) { return `${Math.round(dispT(f) * 10) / 10}°${state.unit}`; }
 
-// Fixed physical rules — no "last touched" tracking. Each control has one job:
+// Starting point: typing here sets BOTH temp and RH freely (a fresh baseline),
+// unlike the sliders below, which each hold ONE thing fixed and solve for another.
+function setStart() {
+  state.tempF = toF(Number(els.startTemp.value));
+  state.rh = clamp(Number(els.startRh.value), 1, 100);
+  state.dpF = solveDP(state.tempF, state.rh);
+  afterChange();
+}
+
+// Fixed physical rules for the explore sliders — each has one job:
 //  Temperature -> holds dew point fixed, recomputes RH   (constant-moisture / horizontal move)
 //  RH          -> holds temperature fixed, recomputes DP (vertical move)
 //  Dew Point   -> holds temperature fixed, recomputes RH (vertical move, alternate handle)
@@ -224,19 +252,23 @@ function afterChange() { syncUI(); drawChart(); }
 
 function syncUI() {
   const tempDisp = dispT(state.tempF), dpDisp = dispT(state.dpF);
+  els.startTemp.value = Math.round(tempDisp * 10) / 10;
+  els.startRh.value = Math.round(state.rh * 10) / 10;
+
   els.sliderTemp.value = Math.round(tempDisp);
-  els.inputTemp.value = Math.round(tempDisp * 10) / 10;
   els.sliderRh.value = Math.round(state.rh);
-  els.inputRh.value = Math.round(state.rh * 10) / 10;
   els.sliderDp.max = Math.round(tempDisp);
   els.sliderDp.value = Math.round(dpDisp);
-  els.inputDp.value = Math.round(dpDisp * 10) / 10;
+
+  els.valTemp.textContent = fmtT(state.tempF);
+  els.valRh.textContent = `${Math.round(state.rh)}%`;
+  els.valDp.textContent = fmtT(state.dpF);
 }
 
+els.startTemp.addEventListener('change', setStart);
+els.startRh.addEventListener('change', setStart);
 els.sliderTemp.addEventListener('input', () => setTemp(toF(Number(els.sliderTemp.value))));
-els.inputTemp.addEventListener('change', () => setTemp(toF(Number(els.inputTemp.value))));
 els.sliderRh.addEventListener('input', () => setRh(Number(els.sliderRh.value)));
-els.inputRh.addEventListener('change', () => setRh(Number(els.inputRh.value)));
 els.sliderDp.addEventListener('input', () => setDp(toF(Number(els.sliderDp.value))));
 
 function setUnit(u) {
@@ -244,8 +276,8 @@ function setUnit(u) {
   els.unitF.classList.toggle('active', u === 'F');
   els.unitC.classList.toggle('active', u === 'C');
   els.tunits.forEach(el => el.textContent = u === 'F' ? '°F' : '°C');
-  els.sliderTemp.min = u === 'F' ? 30 : Math.round(fToC(30));
-  els.sliderTemp.max = u === 'F' ? 110 : Math.round(fToC(110));
+  els.sliderTemp.min = u === 'F' ? 20 : Math.round(fToC(20));
+  els.sliderTemp.max = u === 'F' ? 120 : Math.round(fToC(120));
   els.sliderDp.min = u === 'F' ? 0 : Math.round(fToC(0));
   afterChange();
 }
@@ -253,29 +285,30 @@ els.unitF.addEventListener('click', () => setUnit('F'));
 els.unitC.addEventListener('click', () => setUnit('C'));
 
 // ── Chart: dry-bulb temp (x) vs humidity ratio g/kg (y), sea-level pressure ──
-// Styled after the main app's chart: dark plot background, faint grid, RH
-// iso-curves labeled inline on the curve, halo'd text for legibility.
+// Full ASHRAE-style rendering, matching the main app's chart: dark plot
+// background, grid, RH iso-curves AND wet-bulb iso-lines labeled inline on
+// the curve, a freezing reference line, halo'd text, styled point marker.
 function drawChart() {
   const canvas = els.canvas;
   const cssW = canvas.clientWidth || 340;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const H = 360;
+  const H = Math.round(cssW * 0.95);
   canvas.width = cssW * dpr; canvas.height = H * dpr;
   canvas.style.height = H + 'px';
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const W = cssW, pad = { l: 50, r: 14, t: 16, b: 40 };
+  const W = cssW, pad = { l: 52, r: 40, t: 16, b: 40 };
   const plotL = pad.l, plotR = W - pad.r, plotT = pad.t, plotB = H - pad.b;
 
   ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H);
   ctx.save(); ctx.beginPath(); ctx.rect(plotL, plotT, plotR - plotL, plotB - plotT); ctx.clip();
 
-  const tMinF = 30, tMaxF = 110;
+  const tMinF = 20, tMaxF = 120;
   const wMax = humidityRatioG(satPressure(fToC(tMaxF)), P) * 1.05;
   const toXY = (tF, w) => [plotL + (tF - tMinF) / (tMaxF - tMinF) * (plotR - plotL), plotB - (w / wMax) * (plotB - plotT)];
 
-  // grid
-  const tStep = tickStep(tMaxF - tMinF, 8), wStep = tickStep(wMax, 7);
+  // grid — same tick-count targets as the main app's chart
+  const tStep = tickStep(tMaxF - tMinF, 9), wStep = tickStep(wMax, 8);
   ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 0.5;
   for (let t = Math.ceil(tMinF / tStep) * tStep; t <= tMaxF; t += tStep) {
     const [x1, y1] = toXY(t, 0), [, y2] = toXY(t, wMax);
@@ -286,11 +319,57 @@ function drawChart() {
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y1); ctx.stroke();
   }
 
-  // RH iso-curves, labeled inline on the curve like the main chart
-  [20, 40, 60, 80, 100].forEach(rh => {
-    const color = rh === 100 ? 'rgba(100,180,255,0.9)' : rh === 80 ? 'rgba(248,81,73,0.55)' : `rgba(80,130,200,${0.25 + rh * 0.0025})`;
+  // Freezing reference line (32°F / 0°C)
+  if (tMinF <= 32 && tMaxF >= 32) {
+    const [fx, fyTop] = toXY(32, wMax), [, fyBot] = toXY(32, 0);
+    ctx.strokeStyle = 'rgba(120,170,255,0.35)'; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(fx, fyTop); ctx.lineTo(fx, fyBot); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(120,170,255,0.65)'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'left';
+    ctx.save(); ctx.translate(fx + 3, plotT + 12); ctx.fillText('FREEZING 32°F', 0, 0); ctx.restore();
+  }
+
+  // Wet-bulb iso-lines — ASHRAE Eq. 35, same physics as the main app's chart.
+  // Drawn every 10°F for density, but only every 20°F gets a text label so
+  // the small mobile chart doesn't turn into an unreadable pile of text.
+  for (let wbF = tMinF; wbF <= tMaxF; wbF += 10) {
+    const wb = fToC(wbF);
+    const WsStar = humidityRatio(satPressure(wb), P);
+    const pts = [];
+    let started = false;
+    ctx.strokeStyle = 'rgba(120,180,120,0.18)'; ctx.lineWidth = 0.7;
+    for (let tF = wbF; tF <= tMaxF; tF += 1) {
+      const t = fToC(tF);
+      const Wv = wb >= 0
+        ? ((2501 - 2.326 * wb) * WsStar - 1.006 * (t - wb)) / (2501 + 1.86 * t - 4.186 * wb)
+        : ((2830 - 0.24 * wb) * WsStar - 1.006 * (t - wb)) / (2830 + 1.86 * t - 2.1 * wb);
+      const hrT = Wv * 1000;
+      if (hrT < 0) break;
+      const xy = toXY(tF, Math.min(hrT, wMax * 1.1));
+      pts.push(xy);
+      started ? ctx.lineTo(xy[0], xy[1]) : (ctx.beginPath(), ctx.moveTo(xy[0], xy[1]), started = true);
+      if (hrT > wMax) break;
+    }
+    if (started) {
+      ctx.stroke();
+      if (Math.round(wbF) % 20 === 0) {
+        // Label near the start of each line (low on the sat curve) — the
+        // 20°F spacing between labeled lines keeps these naturally staggered.
+        const spot = labelSpotOnCurve(pts, plotL, plotR, plotT, plotB, 0.06);
+        if (spot) { ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; haloText(ctx, `${Math.round(wbF)}°wb`, spot[0], spot[1] + 11, 'rgba(150,210,150,0.85)'); }
+      }
+    }
+  }
+
+  // RH iso-curves — drawn every 10% for density (matching a real ASHRAE
+  // chart), but only every 20% gets a text label so labels stay legible on
+  // a small mobile chart instead of piling on top of each other.
+  const rhList = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+  const labeledRh = rhList.filter(rh => rh % 20 === 0);
+  rhList.forEach(rh => {
+    const color = rh === 100 ? 'rgba(100,180,255,0.9)' : rh === 80 ? 'rgba(248,81,73,0.55)' : `rgba(80,130,200,${0.2 + rh * 0.0025})`;
     const labelColor = rh === 100 ? '#8fc4ff' : rh === 80 ? '#ff8a80' : '#7fa8e0';
-    ctx.strokeStyle = color; ctx.lineWidth = rh === 100 || rh === 80 ? 1.8 : 1;
+    ctx.strokeStyle = color; ctx.lineWidth = rh === 100 || rh === 80 ? 1.8 : 0.9;
     ctx.beginPath();
     const pts = [];
     for (let tF = tMinF; tF <= tMaxF; tF += 1) {
@@ -300,7 +379,10 @@ function drawChart() {
       tF === tMinF ? ctx.moveTo(xy[0], xy[1]) : ctx.lineTo(xy[0], xy[1]);
     }
     ctx.stroke();
-    const spot = labelSpotOnCurve(pts, plotL, plotR, plotT, plotB);
+    const labelIdx = labeledRh.indexOf(rh);
+    if (labelIdx === -1) return;
+    const bias = 0.88 - labelIdx * (0.65 / (labeledRh.length - 1));
+    const spot = labelSpotOnCurve(pts, plotL, plotR, plotT, plotB, bias);
     if (spot) { ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; haloText(ctx, rh + '%', spot[0], spot[1] - 8, labelColor); }
   });
 
@@ -338,7 +420,7 @@ function drawChart() {
   }
   ctx.textAlign = 'center'; ctx.font = '11px sans-serif';
   ctx.fillText(state.unit === 'F' ? 'Dry-bulb (°F)' : 'Dry-bulb (°C)', (plotL + plotR) / 2, H - 6);
-  ctx.save(); ctx.translate(12, (plotT + plotB) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Humidity ratio (g/kg)', 0, 0); ctx.restore();
+  ctx.save(); ctx.translate(14, (plotT + plotB) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Humidity ratio (g/kg)', 0, 0); ctx.restore();
 }
 
 syncUI();
