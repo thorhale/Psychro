@@ -59,7 +59,14 @@
   input[type=range] { width:100%; accent-color:var(--accent); }
 
   .chart-card { padding:12px 12px 16px; }
-  canvas { width:100%; display:block; touch-action:none; border-radius:8px; }
+  .chart-toolbar { display:flex; gap:8px; margin-bottom:10px; }
+  .chart-toolbar button {
+    padding:7px 12px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text); font-weight:700; cursor:pointer; font-size:.85rem;
+  }
+  .chart-toolbar button:active { background:var(--accent); color:#03222c; }
+  canvas { width:100%; display:block; touch-action:none; border-radius:8px; cursor:grab; }
+  canvas.grabbing { cursor:grabbing; }
   .note { font-size:.72rem; color:var(--muted); padding:0 16px; line-height:1.5; }
 </style>
 </head>
@@ -119,14 +126,21 @@
 </div>
 
 <div class="card chart-card">
-  <canvas id="chart" height="440"></canvas>
+  <div class="chart-toolbar">
+    <button id="zoom-in">Zoom +</button>
+    <button id="zoom-out">Zoom −</button>
+    <button id="zoom-reset">Reset</button>
+  </div>
+  <canvas id="chart"></canvas>
 </div>
 
 <p class="note">
-  Each slider moves the point along a fixed rule: the Temperature slider rides a constant-moisture
-  line (dew point unchanged, RH updates); the Relative Humidity and Dew Point sliders both move
-  moisture content at a constant temperature. Cooling below the current dew point pins relative
-  humidity at 100% and drags the dew point down with it, the way real condensation would.
+  This is the same psychrometric chart engine as the phone app — scroll/pinch to zoom, drag to pan,
+  double-click to reset — with the ASHRAE data-center envelope boundaries (A1–A4) drawn for
+  reference. Each slider above moves the point along a fixed rule: the Temperature slider rides a
+  constant-moisture line (dew point unchanged, RH updates); the Relative Humidity and Dew Point
+  sliders both move moisture content at a constant temperature. Cooling below the current dew point
+  pins relative humidity at 100% and drags the dew point down with it, the way real condensation would.
 </p>
 
 <script>
@@ -162,6 +176,19 @@ const vaporPressure = (tc, rh) => satPressure(tc) * rh / 100;
 function humidityRatio(pw, p) { return 0.621945 * pw / (p - pw); } // kg/kg
 function humidityRatioG(pw, p) { return humidityRatio(pw, p) * 1000; } // g/kg
 
+// Wet-bulb via ASHRAE Eq. 35, solved by bisection — same as the main app.
+function wetBulb(tc, rh, p) {
+  const W = humidityRatio(vaporPressure(tc, rh), p);
+  let lo = -50, hi = tc, twb = tc;
+  for (let i = 0; i < 60; i++) {
+    twb = (lo + hi) / 2;
+    const Ws_wb = humidityRatio(satPressure(twb), p);
+    const Wstar = ((2501 - 2.326*twb)*Ws_wb - 1.006*(tc - twb)) / (2501 + 1.86*tc - 4.186*twb);
+    if (Wstar > W) hi = twb; else lo = twb;
+  }
+  return twb;
+}
+
 function solveDP(tempF, rh) {
   const pw = vaporPressure(fToC(tempF), rh);
   return cToF(satTemp(pw));
@@ -172,6 +199,33 @@ function solveRH(tempF, dpF) {
   return clamp(rh, 1, 100);
 }
 
+// ── ASHRAE TC 9.9 data-center envelope boundaries (5th ed. allowable limits) ──
+// Same table as the main app: each class is its real tMin/tMax/rhMin/rhMax/dpMin/dpMax
+// boundary, traced as a polygon in (Tdb, W) space.
+const ASHRAE_ENVELOPES = {
+  Rec: { label:'Rec', color:'#ffffff', dash:true,  lw:1.4, tMin:18, tMax:27, rhMin:0, rhMax:60, dpMin:-9,  dpMax:15 },
+  A1:  { label:'A1',  color:'#3fb950', dash:false, lw:2.0, tMin:15, tMax:32, rhMin:8, rhMax:80, dpMin:-12, dpMax:17 },
+  A2:  { label:'A2',  color:'#3b9eff', dash:false, lw:1.5, tMin:10, tMax:35, rhMin:8, rhMax:80, dpMin:-12, dpMax:21 },
+  A3:  { label:'A3',  color:'#f0a500', dash:false, lw:1.3, tMin:5,  tMax:40, rhMin:8, rhMax:85, dpMin:-12, dpMax:24 },
+  A4:  { label:'A4',  color:'#f85149', dash:false, lw:1.2, tMin:5,  tMax:45, rhMin:8, rhMax:90, dpMin:-12, dpMax:24 },
+};
+function upperW(tc, env, p) {
+  const wRH = humidityRatioG(vaporPressure(tc, env.rhMax), p);
+  const wDP = env.dpMax != null ? humidityRatioG(satPressure(env.dpMax), p) : Infinity;
+  return Math.min(wRH, wDP);
+}
+function lowerW(tc, env, p) {
+  const wRH = humidityRatioG(vaporPressure(tc, env.rhMin), p);
+  const wDP = env.dpMin != null ? humidityRatioG(satPressure(env.dpMin), p) : 0;
+  return Math.max(wRH, wDP, 0);
+}
+function envelopePolygon(env, p) {
+  const pts = []; const step = 0.5;
+  for (let t = env.tMin; t <= env.tMax + 1e-6; t += step) pts.push([t, lowerW(Math.min(t, env.tMax), env, p)]);
+  for (let t = env.tMax; t >= env.tMin - 1e-6; t -= step) pts.push([t, upperW(Math.max(t, env.tMin), env, p)]);
+  return pts;
+}
+
 // "nice" tick step for a given span and target tick count (matches the main app's tickStep)
 function tickStep(span, target) {
   const raw = span / target;
@@ -180,9 +234,13 @@ function tickStep(span, target) {
   const nice = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
   return nice * mag;
 }
-// Label a curve wherever it's actually visible in the plot rectangle right now.
-function labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB, bias) {
-  const margin = 6;
+function decimalsFor(step) {
+  if (!(step > 0)) return 0;
+  return Math.max(0, Math.min(3, Math.ceil(-Math.log10(step) - 1e-9)));
+}
+// Label a curve/boundary wherever it's actually visible in the CURRENT viewport.
+function labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB) {
+  const margin = 4;
   let bestStart = -1, bestLen = 0, curStart = -1, curLen = 0;
   for (let i = 0; i < pxPts.length; i++) {
     const [x, y] = pxPts[i];
@@ -191,14 +249,18 @@ function labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB, bias) {
     else { curStart = -1; curLen = 0; }
   }
   if (bestLen === 0) return null;
-  const spot = bestStart + Math.floor(bestLen * (bias == null ? 0.82 : bias));
-  return pxPts[Math.min(spot, pxPts.length - 1)];
+  const mid = bestStart + Math.floor(bestLen / 2);
+  const [x, y] = pxPts[mid];
+  const a = pxPts[Math.max(0, mid - 3)], b = pxPts[Math.min(pxPts.length - 1, mid + 3)];
+  const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  return { x, y, angle };
 }
-// Text with a dark halo so it stays legible over grid lines / curves underneath.
-function haloText(ctx, text, x, y, color) {
+function haloText(ctx, text, x, y, color, angle) {
+  ctx.save(); ctx.translate(x, y); if (angle) ctx.rotate(angle);
   ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(13,17,23,0.9)'; ctx.lineJoin = 'round';
-  ctx.strokeText(text, x, y);
-  ctx.fillStyle = color; ctx.fillText(text, x, y);
+  ctx.strokeText(text, 0, 0);
+  ctx.fillStyle = color; ctx.fillText(text, 0, 0);
+  ctx.restore();
 }
 
 // ── State (canonical: °F, %) ──
@@ -284,145 +346,285 @@ function setUnit(u) {
 els.unitF.addEventListener('click', () => setUnit('F'));
 els.unitC.addEventListener('click', () => setUnit('C'));
 
-// ── Chart: dry-bulb temp (x) vs humidity ratio g/kg (y), sea-level pressure ──
-// Full ASHRAE-style rendering, matching the main app's chart: dark plot
-// background, grid, RH iso-curves AND wet-bulb iso-lines labeled inline on
-// the curve, a freezing reference line, halo'd text, styled point marker.
+// ════════════════════════════════════════════════════════════
+//  CHART — the same engine as the phone app: pressure-aware RH/wet-bulb
+//  iso-lines with adaptive density, ASHRAE A1–A4 envelope boundaries,
+//  and full zoom/pan (wheel, drag, pinch, double-click reset). The chart
+//  itself always reads in °C/g-per-kg, same as the main app — only the
+//  Starting point / Explore controls above respect the °F/°C toggle.
+// ════════════════════════════════════════════════════════════
+const PC = { tMin: 0, tMax: 45, hrMin: 0, hrMax: 30 };
+const view = { tMin: 0, tMax: 45, hrMin: 0, hrMax: 30 };
+const MIN_T_SPAN = 0.4, MIN_HR_SPAN = 0.2;
+const MAX_T = 200, MAX_HR = 200;
+let lastGeom = null;
+
+function resetView() {
+  view.tMin = PC.tMin; view.tMax = PC.tMax; view.hrMin = PC.hrMin; view.hrMax = PC.hrMax;
+}
+function clampView() {
+  if (view.tMax - view.tMin < MIN_T_SPAN) { const c = (view.tMin + view.tMax) / 2; view.tMin = c - MIN_T_SPAN / 2; view.tMax = c + MIN_T_SPAN / 2; }
+  if (view.hrMax - view.hrMin < MIN_HR_SPAN) { const c = (view.hrMin + view.hrMax) / 2; view.hrMin = c - MIN_HR_SPAN / 2; view.hrMax = c + MIN_HR_SPAN / 2; }
+  if (view.tMin < PC.tMin) { const span = view.tMax - view.tMin; view.tMin = PC.tMin; view.tMax = PC.tMin + span; }
+  if (view.hrMin < PC.hrMin) { const span = view.hrMax - view.hrMin; view.hrMin = PC.hrMin; view.hrMax = PC.hrMin + span; }
+  if (view.tMax > MAX_T) view.tMax = MAX_T;
+  if (view.hrMax > MAX_HR) view.hrMax = MAX_HR;
+}
+function toXY(tc, hr, W, H, pad) {
+  const x = pad.l + (tc - view.tMin) / (view.tMax - view.tMin) * (W - pad.l - pad.r);
+  const y = (H - pad.b) - (hr - view.hrMin) / (view.hrMax - view.hrMin) * (H - pad.t - pad.b);
+  return [x, y];
+}
+function fromXY(px, py, W, H, pad) {
+  const tc = view.tMin + (px - pad.l) / (W - pad.l - pad.r) * (view.tMax - view.tMin);
+  const hr = view.hrMin + ((H - pad.b) - py) / (H - pad.t - pad.b) * (view.hrMax - view.hrMin);
+  return [tc, hr];
+}
+function zoomAt(px, py, factor) {
+  if (!lastGeom) return;
+  const { W, H, pad } = lastGeom;
+  const [atc, ahr] = fromXY(px, py, W, H, pad);
+  view.tMin = atc - (atc - view.tMin) * factor;
+  view.tMax = atc + (view.tMax - atc) * factor;
+  view.hrMin = ahr - (ahr - view.hrMin) * factor;
+  view.hrMax = ahr + (view.hrMax - ahr) * factor;
+  clampView(); drawChart();
+}
+function zoomCenter(factor) {
+  if (!lastGeom) return;
+  const { W, H, pad } = lastGeom;
+  zoomAt((pad.l + W - pad.r) / 2, (pad.t + H - pad.b) / 2, factor);
+}
+
 function drawChart() {
+  const p = P;
   const canvas = els.canvas;
-  const cssW = canvas.clientWidth || 340;
+  const dispW = canvas.parentElement.clientWidth || 340;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const H = Math.round(cssW * 0.95);
-  canvas.width = cssW * dpr; canvas.height = H * dpr;
-  canvas.style.height = H + 'px';
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const W = cssW, pad = { l: 52, r: 40, t: 16, b: 40 };
-  const plotL = pad.l, plotR = W - pad.r, plotT = pad.t, plotB = H - pad.b;
+  const W = dispW, H = Math.round(W * 0.95);
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const pad = { l: 44, r: 46, t: 18, b: 36 };
+  lastGeom = { W, H, pad };
+  const xy = (tc, hr) => toXY(tc, hr, W, H, pad);
+  const fs = sz => Math.max(9, Math.round(W * sz));
 
   ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H);
+  const plotL = pad.l, plotR = W - pad.r, plotT = pad.t, plotB = H - pad.b;
   ctx.save(); ctx.beginPath(); ctx.rect(plotL, plotT, plotR - plotL, plotB - plotT); ctx.clip();
 
-  const tMinF = 20, tMaxF = 120;
-  const wMax = humidityRatioG(satPressure(fToC(tMaxF)), P) * 1.05;
-  const toXY = (tF, w) => [plotL + (tF - tMinF) / (tMaxF - tMinF) * (plotR - plotL), plotB - (w / wMax) * (plotB - plotT)];
+  const tStep = Math.max(1, tickStep(view.tMax - view.tMin, 9));
+  const hrStep = Math.max(1, tickStep(view.hrMax - view.hrMin, 8));
+  const tStart = Math.ceil(view.tMin / tStep) * tStep;
+  const hrStart = Math.ceil(view.hrMin / hrStep) * hrStep;
 
-  // grid — same tick-count targets as the main app's chart
-  const tStep = tickStep(tMaxF - tMinF, 9), wStep = tickStep(wMax, 8);
+  // Grid
   ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 0.5;
-  for (let t = Math.ceil(tMinF / tStep) * tStep; t <= tMaxF; t += tStep) {
-    const [x1, y1] = toXY(t, 0), [, y2] = toXY(t, wMax);
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1, y2); ctx.stroke();
-  }
-  for (let w = 0; w <= wMax; w += wStep) {
-    const [x1, y1] = toXY(tMinF, w), [x2] = toXY(tMaxF, w);
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y1); ctx.stroke();
-  }
+  for (let t = tStart; t <= view.tMax; t += tStep) { const [x1, y1] = xy(t, view.hrMin), [x2, y2] = xy(t, view.hrMax); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+  for (let hr = hrStart; hr <= view.hrMax; hr += hrStep) { const [x1, y1] = xy(view.tMin, hr), [x2, y2] = xy(view.tMax, hr); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
 
-  // Freezing reference line (32°F / 0°C)
-  if (tMinF <= 32 && tMaxF >= 32) {
-    const [fx, fyTop] = toXY(32, wMax), [, fyBot] = toXY(32, 0);
+  // Freezing reference line (0°C)
+  if (view.tMin <= 0 && view.tMax >= 0) {
+    const [fx, fyTop] = xy(0, view.hrMax), [, fyBot] = xy(0, view.hrMin);
     ctx.strokeStyle = 'rgba(120,170,255,0.35)'; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
-    ctx.beginPath(); ctx.moveTo(fx, fyTop); ctx.lineTo(fx, fyBot); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(120,170,255,0.65)'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'left';
-    ctx.save(); ctx.translate(fx + 3, plotT + 12); ctx.fillText('FREEZING 32°F', 0, 0); ctx.restore();
+    ctx.beginPath(); ctx.moveTo(fx, fyTop); ctx.lineTo(fx, fyBot); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(120,170,255,0.6)'; ctx.font = `bold ${fs(0.0105)}px sans-serif`; ctx.textAlign = 'left';
+    ctx.save(); ctx.translate(fx + 3, plotT + 4 + fs(0.05)); ctx.fillText('FREEZING 0°C', 0, 0); ctx.restore();
   }
 
-  // Wet-bulb iso-lines — ASHRAE Eq. 35, same physics as the main app's chart.
-  // Drawn every 10°F for density, but only every 20°F gets a text label so
-  // the small mobile chart doesn't turn into an unreadable pile of text.
-  for (let wbF = tMinF; wbF <= tMaxF; wbF += 10) {
-    const wb = fToC(wbF);
-    const WsStar = humidityRatio(satPressure(wb), P);
-    const pts = [];
-    let started = false;
-    ctx.strokeStyle = 'rgba(120,180,120,0.18)'; ctx.lineWidth = 0.7;
-    for (let tF = wbF; tF <= tMaxF; tF += 1) {
-      const t = fToC(tF);
-      const Wv = wb >= 0
+  const drawTmin = Math.max(PC.tMin, view.tMin - 2);
+  const drawTmax = Math.min(MAX_T, view.tMax + 2);
+  const drawHrMax = Math.min(MAX_HR, view.hrMax + 2);
+
+  // Adaptive curve density: sample RH/wet-bulb at the view's corners so line
+  // spacing gets finer as you zoom in, instead of thinning out to nothing.
+  const rhAtCorner = (tc, hrG) => { const W2 = Math.max(0, hrG) / 1000; const pw = W2 * p / (0.621945 + W2); return Math.min(100, Math.max(0, pw / satPressure(tc) * 100)); };
+  const corners = [[view.tMin, view.hrMin], [view.tMin, view.hrMax], [view.tMax, view.hrMin], [view.tMax, view.hrMax]];
+  const cornerRH = corners.map(([tc, hr]) => rhAtCorner(tc, hr));
+  const rhSpan = Math.max(0.5, Math.max(...cornerRH) - Math.min(...cornerRH));
+  const rhStep = Math.max(1, Math.min(20, tickStep(rhSpan, 9)));
+  const rhLo = Math.max(0, Math.floor(Math.min(...cornerRH) / rhStep) * rhStep - rhStep);
+  const rhHi = Math.min(100, Math.ceil(Math.max(...cornerRH) / rhStep) * rhStep + rhStep);
+  const rhList = [];
+  for (let rh = rhLo; rh <= rhHi; rh += rhStep) rhList.push(Math.round(rh));
+  if (!rhList.includes(80)) rhList.push(80);
+  if (!rhList.includes(100)) rhList.push(100);
+  rhList.sort((a, b) => a - b);
+
+  const wbAtCorner = (tc, hr) => wetBulb(tc, rhAtCorner(tc, hr), p);
+  const cornerWB = corners.map(([tc, hr]) => wbAtCorner(tc, hr));
+  const wbSpan = Math.max(0.5, Math.max(...cornerWB) - Math.min(...cornerWB));
+  const wbStep = Math.max(1, Math.min(5, tickStep(wbSpan, 7)));
+  const wbLo = Math.max(-10, Math.floor(Math.min(...cornerWB) / wbStep) * wbStep - wbStep);
+  const wbHi = Math.min(50, Math.ceil(Math.max(...cornerWB) / wbStep) * wbStep + wbStep);
+
+  // RH iso-curves
+  rhList.forEach(rh => {
+    const rhColor = rh === 100 ? 'rgba(100,180,255,0.85)' : rh === 80 ? 'rgba(248,81,73,0.5)' : `rgba(80,130,200,${0.15 + rh * 0.002})`;
+    const rhLabelColor = rh === 100 ? '#8fc4ff' : rh === 80 ? '#ff8a80' : '#7fa8e0';
+    ctx.strokeStyle = rhColor; ctx.lineWidth = (rh === 80 || rh === 100) ? 1.6 : 0.7;
+    ctx.beginPath(); let started = false;
+    const tStepCurve = (drawTmax - drawTmin) / 300;
+    const pxPts = [];
+    for (let t = drawTmin; t <= drawTmax; t += tStepCurve) {
+      const pw = vaporPressure(t, rh), hr2 = humidityRatioG(pw, p);
+      const [x, y] = xy(t, hr2);
+      pxPts.push([x, y]);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+      if (hr2 > drawHrMax) break;
+    }
+    ctx.stroke();
+    const spot = labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB);
+    if (spot) { ctx.font = `bold ${fs(0.0115)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; haloText(ctx, rh + '%', spot.x, spot.y - 9, rhLabelColor, 0); }
+  });
+
+  // Wet-bulb iso-lines — ASHRAE Eq. 35
+  ctx.strokeStyle = 'rgba(120,180,120,0.16)'; ctx.lineWidth = 0.6;
+  ctx.font = `${fs(0.0095)}px sans-serif`;
+  const wbDec = wbStep < 1 ? 1 : 0;
+  for (let wb = wbLo; wb <= wbHi; wb += wbStep) {
+    const WsStar = humidityRatio(satPressure(wb), p);
+    ctx.beginPath(); let s = false;
+    const tStepWb = (drawTmax - wb) / 200 || 0.4;
+    const pxPtsWb = [];
+    for (let t = wb; t <= drawTmax; t += tStepWb) {
+      let Wv = wb >= 0
         ? ((2501 - 2.326 * wb) * WsStar - 1.006 * (t - wb)) / (2501 + 1.86 * t - 4.186 * wb)
         : ((2830 - 0.24 * wb) * WsStar - 1.006 * (t - wb)) / (2830 + 1.86 * t - 2.1 * wb);
       const hrT = Wv * 1000;
       if (hrT < 0) break;
-      const xy = toXY(tF, Math.min(hrT, wMax * 1.1));
-      pts.push(xy);
-      started ? ctx.lineTo(xy[0], xy[1]) : (ctx.beginPath(), ctx.moveTo(xy[0], xy[1]), started = true);
-      if (hrT > wMax) break;
+      const [x, y] = xy(t, hrT);
+      pxPtsWb.push([x, y]);
+      if (!s) { ctx.moveTo(x, y); s = true; } else ctx.lineTo(x, y);
+      if (hrT > drawHrMax) break;
     }
-    if (started) {
-      ctx.stroke();
-      if (Math.round(wbF) % 20 === 0) {
-        // Label near the start of each line (low on the sat curve) — the
-        // 20°F spacing between labeled lines keeps these naturally staggered.
-        const spot = labelSpotOnCurve(pts, plotL, plotR, plotT, plotB, 0.06);
-        if (spot) { ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; haloText(ctx, `${Math.round(wbF)}°wb`, spot[0], spot[1] + 11, 'rgba(150,210,150,0.85)'); }
-      }
+    ctx.stroke();
+    if (s) {
+      const spot = labelSpotOnCurve(pxPtsWb, plotL, plotR, plotT, plotB);
+      if (spot) { ctx.font = `${fs(0.0098)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; haloText(ctx, `${wb.toFixed(wbDec)}°wb`, spot.x, spot.y, 'rgba(150,210,150,0.85)', spot.angle); }
     }
   }
 
-  // RH iso-curves — drawn every 10% for density (matching a real ASHRAE
-  // chart), but only every 20% gets a text label so labels stay legible on
-  // a small mobile chart instead of piling on top of each other.
-  const rhList = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-  const labeledRh = rhList.filter(rh => rh % 20 === 0);
-  rhList.forEach(rh => {
-    const color = rh === 100 ? 'rgba(100,180,255,0.9)' : rh === 80 ? 'rgba(248,81,73,0.55)' : `rgba(80,130,200,${0.2 + rh * 0.0025})`;
-    const labelColor = rh === 100 ? '#8fc4ff' : rh === 80 ? '#ff8a80' : '#7fa8e0';
-    ctx.strokeStyle = color; ctx.lineWidth = rh === 100 || rh === 80 ? 1.8 : 0.9;
-    ctx.beginPath();
-    const pts = [];
-    for (let tF = tMinF; tF <= tMaxF; tF += 1) {
-      const w = Math.min(humidityRatioG(vaporPressure(fToC(tF), rh), P), wMax * 1.1);
-      const xy = toXY(tF, w);
-      pts.push(xy);
-      tF === tMinF ? ctx.moveTo(xy[0], xy[1]) : ctx.lineTo(xy[0], xy[1]);
+  // ASHRAE A1–A4 envelope boundaries (+ Recommended), pressure-aware
+  function drawPolygon(pts, color, lw, label, dash, alpha) {
+    if (dash) ctx.setLineDash([4, 3]); else ctx.setLineDash([]);
+    ctx.strokeStyle = color; ctx.lineWidth = lw;
+    ctx.globalAlpha = alpha != null ? alpha : 0.06; ctx.fillStyle = color;
+    ctx.beginPath(); const [sx, sy] = xy(pts[0][0], pts[0][1]); ctx.moveTo(sx, sy);
+    pts.slice(1).forEach(pt => { const [ex, ey] = xy(pt[0], pt[1]); ctx.lineTo(ex, ey); }); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.beginPath(); const [sx2, sy2] = xy(pts[0][0], pts[0][1]); ctx.moveTo(sx2, sy2);
+    pts.slice(1).forEach(pt => { const [ex, ey] = xy(pt[0], pt[1]); ctx.lineTo(ex, ey); }); ctx.closePath(); ctx.stroke();
+    ctx.setLineDash([]);
+    if (label) {
+      const pxPtsPoly = pts.map(pt => xy(pt[0], pt[1]));
+      const spot = labelSpotOnCurve(pxPtsPoly, plotL, plotR, plotT, plotB);
+      if (spot) { ctx.font = `bold ${fs(0.013)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; haloText(ctx, label, spot.x, spot.y, color, 0); }
     }
-    ctx.stroke();
-    const labelIdx = labeledRh.indexOf(rh);
-    if (labelIdx === -1) return;
-    const bias = 0.88 - labelIdx * (0.65 / (labeledRh.length - 1));
-    const spot = labelSpotOnCurve(pts, plotL, plotR, plotT, plotB, bias);
-    if (spot) { ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; haloText(ctx, rh + '%', spot[0], spot[1] - 8, labelColor); }
-  });
+  }
+  ['A4', 'A3', 'A2', 'A1'].forEach(k => { const e = ASHRAE_ENVELOPES[k]; drawPolygon(envelopePolygon(e, p), e.color, e.lw, e.label, false); });
+  const rec = ASHRAE_ENVELOPES.Rec;
+  drawPolygon(envelopePolygon(rec, p), 'rgba(255,255,255,0.5)', 1.4, 'Rec', true, 0.04);
 
-  // current point + dew-point guide lines
-  const tempDisp = dispT(state.tempF), dpDisp = dispT(state.dpF);
-  const w = humidityRatioG(vaporPressure(fToC(state.tempF), state.rh), P);
-  const [px, py] = toXY(tempDisp, w);
-  const [dpx] = toXY(dpDisp, w);
-
+  // Current point + dew-point guide lines
+  const tc = fToC(state.tempF), hrPoint = humidityRatioG(vaporPressure(tc, state.rh), p);
+  const [px, py] = xy(tc, hrPoint);
+  const [dpx] = xy(fToC(state.dpF), hrPoint);
   ctx.strokeStyle = 'rgba(240,165,0,0.7)'; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
   ctx.beginPath(); ctx.moveTo(plotL, py); ctx.lineTo(px, py); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(dpx, py); ctx.lineTo(dpx, plotB); ctx.stroke();
   ctx.setLineDash([]);
-  ctx.restore(); // end clip — axes/labels live in the margins
 
   ctx.beginPath(); ctx.arc(dpx, plotB, 3.5, 0, Math.PI * 2); ctx.fillStyle = '#f0a500'; ctx.fill();
-  ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fillStyle = '#f0a500'; ctx.fill();
+  ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI * 2); ctx.fillStyle = '#f0a500'; ctx.fill();
   ctx.strokeStyle = '#0d1117'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#f0a500';
-  ctx.fillText(`${Math.round(tempDisp)}°${state.unit} / ${Math.round(state.rh)}% RH`, px, py - 13);
+  ctx.font = `bold ${fs(0.013)}px sans-serif`; ctx.textAlign = 'center'; ctx.fillStyle = '#f0a500';
+  ctx.fillText(`${Math.round(state.rh)}% RH`, px, py - 13);
+  ctx.font = `${fs(0.010)}px sans-serif`; ctx.fillStyle = '#f0a500aa';
+  ctx.fillText(`${Math.round(dispT(state.tempF))}°${state.unit} / ${Math.round(tc)}°C`, px, py - 13 + fs(0.013) + 2);
 
-  // axes
+  ctx.restore(); // end clip — axes/labels live in the margins
+
+  // Axes
   ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(plotL, plotT); ctx.lineTo(plotL, plotB); ctx.lineTo(plotR, plotB); ctx.stroke();
-
-  ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
-  for (let t = Math.ceil(tMinF / tStep) * tStep; t <= tMaxF; t += tStep) {
-    const [x] = toXY(t, 0);
-    ctx.fillText(Math.round(state.unit === 'F' ? t : fToC(t)), x, plotB + 14);
+  ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `${fs(0.012)}px monospace`; ctx.textAlign = 'center';
+  const tDec = decimalsFor(tStep), hrDec = decimalsFor(hrStep);
+  for (let t = tStart; t <= view.tMax; t += tStep) {
+    const [x] = xy(t, view.hrMin);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(x, plotB); ctx.lineTo(x, plotB + 4); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillText(t.toFixed(tDec), x, plotB + 15);
   }
   ctx.textAlign = 'right';
-  for (let wv = 0; wv <= wMax; wv += wStep) {
-    const [, y] = toXY(tMinF, wv);
-    ctx.fillText(Math.round(wv), plotL - 8, y + 3);
+  for (let hr = hrStart; hr <= view.hrMax; hr += hrStep) {
+    const [, y] = xy(view.tMin, hr);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(plotL, y); ctx.lineTo(plotL - 4, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillText(hr.toFixed(hrDec), plotL - 6, y + 4);
   }
-  ctx.textAlign = 'center'; ctx.font = '11px sans-serif';
-  ctx.fillText(state.unit === 'F' ? 'Dry-bulb (°F)' : 'Dry-bulb (°C)', (plotL + plotR) / 2, H - 6);
-  ctx.save(); ctx.translate(14, (plotT + plotB) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Humidity ratio (g/kg)', 0, 0); ctx.restore();
+  ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `${fs(0.013)}px sans-serif`; ctx.textAlign = 'center';
+  ctx.fillText('Dry Bulb Temperature (°C)', plotL + (plotR - plotL) / 2, H - 5);
+  ctx.save(); ctx.translate(14, plotT + (plotB - plotT) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText('Humidity Ratio g/kg dry air', 0, 0); ctx.restore();
+
+  ctx.fillStyle = 'rgba(240,165,0,0.7)'; ctx.font = `bold ${fs(0.012)}px monospace`; ctx.textAlign = 'left';
+  ctx.fillText('101.325 kPa', plotL + 6, plotT + 14);
+  const zoomed = !(view.tMin === PC.tMin && view.tMax === PC.tMax && view.hrMin === PC.hrMin && view.hrMax === PC.hrMax);
+  if (zoomed) {
+    const zx = (PC.tMax - PC.tMin) / (view.tMax - view.tMin);
+    ctx.fillStyle = 'rgba(59,158,255,0.85)';
+    ctx.fillText(`⊕ ${zx.toFixed(1)}× — scroll/pinch to zoom · drag to pan · dbl-click to reset`, plotL + 6, plotT + 28);
+  }
 }
 
+(function attachChartInteractions() {
+  const canvas = els.canvas;
+  function localXY(e) { const r = canvas.getBoundingClientRect(); const cx = (e.touches ? e.touches[0].clientX : e.clientX) - r.left; const cy = (e.touches ? e.touches[0].clientY : e.clientY) - r.top; return [cx, cy]; }
+  canvas.addEventListener('wheel', e => { e.preventDefault(); const [px, py] = localXY(e); zoomAt(px, py, e.deltaY < 0 ? 0.88 : 1 / 0.88); }, { passive: false });
+
+  let dragging = false, lastPx = 0, lastPy = 0;
+  canvas.addEventListener('mousedown', e => { dragging = true; [lastPx, lastPy] = localXY(e); canvas.classList.add('grabbing'); });
+  window.addEventListener('mousemove', e => {
+    if (!dragging || !lastGeom) return;
+    const r = canvas.getBoundingClientRect(); const px = e.clientX - r.left, py = e.clientY - r.top;
+    const { W, H, pad } = lastGeom;
+    const dT = (px - lastPx) / (W - pad.l - pad.r) * (view.tMax - view.tMin);
+    const dH = (py - lastPy) / (H - pad.t - pad.b) * (view.hrMax - view.hrMin);
+    view.tMin -= dT; view.tMax -= dT; view.hrMin += dH; view.hrMax += dH;
+    lastPx = px; lastPy = py; drawChart();
+  });
+  window.addEventListener('mouseup', () => { dragging = false; canvas.classList.remove('grabbing'); });
+  canvas.addEventListener('dblclick', e => { e.preventDefault(); resetView(); drawChart(); });
+
+  let pinchDist = 0, pinchMid = null, touchPan = null;
+  function touchDistance(e) { const a = e.touches[0], b = e.touches[1]; return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); }
+  function touchMidpoint(e) { const r = canvas.getBoundingClientRect(); const a = e.touches[0], b = e.touches[1]; return [((a.clientX + b.clientX) / 2) - r.left, ((a.clientY + b.clientY) / 2) - r.top]; }
+  canvas.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) { e.preventDefault(); pinchDist = touchDistance(e); pinchMid = touchMidpoint(e); }
+    else if (e.touches.length === 1) { touchPan = localXY(e); }
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    if (e.touches.length === 2) {
+      e.preventDefault(); const d = touchDistance(e);
+      if (pinchDist > 0 && pinchMid) zoomAt(pinchMid[0], pinchMid[1], pinchDist / d);
+      pinchDist = d; pinchMid = touchMidpoint(e);
+    } else if (e.touches.length === 1 && touchPan && lastGeom) {
+      e.preventDefault();
+      const r = canvas.getBoundingClientRect(); const px = e.touches[0].clientX - r.left, py = e.touches[0].clientY - r.top;
+      const { W, H, pad } = lastGeom;
+      const dT = (px - touchPan[0]) / (W - pad.l - pad.r) * (view.tMax - view.tMin);
+      const dH = (py - touchPan[1]) / (H - pad.t - pad.b) * (view.hrMax - view.hrMin);
+      view.tMin -= dT; view.tMax -= dT; view.hrMin += dH; view.hrMax += dH;
+      touchPan = [px, py]; drawChart();
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchend', e => { if (e.touches.length === 0) { pinchDist = 0; touchPan = null; } });
+
+  document.getElementById('zoom-in').onclick = () => zoomCenter(0.8);
+  document.getElementById('zoom-out').onclick = () => zoomCenter(1 / 0.8);
+  document.getElementById('zoom-reset').onclick = () => { resetView(); drawChart(); };
+})();
+
+resetView();
 syncUI();
 drawChart();
 window.addEventListener('resize', drawChart);
