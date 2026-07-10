@@ -316,6 +316,21 @@
   /* SLA compliance chips on the Current/Target headline */
   .cr-slachip { margin-top:5px; }
   .cr-slachip .badge { font-size:.6rem; padding:2px 7px; }
+
+  /* ── Install-app banner (PWA) ── */
+  .install-banner { display:none; align-items:center; gap:12px; margin:0 -16px 16px; padding:10px 16px;
+    background:linear-gradient(135deg,rgba(0,169,206,.16),rgba(0,169,206,.06)); border-bottom:1px solid rgba(0,169,206,.35); }
+  .install-banner.show { display:flex; }
+  .install-icon { width:34px; height:34px; border-radius:8px; flex:none; }
+  .install-copy { flex:1; min-width:0; }
+  .install-title { font-size:.82rem; font-weight:700; color:#fff; }
+  .install-sub { font-size:.68rem; color:#9db8d0; margin-top:1px; }
+  .install-actions { display:flex; gap:8px; flex:none; align-items:center; }
+  .install-btn { padding:7px 14px; border-radius:6px; border:none; background:var(--stream-teal); color:#062a33; font-size:.78rem; font-weight:700; font-family:var(--sans); cursor:pointer; white-space:nowrap; }
+  .install-btn:hover { filter:brightness(1.08); }
+  .install-dismiss { background:none; border:none; color:var(--muted); font-size:1rem; cursor:pointer; padding:2px 6px; line-height:1; }
+  .install-dismiss:hover { color:var(--text); }
+  @media (max-width:480px) { .install-sub { display:none; } }
 </style>
 </head>
 <body>
@@ -327,6 +342,18 @@
   </div>
   <h1 style="color:#fff; margin-bottom:2px;">Hall Environment Planner</h1>
   <p style="color:#9db8d0; font-size:.72rem; margin:0;">Plan temperature &amp; humidity moves within SLA · capability-aware timing · ASHRAE psychrometrics</p>
+</div>
+
+<div class="install-banner" id="install-banner">
+  <img class="install-icon" src="icon-192.png" alt="">
+  <div class="install-copy">
+    <div class="install-title" id="install-title">Install this app</div>
+    <div class="install-sub" id="install-sub">Works offline · opens fullscreen like a native app</div>
+  </div>
+  <div class="install-actions">
+    <button class="install-btn" id="install-go">Install</button>
+    <button class="install-dismiss" id="install-dismiss" title="Dismiss" aria-label="Dismiss">✕</button>
+  </div>
 </div>
 
 <div class="layout">
@@ -3374,6 +3401,67 @@ renderScenarios();
 </footer>
 <script>
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) { navigator.serviceWorker.register('./sw.js').catch(() => {}); }
+
+// ════════════════════════════════════════════════════════════
+//  INSTALL-APP BANNER — surfaces the PWA install prompt instead of
+//  relying on the browser's easy-to-miss address-bar icon. Chrome/Edge/
+//  Android fire `beforeinstallprompt`; iOS Safari never does (no
+//  programmatic install API there), so it gets its own instructions.
+//  Dismissal is remembered for 30 days so the banner doesn't nag.
+// ════════════════════════════════════════════════════════════
+(function initInstallBanner() {
+  if (!location.protocol.startsWith('http')) return; // file:// — dev preview, not installable
+  const DISMISS_KEY = 'sdc_psychro_install_dismissed_v1';
+  const DISMISS_DAYS = 30;
+
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (isStandalone) return; // already installed / running as the installed app
+
+  function recentlyDismissed() {
+    try {
+      const t = +localStorage.getItem(DISMISS_KEY);
+      return t && (Date.now() - t) < DISMISS_DAYS * 86400000;
+    } catch (e) { return false; }
+  }
+  function dismiss() {
+    try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch (e) {}
+    hide();
+  }
+  const banner = document.getElementById('install-banner');
+  function show() { if (banner) banner.classList.add('show'); }
+  function hide() { if (banner) banner.classList.remove('show'); }
+  if (!banner || recentlyDismissed()) return;
+
+  document.getElementById('install-dismiss').addEventListener('click', dismiss);
+
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+
+  if (isIOS) {
+    // No beforeinstallprompt on iOS — show the manual Share-sheet steps.
+    document.getElementById('install-title').textContent = 'Add to Home Screen';
+    document.getElementById('install-sub').textContent = 'Tap Share ⬆ then "Add to Home Screen" — opens fullscreen, works offline';
+    document.getElementById('install-go').style.display = 'none';
+    show();
+    return;
+  }
+
+  // Chromium path: capture the native prompt, fire it from OUR button (the
+  // browser only allows calling .prompt() from a user gesture on the saved event).
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    show();
+  });
+  document.getElementById('install-go').addEventListener('click', async () => {
+    if (!deferredPrompt) { hide(); return; }
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    hide();
+  });
+  window.addEventListener('appinstalled', hide);
+})();
 </script>
 </body>
 </html>
