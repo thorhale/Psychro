@@ -111,6 +111,8 @@
   .ramp-reco .ramp-v { font-size:1rem; color:var(--accent); }
   .ramp-reco.ramp-warn .ramp-v { color:var(--warn); }
   .ramp-bind { font-size:.66rem; color:var(--muted); font-weight:400; }
+  .load-advisory { border-left:3px solid var(--accent); }
+  .load-big { font-size:1rem; color:var(--accent); }
   .ramp-foot { margin-top:8px; padding-top:8px; border-top:1px solid var(--border); font-size:.72rem; font-family:var(--sans); line-height:1.4; }
   .cap-note { margin-top:12px; padding:10px 12px; border-radius:6px; background:rgba(0,169,206,.08); border-left:3px solid var(--stream-teal); font-size:.76rem; color:#cfe0ee; line-height:1.5; }
   .cap-note strong { color:#fff; }
@@ -442,6 +444,8 @@
     <button class="leg-item" data-vis="SLA"><span class="leg-line" style="background:rgba(255,255,255,.7);border-top:2px dashed rgba(255,255,255,.7)"></span>SLA</button>
     <button class="leg-item" data-vis="plan"><span class="leg-line" style="background:#ff6ef0"></span>A→B</button>
     <button class="leg-item" data-vis="timepts"><span class="leg-dot" style="background:#ff6ef0;border:1.5px solid #000"></span>Time pts</button>
+    <button class="leg-item" data-vis="specvol"><span class="leg-line" style="background:rgba(210,180,120,.9)"></span>v m³/kg</button>
+    <button class="leg-item" data-vis="enthalpy"><span class="leg-line" style="background:rgba(170,140,230,.9)"></span>h kJ/kg</button>
   </div>
   <div class="legend-hint">Tap a legend item to show / hide it · Time pts are pacing checkpoints, not thermal trajectories · <button class="leg-allnone" id="leg-all">All</button> <button class="leg-allnone" id="leg-none">None</button></div>
 </div>
@@ -542,9 +546,24 @@ const vaporPressure = (tc, rh) => satPressure(tc) * rh / 100;
 // RH back-out from vapor pressure
 const rhFromVapor = (tc, pw) => (pw / satPressure(tc)) * 100;
 
-// ── ASHRAE Eq. 20: humidity ratio (kg/kg), needs total pressure p ──
+// ── Water-vapor enhancement factor f(T,P) — the real-gas (ASHRAE RP-1485)
+//    correction the ideal humidity-ratio formula omits. Fit to CoolProp
+//    HAPropsSI over T 0–50°C, P 65–102 kPa. Brings humidity ratio in line with
+//    the ASHRAE psychrometric table / CoolProp to <0.05% inside the envelope
+//    (was ~0.5% low at the hot-humid extreme). f ranges ~1.004–1.005. ──
+function enhancementFactor(tc, p) {
+  return 1.003934867 + 2.610455767e-5 * tc + 3.38547897e-5 * (p - 101.325)
+       - 1.289705185e-7 * tc * (p - 101.325);
+}
+// ── ASHRAE Eq. 20: humidity ratio (kg/kg), needs total pressure p. The
+//    enhancement factor is applied to the water partial pressure; f is taken
+//    at pw's saturation temperature (= dry-bulb at saturation, dew point
+//    otherwise — the residual is <0.02% since f barely varies with T). ──
 function humidityRatio(pw, p) {
-  return 0.621945 * pw / (p - pw); // kg/kg
+  if (pw <= 0) return 0;
+  const te = dewPoint(pw);                          // temp at which pw is p_ws
+  const Pw = enhancementFactor(te != null ? te : 0, p) * pw;   // enhanced partial pressure
+  return 0.621945 * Pw / (p - Pw); // kg/kg
 }
 // g/kg convenience
 const humidityRatioG = (pw, p) => humidityRatio(pw, p) * 1000;
@@ -830,7 +849,7 @@ const state = {
   bTemp: 87, bRH: 28,
   showEnvelopes: true,
   // Per-boundary visibility — each can be toggled independently from the legend.
-  visible: { Rec:true, A1:true, A2:true, A3:true, A4:true, SLA:true, plan:true, timepts:true },
+  visible: { Rec:true, A1:true, A2:true, A3:true, A4:true, SLA:true, plan:true, timepts:true, specvol:true, enthalpy:false },
 
   tempUnit: 'F',   // 'F' | 'C' | 'K' — display only; default Fahrenheit
 
@@ -838,7 +857,7 @@ const state = {
   //    and installed plant (capabilities + rates). Separate from the customer
   //    SLAs below, which are pure contracts evaluated inside this hall.
   hall: {
-    siteName: 'Goodyear, AZ', elevFt: 1066, hallVolFt3: null,
+    siteName: 'Goodyear, AZ', elevFt: 1066, hallVolFt3: null, airflowCfm: null,
     canHeat: false, canDehumidify: false, canHumidify: false,
     rateCoolF: null, rateWarmF: null, rateDehumLb: null, rateHumLb: null,
     calc: {},
@@ -870,7 +889,7 @@ function activeElevFt() { return state.hall.elevFt ?? 0; }
 // With NEITHER: RH is locked to temp on the fixed-W line (move temp, RH follows).
 // With ONE: RH is bounded on one side by the W-line (asymmetric control).
 // Fields that belong to the physical HALL, not the customer contract.
-const HALL_KEYS = ['siteName','elevFt','hallVolFt3','canHeat','canDehumidify',
+const HALL_KEYS = ['siteName','elevFt','hallVolFt3','airflowCfm','canHeat','canDehumidify',
   'canHumidify','rateCoolF','rateWarmF','rateDehumLb','rateHumLb','calc'];
 
 // Ensure the hall object has every field with a sane default.
@@ -878,6 +897,7 @@ function normalizeHall(h) {
   if (h.siteName === undefined) h.siteName = '';
   if (h.elevFt === undefined || h.elevFt === null) h.elevFt = 0;
   if (h.hallVolFt3 === undefined) h.hallVolFt3 = null;
+  if (h.airflowCfm === undefined) h.airflowCfm = null;
   ['canHeat','canDehumidify','canHumidify'].forEach(k => { if (h[k] === undefined) h[k] = false; });
   ['rateCoolF','rateWarmF','rateDehumLb','rateHumLb'].forEach(k => { if (h[k] === undefined) h[k] = null; });
   if (h.calc === undefined || h.calc === null) h.calc = {};
@@ -964,19 +984,24 @@ document.getElementById('chip-elev-input').addEventListener('input', function() 
 function currentW() {
   return humidityRatio(vaporPressure(fToC(state.aTemp), state.aRH), state.pressure);
 }
-// RH (%) at a given °F on a fixed-W line.
+// RH (%) at a given °F on a fixed-W line. Inverts the enhanced humidity ratio:
+// the recovered partial pressure carries the enhancement factor, so divide it
+// back out before comparing to the (unenhanced) saturation pressure.
 function rhFromW_F(tempF, Wkg) {
   const tc = fToC(tempF);
-  const pw = Wkg * state.pressure / (0.621945 + Wkg);
+  const pwEff = Wkg * state.pressure / (0.621945 + Wkg);   // = f · true partial pressure
+  const pw = pwEff / enhancementFactor(tc, state.pressure);
   return Math.min(100, Math.max(0, pw / satPressure(tc) * 100));
 }
 // Temp (°F) that yields a given RH on a fixed-W line (binary search on satP).
+// f depends on the search temperature, so evaluate it at each candidate.
 function tempForW_RH_F(Wkg, rh) {
-  const pw = Wkg * state.pressure / (0.621945 + Wkg);
-  const targetSat = pw / (rh / 100);           // satP needed at this RH
+  const pwEff = Wkg * state.pressure / (0.621945 + Wkg);   // = f · true partial pressure
   let lo = -40, hi = 95;                         // °C search bounds
   for (let i = 0; i < 60; i++) {
     const m = (lo + hi) / 2;
+    const pw = pwEff / enhancementFactor(m, state.pressure);
+    const targetSat = pw / (rh / 100);           // satP needed at this RH & temp
     if (satPressure(m) < targetSat) lo = m; else hi = m;
   }
   return cToF((lo + hi) / 2);
@@ -1268,7 +1293,8 @@ function drawChart() {
   // in humidity ratio (up), so the corners bound the range reliably.
   const rhAtCorner = (tc, hrG) => {
     const Wkg = Math.max(0, hrG) / 1000;
-    const pw = Wkg * p / (0.621945 + Wkg);
+    const pwEff = Wkg * p / (0.621945 + Wkg);
+    const pw = pwEff / enhancementFactor(tc, p);
     return Math.min(100, Math.max(0, pw / satPressure(tc) * 100));
   };
   const corners = [
@@ -1356,6 +1382,57 @@ function drawChart() {
         ctx.font = `${fs(0.0098)}px sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         haloText(ctx, `${wb.toFixed(wbDec)}°wb`, spot.x, spot.y, 'rgba(150,210,150,0.85)', spot.angle);
+      }
+    }
+  }
+
+  // Constant specific-volume iso-lines (m³/kg dry air) — ASHRAE Eq. 26 solved
+  // for W at fixed v:  W = (v·p/(Rda·T) − 1) / 1.607858.  Steeper than the RH
+  // curves, so they read as a distinct family. Toggleable via the legend.
+  if (state.visible.specvol) {
+    const Rda = 0.287042;
+    ctx.strokeStyle = 'rgba(210,180,120,0.22)'; ctx.lineWidth = 0.6;
+    for (let v = 0.74; v <= 1.02 + 1e-9; v += 0.02) {
+      ctx.beginPath(); let s = false; const pxPts = [];
+      const tStepV = (drawTmax - drawTmin) / 200;
+      for (let t = drawTmin; t <= drawTmax; t += tStepV) {
+        const Tk = t + 273.15;
+        const Wg = ((v * p / (Rda * Tk)) - 1) / 1.607858 * 1000; // g/kg
+        if (Wg < -0.5) continue;
+        const [x, y] = xy(t, Math.max(0, Wg));
+        pxPts.push([x, y]);
+        if (!s) { ctx.moveTo(x, y); s = true; } else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      if (s) {
+        const spot = labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB);
+        if (spot) { ctx.font = `${fs(0.0092)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          haloText(ctx, `${v.toFixed(2)} m³/kg`, spot.x, spot.y, 'rgba(216,192,136,0.9)', spot.angle); }
+      }
+    }
+  }
+
+  // Constant-enthalpy iso-lines (kJ/kg dry air) — ASHRAE Eq. 30 solved for W at
+  // fixed h:  W = (h − 1.006·t) / (2501 + 1.86·t).  Nearly parallel to the
+  // wet-bulb lines (that's the psychrometrics), so OFF by default; legend-toggle.
+  if (state.visible.enthalpy) {
+    ctx.strokeStyle = 'rgba(170,140,230,0.24)'; ctx.lineWidth = 0.6;
+    for (let hh = 0; hh <= 140; hh += 10) {
+      ctx.beginPath(); let s = false; const pxPts = [];
+      const tStepH = (drawTmax - drawTmin) / 200;
+      for (let t = drawTmin; t <= drawTmax; t += tStepH) {
+        const Wg = (hh - 1.006 * t) / (2501 + 1.86 * t) * 1000; // g/kg
+        if (Wg < -0.5) continue;
+        const [x, y] = xy(t, Math.max(0, Wg));
+        pxPts.push([x, y]);
+        if (!s) { ctx.moveTo(x, y); s = true; } else ctx.lineTo(x, y);
+        if (Wg > drawHrMax) break;
+      }
+      ctx.stroke();
+      if (s) {
+        const spot = labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB);
+        if (spot) { ctx.font = `${fs(0.0092)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          haloText(ctx, `${hh} kJ/kg`, spot.x, spot.y, 'rgba(184,166,232,0.9)', spot.angle); }
       }
     }
   }
@@ -1733,6 +1810,38 @@ function updateControlReadout() {
     whyNote = `<div class="why-note why-cold">⚠ Approaching the lower temperature edge — over-cooling spends energy with no reliability benefit.</div>`;
   }
 
+  // ── Cooling-load estimate (needs supply airflow) ──────────────
+  // Load to condition the supply airstream from Current(entering) → Target(leaving):
+  //   ṁ_da   = V̇ / v(Current)                        [kg dry air/s]
+  //   Q_total  = ṁ_da · (h_A − h_B)                    [kW]  (+ = cooling / heat removed)
+  //   Q_sens   = ṁ_da · (1.006 + 1.86·W̄) · (T_A − T_B) [kW]
+  //   Q_latent = Q_total − Q_sens ;  SHR = Q_sens / Q_total ; 1 ton = 3.51685 kW
+  let loadHtml = '';
+  const cfm = state.hall.airflowCfm;
+  if (cfm > 0) {
+    const tcA = fToC(A.tempF), tcB = fToC(B.tempF);
+    const WAkg = A.W / 1000, WBkg = B.W / 1000;
+    const vA = specificVolume(tcA, WAkg, p);              // m³/kg dry air at Current
+    const mda = (cfm * 0.000471947) / vA;                // kg dry air/s  (1 CFM = 4.71947e-4 m³/s)
+    const qTot = mda * (A.h - B.h);                      // kW · + = cooling
+    const qSens = mda * (1.006 + 1.86 * (WAkg + WBkg) / 2) * (tcA - tcB);
+    const qLat = qTot - qSens;
+    const tons = qTot / 3.51685;
+    if (Math.abs(qTot) > 0.005) {
+      const mode = qTot >= 0 ? 'Cooling' : 'Heating';
+      const shr = Math.abs(qTot) > 0.01 ? Math.abs(qSens / qTot) : null;
+      const kw = v => `${Math.abs(v).toFixed(1)} kW`;
+      loadHtml = `
+      <div class="ramp-advisory load-advisory">
+        <div class="ramp-row"><span class="ramp-k">${mode} load</span><span class="ramp-v load-big">${kw(qTot)} · ${Math.abs(tons).toFixed(1)} tons</span></div>
+        <div class="ramp-row"><span class="ramp-k">Sensible · latent</span><span class="ramp-v">${kw(qSens)} · ${kw(qLat)}</span></div>
+        ${shr != null ? `<div class="ramp-row"><span class="ramp-k">Sensible heat ratio</span><span class="ramp-v">${shr.toFixed(2)}</span></div>` : ''}
+        <div class="ramp-row"><span class="ramp-k">Dry-air mass flow</span><span class="ramp-v">${mda.toFixed(2)} kg/s</span></div>
+        <div class="ramp-foot">At ${cfm.toLocaleString()} CFM · load to bring the airstream from Current → Target (SHR = sensible ÷ total).</div>
+      </div>`;
+    }
+  }
+
   el.innerHTML = `
     <div class="cr-lede">${lede}</div>
     <div class="cr-headline-pair">
@@ -1745,6 +1854,7 @@ function updateControlReadout() {
     <div class="cr-note">RH ${verb} ${A.rh.toFixed(0)}% → ${B.rh.toFixed(0)}% · ${note}</div>
     ${whyNote}
     ${rampHtml}
+    ${loadHtml}
     ${capNote}
     <div class="detail-grid${openCls}">
       ${detailCol('● Current', A, '#d4d400')}
@@ -1842,6 +1952,7 @@ function renderHallEditor() {
       <div class="sla-caps-label">Plant capability &amp; rates — what this hall can actually do</div>
       <div class="cap-explain">Temperature rates: use commissioning-observed °F/hr, or derive a physics estimate below (IT load, excess sensible capacity, thermal mass). Moisture is first-principles: hall air mass × ΔW ÷ equipment lb/hr. Enter NET capacity (nameplate minus steady makeup-air latent load). Blank = not plant-limited; the SLA ramp limit still governs.</div>
       <div class="cap-line"><span class="cap-name">Hall air volume <span class="cap-hint">for the moisture mass balance</span></span><input type="number" id="hall-vol" class="cap-rate" value="${state.hall.hallVolFt3 ?? ''}" placeholder="—" step="1000" min="0"><span class="cap-u">ft³</span></div>
+      <div class="cap-line"><span class="cap-name">Supply airflow <span class="cap-hint">for the cooling-load estimate</span></span><input type="number" id="hall-cfm" class="cap-rate" value="${state.hall.airflowCfm ?? ''}" placeholder="—" step="1000" min="0"><span class="cap-u">CFM</span></div>
       <div class="cap-line"><span class="cap-name">Cooling</span><input type="number" id="rate-cool" class="cap-rate" value="${state.hall.rateCoolF ?? ''}" placeholder="—" step="0.5" min="0"><span class="cap-u">°F/hr</span></div>
       <div class="cap-line"><span class="cap-name">Warming <span class="cap-hint">reheat or IT load</span></span><input type="number" id="rate-warm" class="cap-rate" value="${state.hall.rateWarmF ?? ''}" placeholder="—" step="0.5" min="0"><span class="cap-u">°F/hr</span></div>
       <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-dehum" ${state.hall.canDehumidify?'checked':''}> Dehumidify</label><input type="number" id="rate-dehum" class="cap-rate" value="${state.hall.rateDehumLb ?? ''}" placeholder="—" step="5" min="0" ${state.hall.canDehumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
@@ -1998,6 +2109,7 @@ function renderHallEditor() {
   rateWire('rate-dehum', 'rateDehumLb');
   rateWire('rate-hum',   'rateHumLb');
   rateWire('hall-vol',   'hallVolFt3');
+  rateWire('hall-cfm',   'airflowCfm');
 
   // ── Rate calculator: derive all four plant rates from equipment specs ──
   // Temperature: Q[kW] / (C_air + C_equipment), where C_air = m_da·cp_moist
@@ -2199,7 +2311,7 @@ document.getElementById('sla-del').addEventListener('click', () => {
 
 // "All" / "None" quick controls for the legend (show/hide every boundary).
 function setAllVisible(on) {
-  ['Rec','A1','A2','A3','A4','SLA','plan','timepts'].forEach(k => state.visible[k] = on);
+  ['Rec','A1','A2','A3','A4','SLA','plan','timepts','specvol','enthalpy'].forEach(k => state.visible[k] = on);
   state.showEnvelopes = on;
   syncLegend(); update();
 }
@@ -2496,20 +2608,22 @@ function runSelfTest() {
   T('p(1000 m)',   pressureFromAltitude(3280.84), 89.875, 0.05, 'kPa');
   T('p(2000 m)',   pressureFromAltitude(6561.68), 79.495, 0.05, 'kPa');
 
-  // 3. Humidity ratio (g/kg) — ASHRAE Eq.20, saturation at sea level
+  // 3. Humidity ratio (g/kg) — saturation at sea level, validated against the
+  //    ASHRAE Fundamentals Table 2 / CoolProp RP-1485 real-gas values (these are
+  //    the enhancement-factor-corrected values, NOT the ideal Eq.20 numbers).
   const p0 = 101.325;
-  T('Ws(20°C,sat)', humidityRatioG(satPressure(20), p0), 14.695, 0.02, 'g/kg');
-  T('Ws(25°C,sat)', humidityRatioG(satPressure(25), p0), 20.081, 0.02, 'g/kg');
-  T('Ws(30°C,sat)', humidityRatioG(satPressure(30), p0), 27.203, 0.03, 'g/kg');
+  T('Ws(20°C,sat)', humidityRatioG(satPressure(20), p0), 14.760, 0.02, 'g/kg');
+  T('Ws(25°C,sat)', humidityRatioG(satPressure(25), p0), 20.173, 0.02, 'g/kg');
+  T('Ws(30°C,sat)', humidityRatioG(satPressure(30), p0), 27.333, 0.03, 'g/kg');
 
   // 4. Dew point (°C) — round-trip + known points
   T('dp(25°C,50%)', dewPoint(vaporPressure(25,50)), 13.89, 0.12, '°C');
   T('dp(30°C,60%)', dewPoint(vaporPressure(30,60)), 21.40, 0.12, '°C');
   T('dp(20°C,sat)=20', dewPoint(satPressure(20)), 20.00, 0.05, '°C');
 
-  // 5. Enthalpy (kJ/kg) — ASHRAE Eq.30
+  // 5. Enthalpy (kJ/kg) — ASHRAE Eq.30 (uses the enhanced W; CoolProp Hda≈50.42)
   const W25_50 = humidityRatio(vaporPressure(25,50), p0);
-  T('h(25°C,50%)', enthalpy(25, W25_50), 50.32, 0.1, 'kJ/kg');
+  T('h(25°C,50%)', enthalpy(25, W25_50), 50.43, 0.1, 'kJ/kg');
 
   // 6. Specific volume (m³/kg) — ASHRAE Eq.26
   T('v(25°C,50%)', specificVolume(25, W25_50, p0), 0.8580, 0.001, 'm³/kg');
