@@ -289,6 +289,33 @@
 
   .formula-note { font-size:.63rem; color:var(--muted); line-height:1.5; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
   .formula-note code { font-family:var(--mono); color:var(--accent2); background:rgba(59,158,255,.08); padding:1px 4px; border-radius:3px; }
+
+  /* ── Desktop layout: controls left, chart pinned right ── */
+  .layout { max-width:1720px; margin:0 auto; }
+  .footer-bar, .selftest-panel { max-width:1720px; margin-left:auto; margin-right:auto; }
+  @media (min-width:1120px) {
+    .layout { display:grid; grid-template-columns:minmax(420px,540px) minmax(0,1fr); gap:14px; align-items:start; }
+    .col-right { position:sticky; top:12px; max-height:calc(100vh - 24px); overflow-y:auto; scrollbar-width:thin; }
+    .col-right .card:last-child { margin-bottom:0; }
+  }
+
+  /* ── Chart hover inspector: crosshair + live psychrometric readout ── */
+  .psych-wrap { position:relative; }
+  .ch-line { position:absolute; pointer-events:none; background:rgba(255,255,255,.22); display:none; z-index:4; }
+  #ch-vline { width:1px; }
+  #ch-hline { height:1px; }
+  #chart-tip { position:absolute; pointer-events:none; display:none; z-index:5; min-width:158px;
+    background:rgba(13,27,42,.95); border:1px solid var(--border); border-left:3px solid var(--accent);
+    border-radius:8px; padding:8px 11px; font-family:var(--mono); font-size:.7rem; line-height:1.6;
+    color:var(--text); box-shadow:0 6px 18px rgba(0,0,0,.5); }
+  #chart-tip .tt-head { font-size:.82rem; font-weight:700; color:var(--accent); margin-bottom:2px; }
+  #chart-tip .tt-row { display:flex; justify-content:space-between; gap:14px; }
+  #chart-tip .tt-k { color:var(--muted); }
+  #chart-tip .tt-sla { margin-top:4px; padding-top:4px; border-top:1px solid var(--border); font-weight:700; }
+
+  /* SLA compliance chips on the Current/Target headline */
+  .cr-slachip { margin-top:5px; }
+  .cr-slachip .badge { font-size:.6rem; padding:2px 7px; }
 </style>
 </head>
 <body>
@@ -301,6 +328,9 @@
   <h1 style="color:#fff; margin-bottom:2px;">Hall Environment Planner</h1>
   <p style="color:#9db8d0; font-size:.72rem; margin:0;">Plan temperature &amp; humidity moves within SLA · capability-aware timing · ASHRAE psychrometrics</p>
 </div>
+
+<div class="layout">
+<div class="col-left">
 
 <!-- DATA HALL — the physical facility (site, elevation, volume, plant) -->
 <details class="card sect">
@@ -429,6 +459,9 @@
 </div>
 </details>
 
+</div><!-- /col-left -->
+<div class="col-right">
+
 <!-- CHART CARD -->
 <div class="card">
   <div class="chart-head">
@@ -442,8 +475,8 @@
       <button class="zoom-btn" id="zoom-reset" title="Reset view">⟲ Fit</button>
     </div>
   </div>
-  <div class="zoom-hint">Scroll / pinch to zoom · drag to pan · double-click to reset. Chart zoom is independent of the page.</div>
-  <div class="psych-wrap"><canvas id="psychCanvas"></canvas></div>
+  <div class="zoom-hint">Scroll / pinch to zoom · drag to pan · double-click to reset · hover to inspect any point · <strong>Shift-click sets Target</strong> · <strong>Alt-click sets Current</strong>.</div>
+  <div class="psych-wrap"><canvas id="psychCanvas"></canvas><div class="ch-line" id="ch-vline"></div><div class="ch-line" id="ch-hline"></div><div id="chart-tip"></div></div>
   <div class="legend" id="legend">
     <button class="leg-item" data-vis="Rec"><span class="leg-line" style="background:rgba(255,255,255,.4);border-top:2px dashed rgba(255,255,255,.4)"></span>Rec.</button>
     <button class="leg-item" data-vis="A1"><span class="leg-line" style="background:#3fb950"></span>A1</button>
@@ -485,6 +518,9 @@
   </div>
 </div>
 </details>
+
+</div><!-- /col-right -->
+</div><!-- /layout -->
 
 <div class="footer-bar">
   <span class="selftest-badge" id="selftest-badge">running self-test…</span>
@@ -1054,6 +1090,16 @@ function tempForW_RH_F(Wkg, rh) {
     if (satPressure(m) < targetSat) lo = m; else hi = m;
   }
   return cToF((lo + hi) / 2);
+}
+
+// RH (%) and vapor pressure at an arbitrary chart point (t °C, W g/kg) —
+// inverse of the enhanced humidity ratio. Powers the hover inspector and
+// the chart click-to-set controls.
+function rhAtPoint(tc, hrG) {
+  const Wkg = Math.max(0, hrG) / 1000;
+  const pwEff = Wkg * state.pressure / (0.621945 + Wkg);
+  const pw = pwEff / enhancementFactor(tc, state.pressure);
+  return { rh: pw / satPressure(tc) * 100, pw };
 }
 
 const clampF  = f => Math.max(32, Math.min(130, f));  // 32°F floor (chart anchored at freezing) · 130°F ceiling
@@ -1629,7 +1675,9 @@ function drawChart() {
 
   // Pressure stamp + zoom indicator (top-left)
   ctx.fillStyle='rgba(240,165,0,0.7)'; ctx.font=`bold ${fs(0.012)}px monospace`; ctx.textAlign='left';
-  ctx.fillText(`${(state.hall.elevFt ?? 0).toLocaleString()} ft · ${p.toFixed(2)} kPa`, pad.l+6, pad.t+14);
+  const trunc = (s, n) => { s = s || ''; return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+  const stampCtx = [trunc(state.hall.name, 22), trunc(state.slaProfiles[state.activeSla].name, 22)].filter(Boolean).join(' · ');
+  ctx.fillText(`${stampCtx}${stampCtx ? ' · ' : ''}${(state.hall.elevFt ?? 0).toLocaleString()} ft · ${p.toFixed(2)} kPa`, pad.l+6, pad.t+14);
   const zoomed = !(view.tMin===PC.tMin && view.tMax===PC.tMax && view.hrMin===PC.hrMin && view.hrMax===PC.hrMax);
   if (zoomed) {
     const zx = (PC.tMax-PC.tMin)/(view.tMax-view.tMin);
@@ -1902,14 +1950,21 @@ function updateControlReadout() {
     }
   }
 
+  // Live SLA verdicts for both points — the at-a-glance compliance truth.
+  const chkA = checkSLA(state.aTemp, state.aRH, p);
+  const chkB = checkSLA(state.bTemp, state.bRH, p);
+  const slaChip = c => `<span class="cr-slachip"><span class="badge ${c.ok ? 'badge-ok' : 'badge-bad'}">${c.ok ? '✓ in SLA' : '✗ ' + c.reason}</span></span>`;
+
   el.innerHTML = `
     <div class="cr-lede">${lede}</div>
     <div class="cr-headline-pair">
       <div class="cr-point"><span class="cr-ptlabel" style="color:#d4d400">CURRENT</span>
-        <span class="cr-big">${dispTs(A.tempF)}${U}</span><span class="cr-sep">·</span><span class="cr-big">${A.rh.toFixed(0)}%</span></div>
+        <span><span class="cr-big">${dispTs(A.tempF)}${U}</span><span class="cr-sep">·</span><span class="cr-big">${A.rh.toFixed(0)}%</span></span>
+        ${slaChip(chkA)}</div>
       <span class="cr-arrow">→</span>
       <div class="cr-point"><span class="cr-ptlabel" style="color:var(--accent)">TARGET</span>
-        <span class="cr-big">${dispTs(B.tempF)}${U}</span><span class="cr-sep">·</span><span class="cr-big ${cls}">${B.rh.toFixed(0)}%</span></div>
+        <span><span class="cr-big">${dispTs(B.tempF)}${U}</span><span class="cr-sep">·</span><span class="cr-big ${cls}">${B.rh.toFixed(0)}%</span></span>
+        ${slaChip(chkB)}</div>
     </div>
     <div class="cr-note">RH ${verb} ${A.rh.toFixed(0)}% → ${B.rh.toFixed(0)}% · ${note}</div>
     ${whyNote}
@@ -2826,11 +2881,63 @@ function centerView() {
     e.preventDefault();
     const [px,py] = localXY(e);
     zoomAt(px, py, e.deltaY < 0 ? 0.88 : 1/0.88);
+    updateHover(px, py);   // keep the inspector in sync with the new view
   }, { passive:false });
 
-  // Drag to pan
-  let dragging=false, lastPx=0, lastPy=0;
-  canvas.addEventListener('mousedown', (e)=>{ dragging=true; [lastPx,lastPy]=localXY(e); canvas.classList.add('grabbing'); });
+  // ── Hover inspector: crosshair + live psychrometric readout ──
+  // Mouse-only (pointer:fine); hidden while dragging or outside the plot rect.
+  const vline = document.getElementById('ch-vline');
+  const hline = document.getElementById('ch-hline');
+  const tip   = document.getElementById('chart-tip');
+  const finePointer = window.matchMedia && matchMedia('(pointer:fine)').matches;
+  function hideHover() {
+    if (vline) vline.style.display = 'none';
+    if (hline) hline.style.display = 'none';
+    if (tip)   tip.style.display = 'none';
+  }
+  function updateHover(px, py) {
+    if (!finePointer || dragging || !lastGeom || !tip) { hideHover(); return; }
+    const { W, H, pad } = lastGeom;
+    if (px < pad.l || px > W - pad.r || py < pad.t || py > H - pad.b) { hideHover(); return; }
+    const [tc, hr] = fromXY(px, py, W, H, pad);
+    const { rh, pw } = rhAtPoint(tc, hr);
+    const p = state.pressure;
+    const tF = cToF(tc);
+    let body;
+    if (rh > 100.001) {
+      body = `<div class="tt-head">${dispTs(tF)}${tLabel()} · fog</div>
+        <div class="tt-row"><span class="tt-k">W</span><span>${hr.toFixed(2)} g/kg</span></div>
+        <div class="tt-sla" style="color:var(--warn)">above saturation — supersaturated</div>`;
+    } else {
+      const dpC = dewPoint(pw);
+      const wbC = wetBulb(tc, rh, p);
+      const h   = enthalpy(tc, Math.max(0, hr) / 1000);
+      const zone = ashraeZone(tc, rh, p);
+      const chk = checkSLA(tF, rh, p);
+      body = `<div class="tt-head">${dispTs(tF)}${tLabel()} · ${rh.toFixed(0)}% RH</div>
+        <div class="tt-row"><span class="tt-k">W</span><span>${hr.toFixed(2)} g/kg</span></div>
+        <div class="tt-row"><span class="tt-k">Dew pt</span><span>${dpC != null ? dispTs(cToF(dpC)) + ' ' + tLabel() : '—'}</span></div>
+        <div class="tt-row"><span class="tt-k">Wet bulb</span><span>${dispTs(cToF(wbC))} ${tLabel()}</span></div>
+        <div class="tt-row"><span class="tt-k">Enthalpy</span><span>${h.toFixed(1)} kJ/kg</span></div>
+        <div class="tt-row"><span class="tt-k">ASHRAE</span><span class="zpill z${zone}">${zone}</span></div>
+        <div class="tt-sla" style="color:${chk.ok ? 'var(--ok)' : 'var(--danger)'}">${chk.ok ? '✓ within SLA' : '✗ ' + chk.reason}</div>`;
+    }
+    tip.innerHTML = body;
+    vline.style.cssText = `display:block; left:${px}px; top:${pad.t}px; height:${H - pad.t - pad.b}px;`;
+    hline.style.cssText = `display:block; top:${py}px; left:${pad.l}px; width:${W - pad.l - pad.r}px;`;
+    tip.style.display = 'block';
+    // flip the tooltip to whichever side of the cursor has room
+    const tw = tip.offsetWidth || 170, th = tip.offsetHeight || 120;
+    tip.style.left = (px + 16 + tw > W ? px - tw - 14 : px + 16) + 'px';
+    tip.style.top  = Math.max(2, Math.min(py - th / 2, H - th - 2)) + 'px';
+  }
+  canvas.addEventListener('mousemove', (e)=>{ const [px,py]=localXY(e); updateHover(px,py); });
+  canvas.addEventListener('mouseleave', hideHover);
+
+  // Drag to pan · a still click (<5px travel) with a modifier SETS a point:
+  // Shift-click places Target, Alt-click places Current — plan by pointing.
+  let dragging=false, lastPx=0, lastPy=0, dragDist=0;
+  canvas.addEventListener('mousedown', (e)=>{ dragging=true; dragDist=0; [lastPx,lastPy]=localXY(e); canvas.classList.add('grabbing'); hideHover(); });
   window.addEventListener('mousemove', (e)=>{
     if(!dragging||!lastGeom) return;
     const r=canvas.getBoundingClientRect();
@@ -2839,9 +2946,23 @@ function centerView() {
     const dT=(px-lastPx)/(W-pad.l-pad.r)*(view.tMax-view.tMin);
     const dH=(py-lastPy)/(H-pad.t-pad.b)*(view.hrMax-view.hrMin);
     view.tMin-=dT; view.tMax-=dT; view.hrMin+=dH; view.hrMax+=dH; // y inverted
+    dragDist += Math.abs(px-lastPx)+Math.abs(py-lastPy);
     lastPx=px; lastPy=py; drawChart();
   });
-  window.addEventListener('mouseup', ()=>{ dragging=false; canvas.classList.remove('grabbing'); });
+  window.addEventListener('mouseup', (e)=>{
+    if (dragging && dragDist < 5 && (e.shiftKey || e.altKey) && lastGeom) {
+      const { W, H, pad } = lastGeom;
+      if (lastPx >= pad.l && lastPx <= W - pad.r && lastPy >= pad.t && lastPy <= H - pad.b) {
+        const [tc, hr] = fromXY(lastPx, lastPy, W, H, pad);
+        const { rh } = rhAtPoint(tc, hr);
+        const tF = cToF(tc);
+        if (e.shiftKey) { state.bTemp = clampTargetF(tF); state.bRH = clampRH(rh); }
+        else            { state.aTemp = clampF(tF);       state.aRH = clampRH(rh); }
+        syncAllControls(); update();
+      }
+    }
+    dragging=false; canvas.classList.remove('grabbing');
+  });
 
   // Double-click reset
   canvas.addEventListener('dblclick', (e)=>{ e.preventDefault(); resetView(); drawChart(); });
@@ -3190,6 +3311,11 @@ applyElevation();
 // Ensure TARGET starts physically on CURRENT's moisture line, then sync controls.
 state.bRH = clampRH(rhFromW_F(state.bTemp, currentW()));
 syncAllControls();
+// On desktop there's room to work with the profile panels open — start the
+// Data Hall and Customer SLA sections expanded (mobile keeps them collapsed).
+if (window.matchMedia && matchMedia('(min-width:1120px)').matches) {
+  document.querySelectorAll('.col-left > details.sect').forEach((d, i) => { if (i < 2) d.open = true; });
+}
 renderSlaTabs();
 renderSlaEditor();
 renderHallTabs();
