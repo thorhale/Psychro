@@ -52,3 +52,25 @@ Installed phones pick up the new version on their next online launch.
 - Saved scenarios and custom cities live on each person's own device (browser
   storage). Use the in-app **Export scenarios** button to hand someone a setup file.
 - No data leaves the phone — the app makes zero network calls after install.
+
+---
+
+## ⛏️ BlockWorld — bonus creative building game
+
+`blockworld/` is a self-contained Minecraft-style creative building game that
+ships alongside this app but is completely independent of it. Fly or walk around
+a blocky world, break and place blocks from a palette of 22 materials, and — the
+twist — open the **📘 Building Suggestions** menu to follow Lego-style,
+step-by-step instructions: glowing "ghost" blocks show exactly where each block
+goes, one layer at a time, until you complete the build.
+
+- **Play it:** open `blockworld/index.html` (serve over http, e.g.
+  `python3 -m http.server` then visit `/blockworld/`).
+- **Controls:** `WASD` move, mouse look, left-click break, right-click place,
+  `1`–`9` / wheel to pick blocks, `E` for all blocks, double-tap `Space` (or `F`)
+  to fly, `B` for build ideas.
+- **Built-in tests:** append `?selftest` to the URL to run the engine's
+  self-checks (shown in the browser console and the tab title).
+- Uses a vendored copy of [three.js](https://threejs.org) (`blockworld/three.module.min.js`,
+  MIT) so it works fully offline, like the rest of this repo. It has its own save
+  slot in browser storage and never touches the planner's data.
