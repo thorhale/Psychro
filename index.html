@@ -163,6 +163,15 @@
   .sla-tab.locked::after { content:' 🔒'; font-size:.6rem; }
   .sla-tab-add { padding:5px 10px; border-radius:5px; border:1px dashed var(--border); background:transparent; color:var(--accent2); font-size:.72rem; font-weight:700; cursor:pointer; font-family:var(--sans); transition:all .12s; white-space:nowrap; }
   .sla-tab-add:hover { border-color:var(--accent2); border-style:solid; background:rgba(59,158,255,.08); }
+  .tab-actions { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-left:auto; }
+  .sla-tab-btn { padding:5px 10px; border-radius:5px; border:1px solid var(--border); background:transparent; color:var(--accent2); font-size:.7rem; font-weight:600; cursor:pointer; font-family:var(--sans); white-space:nowrap; transition:all .12s; }
+  .sla-tab-btn:hover { border-color:var(--accent2); background:rgba(59,158,255,.08); }
+  .sla-tab-btn:disabled { opacity:.35; cursor:not-allowed; }
+  .sla-tab-danger { color:var(--danger); }
+  .sla-tab-danger:hover { border-color:var(--danger); background:rgba(248,81,73,.08); }
+  .hall-filter-row { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+  .hall-filter { display:flex; flex-direction:column; gap:3px; flex:1; min-width:140px; }
+  .hall-filter label { font-size:.62rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
   .sla-editor { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:12px; }
   .sla-field { display:flex; flex-direction:column; gap:4px; }
   .sla-field label { font-size:.65rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
@@ -366,19 +375,23 @@
 <details class="card sect">
   <summary><span class="sect-title">Data Hall</span><span class="sect-sub" id="hall-summary">—</span><span class="sect-chev">▸</span></summary>
   <div class="sect-body">
+    <div class="hall-filter-row">
+      <div class="hall-filter"><label>Location</label><select id="hall-loc-filter" class="sla-select"></select></div>
+      <div class="hall-filter"><label>Building</label><select id="hall-bld-filter" class="sla-select"></select></div>
+    </div>
     <div class="sla-tabs-row">
       <div class="sla-tabs" id="hall-tabs"></div>
-      <button class="sla-tab-add" id="hall-add" title="Add a new hall profile">+ New hall</button>
+      <span class="tab-actions">
+        <button class="sla-tab-add" id="hall-add" title="Add a new hall profile">+ New hall</button>
+        <button class="sla-tab-btn" id="hall-dup" title="Duplicate this hall">⧉ Duplicate</button>
+        <button class="sla-tab-btn sla-tab-danger" id="hall-del" title="Delete this hall">✕ Delete</button>
+        <button class="sla-tab-btn" id="hall-export" title="Export hall profiles to a JSON file">⤓ Export</button>
+        <button class="sla-tab-btn" id="hall-import" title="Import hall profiles from a JSON file">⤒ Import</button>
+        <input type="file" id="hall-file" accept="application/json,.json" style="display:none">
+      </span>
     </div>
     <div class="sla-editor" id="hall-editor"></div>
-    <div class="sla-actions">
-      <button class="sla-btn" id="hall-dup">⧉ Duplicate</button>
-      <button class="sla-btn sla-btn-danger" id="hall-del">Delete this hall</button>
-      <button class="sla-btn" id="hall-export">⤓ Export halls</button>
-      <button class="sla-btn" id="hall-import">⤒ Import halls</button>
-      <input type="file" id="hall-file" accept="application/json,.json" style="display:none">
-    </div>
-    <div class="formula-note">Each hall profile is one physical facility: site, elevation, air volume, installed plant (capabilities + rates), plus its real-world efficiency factor and current capacity derates. Switch tabs to move between buildings / halls. Import merges by hall name (same name replaces, new names append), so colleagues' files add to yours. The customer SLAs below are contracts evaluated inside the active hall at its barometric pressure.</div>
+    <div class="formula-note">Each hall profile is one physical facility: location, building, hall, elevation, air volume, installed plant (capabilities + rates), plus its real-world efficiency factor and current capacity derates. Use the Location and Building selectors to narrow the tabs to one site or building, or leave them on "All" to see every hall. Import merges by hall name (same name replaces, new names append), so colleagues' files add to yours. The customer SLAs below are contracts evaluated inside the active hall at its barometric pressure.</div>
   </div>
 </details>
 
@@ -388,15 +401,15 @@
   <div class="sect-body">
   <div class="sla-tabs-row">
     <div class="sla-tabs" id="sla-tabs"></div>
-    <button class="sla-tab-add" id="sla-add" title="Add a new customer SLA">+ New customer SLA</button>
+    <span class="tab-actions">
+      <button class="sla-tab-add" id="sla-add" title="Add a new customer SLA">+ New SLA</button>
+      <button class="sla-tab-btn sla-tab-danger" id="sla-del" title="Delete this SLA">✕ Delete</button>
+      <button class="sla-tab-btn" id="sla-export" title="Export all SLAs to a JSON file">⤓ Export</button>
+      <button class="sla-tab-btn" id="sla-import" title="Import SLAs from a JSON file">⤒ Import</button>
+      <input type="file" id="sla-file" accept="application/json,.json" style="display:none">
+    </span>
   </div>
   <div class="sla-editor" id="sla-editor"></div>
-  <div class="sla-actions">
-    <button class="sla-btn sla-btn-danger" id="sla-del">Delete this SLA</button>
-    <button class="sla-btn" id="sla-export">⤓ Export all</button>
-    <button class="sla-btn" id="sla-import">⤒ Import</button>
-    <input type="file" id="sla-file" accept="application/json,.json" style="display:none">
-  </div>
   <div class="formula-note">
     SLA boundary = the binding constraint at each temperature: RH-max curve vs. dew-point cap (whichever is lower) on top, RH-min vs. dew-point floor on the bottom. Leave dew-point cap blank for an RH-only box. All boundaries recompute at site pressure. ASHRAE TC 9.9 reference ramp limits: 9°F/hr (5°C/hr) where tape media is present; 36°F/hr (20°C/hr) otherwise.
   </div>
@@ -952,7 +965,7 @@ const state = {
   //    ACTIVE hall. `state.hall` (defined below) is always the active profile.
   hallProfiles: [{
     name: 'PHX · Hall 1',
-    siteName: 'Goodyear, AZ', elevFt: 1066, hallVolFt3: null, airflowCfm: null,
+    siteName: 'Goodyear, AZ', building: '', elevFt: 1066, hallVolFt3: null, airflowCfm: null,
     canHeat: false, canDehumidify: false, canHumidify: false,
     rateCoolF: null, rateWarmF: null, rateDehumLb: null, rateHumLb: null,
     // Efficiency factor (%): predicted fraction of nameplate performance the
@@ -968,6 +981,10 @@ const state = {
     calc: {},
   }],
   activeHall: 0,
+  // Hall-tab view filter: which location / building the tab list is narrowed
+  // to. Empty string = "All". Filters only narrow the visible tabs — the
+  // active hall still drives every calculation.
+  hallView: { loc: '', bld: '' },
   // SLA profiles now carry site identity (name + elevation) AND envelope +
   // ramp limits. The active profile's elevFt drives barometric pressure.
   // Preloaded with real Stream Data Centers campus elevations (ft).
@@ -1008,6 +1025,7 @@ const HALL_KEYS = ['siteName','elevFt','hallVolFt3','airflowCfm','canHeat','canD
 // Ensure the hall object has every field with a sane default.
 function normalizeHall(h) {
   if (h.siteName === undefined) h.siteName = '';
+  if (h.building === undefined) h.building = '';
   if (h.elevFt === undefined || h.elevFt === null) h.elevFt = 0;
   if (h.hallVolFt3 === undefined) h.hallVolFt3 = null;
   if (h.airflowCfm === undefined) h.airflowCfm = null;
@@ -2028,7 +2046,8 @@ function refreshHallSummary() {
   const caps = [h.canDehumidify && 'dehum', h.canHumidify && 'hum'].filter(Boolean).join('+');
   const derated = ['derateCoolPct','derateWarmPct','derateDehumPct','derateHumPct'].some(k => (h[k] ?? 100) < 100);
   const fx = ` · eff ${Math.round(h.effPct ?? 100)}%${derated ? ' · ⚠ reduced capacity' : ''}`;
-  el.textContent = `${h.name || 'Hall'} · ${h.siteName || 'set site'} · ${(h.elevFt ?? 0).toLocaleString()} ft${vol}${caps ? ' · ' + caps : ''}${fx}`;
+  const bld = (h.building || '').trim();
+  el.textContent = `${h.siteName || 'set site'}${bld ? ' · ' + bld : ''} · ${h.name || 'Hall'} · ${(h.elevFt ?? 0).toLocaleString()} ft${vol}${caps ? ' · ' + caps : ''}${fx}`;
 }
 function update() {
   drawChart();
@@ -2074,9 +2093,13 @@ function renderHallEditor() {
   if (curState !== null) opts += '</optgroup>';
 
   hed.innerHTML = `
-    <div class="sla-field name-field">
-      <label>Hall / building name</label>
-      <input type="text" id="hall-name" value="${(state.hall.name||'').replace(/"/g,'&quot;')}" placeholder="e.g. PHX · Building A · Hall 2">
+    <div class="sla-field">
+      <label>Hall name</label>
+      <input type="text" id="hall-name" value="${(state.hall.name||'').replace(/"/g,'&quot;')}" placeholder="e.g. Hall 2">
+    </div>
+    <div class="sla-field">
+      <label>Building</label>
+      <input type="text" id="hall-building" value="${(state.hall.building||'').replace(/"/g,'&quot;')}" placeholder="e.g. Building A">
     </div>
     <div class="sla-field name-field">
       <label>Stream site (sets location + preset elevation)</label>
@@ -2227,7 +2250,10 @@ function renderHallEditor() {
     const [code, siteName, elev] = this.value.split('||');
     state.hall.siteName = siteName;
     state.hall.elevFt = parseFloat(elev);
+    // Changing location must not filter this hall out of the visible tabs.
+    if (state.hallView.loc && siteName.trim() !== state.hallView.loc) state.hallView.loc = '';
     applyElevation();                          // recompute pressure + chip
+    renderHallTabs();                           // location filter options refresh
     renderHallEditor();                         // re-render so site/elev fields refresh
     update();
   });
@@ -2255,8 +2281,9 @@ function renderHallEditor() {
     // Apply the new site to this profile immediately.
     state.hall.siteName = `${city}, ${stAbbr(stName)}`;
     state.hall.elevFt = Math.round(elev);
+    if (state.hallView.loc && state.hall.siteName !== state.hallView.loc) state.hallView.loc = '';
     applyElevation();
-    renderSlaTabs(); renderHallEditor(); update();
+    renderSlaTabs(); renderHallTabs(); renderHallEditor(); update();
   });
 
   // Capability checkboxes are always active (a site characteristic, like elevation).
@@ -2286,16 +2313,25 @@ function renderHallEditor() {
   rateWire('hall-vol',   'hallVolFt3');
   rateWire('hall-cfm',   'airflowCfm');
 
-  // Hall identity fields — name renames the tab; site/elevation drive pressure.
+  // Hall identity fields — name renames the tab; building/site feed the
+  // Location/Building filters above the tabs; site/elevation drive pressure.
   const nameEl = document.getElementById('hall-name');
   if (nameEl) nameEl.addEventListener('input', function() {
     state.hall.name = this.value;
     renderHallTabs(); update();
   });
+  const bldEl = document.getElementById('hall-building');
+  if (bldEl) bldEl.addEventListener('input', function() {
+    state.hall.building = this.value;
+    // Editing must never filter the hall you're typing in out of view.
+    if (state.hallView.bld && this.value.trim() !== state.hallView.bld) state.hallView.bld = '';
+    renderHallTabs(); update();
+  });
   const siteEl = document.getElementById('hall-site');
   if (siteEl) siteEl.addEventListener('input', function() {
     state.hall.siteName = this.value;
-    applyElevation(); update();
+    if (state.hallView.loc && this.value.trim() !== state.hallView.loc) state.hallView.loc = '';
+    applyElevation(); renderHallTabs(); update();
   });
   const elevEl = document.getElementById('hall-elev');
   if (elevEl) elevEl.addEventListener('input', function() {
@@ -2527,14 +2563,53 @@ function renderHallEditor() {
 // ════════════════════════════════════════════════════════════
 //  HALL PROFILE TABS + CRUD + EXPORT/IMPORT — same pattern as SLAs
 // ════════════════════════════════════════════════════════════
+// The hall list is a hierarchy: Location (site) → Building → Hall. The two
+// selects narrow the visible tabs; '' means "All". Filters never change the
+// math — only which tabs show. If the active hall falls outside the filter,
+// the first visible hall becomes active so the editor always matches a tab.
+function hallVisible(h) {
+  const v = state.hallView;
+  if (v.loc && (h.siteName || '').trim() !== v.loc) return false;
+  if (v.bld && (h.building || '').trim() !== v.bld) return false;
+  return true;
+}
+
 function renderHallTabs() {
   const tabs = document.getElementById('hall-tabs');
   if (!tabs) return;
+  const v = state.hallView || (state.hallView = { loc: '', bld: '' });
+
+  // Distinct locations across all halls; buildings within the chosen location.
+  const locs = [...new Set(state.hallProfiles.map(h => (h.siteName || '').trim()).filter(Boolean))].sort();
+  if (v.loc && !locs.includes(v.loc)) v.loc = '';
+  const inLoc = state.hallProfiles.filter(h => !v.loc || (h.siteName || '').trim() === v.loc);
+  const blds = [...new Set(inLoc.map(h => (h.building || '').trim()).filter(Boolean))].sort();
+  if (v.bld && !blds.includes(v.bld)) v.bld = '';
+
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const locSel = document.getElementById('hall-loc-filter');
+  const bldSel = document.getElementById('hall-bld-filter');
+  if (locSel) locSel.innerHTML = `<option value="">All locations (${state.hallProfiles.length} hall${state.hallProfiles.length === 1 ? '' : 's'})</option>`
+    + locs.map(l => `<option value="${esc(l)}"${l === v.loc ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  if (bldSel) bldSel.innerHTML = `<option value="">All buildings (${inLoc.length} hall${inLoc.length === 1 ? '' : 's'})</option>`
+    + blds.map(b => `<option value="${esc(b)}"${b === v.bld ? ' selected' : ''}>${esc(b)}</option>`).join('');
+
+  let shown = state.hallProfiles.map((h, i) => ({ h, i })).filter(x => hallVisible(x.h));
+  if (!shown.length) { v.loc = ''; v.bld = ''; shown = state.hallProfiles.map((h, i) => ({ h, i })); }
+  if (!shown.some(x => x.i === state.activeHall)) {
+    state.activeHall = shown[0].i;
+    applyElevation();
+    if (typeof renderHallEditor === 'function') renderHallEditor();
+    if (typeof syncAllControls === 'function') syncAllControls();
+  }
+
   tabs.innerHTML = '';
-  state.hallProfiles.forEach((h, i) => {
+  shown.forEach(({ h, i }) => {
     const btn = document.createElement('button');
     btn.className = 'sla-tab' + (i === state.activeHall ? ' active' : '');
-    btn.textContent = h.name || `Hall ${i + 1}`;
+    // When viewing across buildings, prefix the building so same-named halls stay distinguishable.
+    const bld = (h.building || '').trim();
+    btn.textContent = (!v.bld && bld ? bld + ' · ' : '') + (h.name || `Hall ${i + 1}`);
     btn.onclick = () => {
       state.activeHall = i;
       applyElevation();            // pressure follows the newly active hall
@@ -2546,8 +2621,26 @@ function renderHallTabs() {
   if (del) del.disabled = state.hallProfiles.length <= 1;
 }
 
+['hall-loc-filter', 'hall-bld-filter'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', function() {
+    if (id === 'hall-loc-filter') { state.hallView.loc = this.value; state.hallView.bld = ''; }
+    else state.hallView.bld = this.value;
+    renderHallTabs(); update();
+  });
+});
+
 document.getElementById('hall-add').addEventListener('click', () => {
-  state.hallProfiles.push(normalizeHall({ name: `Hall ${state.hallProfiles.length + 1}` }));
+  // Seed the new hall from the active view: same location/building as the
+  // current filter, and the sibling halls' elevation, so it appears in the
+  // tab list you're looking at instead of vanishing behind the filter.
+  const v = state.hallView;
+  const sib = state.hallProfiles.find(h => v.loc && (h.siteName || '').trim() === v.loc);
+  state.hallProfiles.push(normalizeHall({
+    name: `Hall ${state.hallProfiles.length + 1}`,
+    siteName: v.loc || '', building: v.bld || '',
+    elevFt: sib ? sib.elevFt : 0,
+  }));
   state.activeHall = state.hallProfiles.length - 1;
   applyElevation(); renderHallTabs(); renderHallEditor(); update();
 });
@@ -2711,6 +2804,7 @@ function saveProfiles() {
   try {
     localStorage.setItem(LS_KEY_V4, JSON.stringify({
       v: 4, hallProfiles: state.hallProfiles, activeHall: state.activeHall,
+      hallView: state.hallView,
       slaProfiles: state.slaProfiles, activeSla: state.activeSla,
       tempUnit: state.tempUnit
     }));
@@ -2730,6 +2824,9 @@ function loadProfiles() {
         if (Array.isArray(d.hallProfiles) && d.hallProfiles.length) {
           state.hallProfiles = d.hallProfiles.map(h => normalizeHall(h));
           state.activeHall = Math.min(d.activeHall || 0, state.hallProfiles.length - 1);
+        }
+        if (d.hallView && typeof d.hallView === 'object') {
+          state.hallView = { loc: d.hallView.loc || '', bld: d.hallView.bld || '' };
         }
         if (Array.isArray(d.slaProfiles) && d.slaProfiles.length) applySavedSlas(d.slaProfiles);
         state.activeSla = Math.min(d.activeSla || 0, state.slaProfiles.length - 1);
