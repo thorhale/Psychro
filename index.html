@@ -156,10 +156,13 @@
 
 
   /* SLA card */
-  .sla-tabs { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:12px; }
+  .sla-tabs-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .sla-tabs { display:flex; gap:4px; flex-wrap:wrap; }
   .sla-tab { padding:5px 12px; border-radius:5px 5px 0 0; border:1px solid var(--border); border-bottom:none; background:transparent; color:var(--muted); font-size:.72rem; font-weight:600; cursor:pointer; font-family:var(--sans); transition:all .12s; }
   .sla-tab.active { background:rgba(255,255,255,.08); color:var(--text); border-color:rgba(255,255,255,.4); }
   .sla-tab.locked::after { content:' 🔒'; font-size:.6rem; }
+  .sla-tab-add { padding:5px 10px; border-radius:5px; border:1px dashed var(--border); background:transparent; color:var(--accent2); font-size:.72rem; font-weight:700; cursor:pointer; font-family:var(--sans); transition:all .12s; white-space:nowrap; }
+  .sla-tab-add:hover { border-color:var(--accent2); border-style:solid; background:rgba(59,158,255,.08); }
   .sla-editor { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:12px; }
   .sla-field { display:flex; flex-direction:column; gap:4px; }
   .sla-field label { font-size:.65rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
@@ -363,10 +366,12 @@
 <details class="card sect">
   <summary><span class="sect-title">Data Hall</span><span class="sect-sub" id="hall-summary">—</span><span class="sect-chev">▸</span></summary>
   <div class="sect-body">
-    <div class="sla-tabs" id="hall-tabs"></div>
+    <div class="sla-tabs-row">
+      <div class="sla-tabs" id="hall-tabs"></div>
+      <button class="sla-tab-add" id="hall-add" title="Add a new hall profile">+ New hall</button>
+    </div>
     <div class="sla-editor" id="hall-editor"></div>
     <div class="sla-actions">
-      <button class="sla-btn" id="hall-add">+ New hall</button>
       <button class="sla-btn" id="hall-dup">⧉ Duplicate</button>
       <button class="sla-btn sla-btn-danger" id="hall-del">Delete this hall</button>
       <button class="sla-btn" id="hall-export">⤓ Export halls</button>
@@ -381,10 +386,12 @@
 <details class="card sect">
   <summary><span class="sect-title">Customer SLA</span><span class="sect-sub" id="sla-summary">—</span><span class="sect-chev">▸</span></summary>
   <div class="sect-body">
-  <div class="sla-tabs" id="sla-tabs"></div>
+  <div class="sla-tabs-row">
+    <div class="sla-tabs" id="sla-tabs"></div>
+    <button class="sla-tab-add" id="sla-add" title="Add a new customer SLA">+ New customer SLA</button>
+  </div>
   <div class="sla-editor" id="sla-editor"></div>
   <div class="sla-actions">
-    <button class="sla-btn" id="sla-add">+ New customer SLA</button>
     <button class="sla-btn sla-btn-danger" id="sla-del">Delete this SLA</button>
     <button class="sla-btn" id="sla-export">⤓ Export all</button>
     <button class="sla-btn" id="sla-import">⤒ Import</button>
