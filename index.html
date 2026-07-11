@@ -2500,6 +2500,10 @@ function renderHallEditor() {
 // ════════════════════════════════════════════════════════════
 //  HALL PROFILE TABS + CRUD + EXPORT/IMPORT — same pattern as SLAs
 // ════════════════════════════════════════════════════════════
+// Sentinel value for the Building select's "＋ Add a building…" option — a
+// control character no typed building name can contain, so it can't collide.
+const BLD_ADD = String.fromCharCode(1) + 'add';
+
 // The hall list is a hierarchy: Location → Building → Hall. Location is the
 // master site picker — the FULL Stream catalog (plus custom sites), not just
 // places that already have halls — and choosing one sets the site + elevation
@@ -2581,7 +2585,8 @@ function renderHallTabs() {
     if (v.bld && !names.has(v.bld)) v.bld = '';
     bldSel.innerHTML = `<option value="">All buildings (${inLoc.length} hall${inLoc.length === 1 ? '' : 's'})</option>`
       + [...names].sort().map(b =>
-        `<option value="${esc(b)}"${b === v.bld ? ' selected' : ''}>${esc(b)}${cnt(inLoc.filter(h => (h.building || '').trim() === b).length)}</option>`).join('');
+        `<option value="${esc(b)}"${b === v.bld ? ' selected' : ''}>${esc(b)}${cnt(inLoc.filter(h => (h.building || '').trim() === b).length)}</option>`).join('')
+      + `<option value="${BLD_ADD}">＋ Add a building…</option>`;
   }
 
   let shown = state.hallProfiles.map((h, i) => ({ h, i })).filter(x => hallVisible(x.h));
@@ -2620,6 +2625,23 @@ document.getElementById('hall-loc-filter').addEventListener('change', function()
   renderHallTabs(); update();
 });
 document.getElementById('hall-bld-filter').addEventListener('change', function() {
+  if (this.value === BLD_ADD) {
+    // Name a new building yourself — it doesn't have to be a campus code.
+    // It lives at the chosen location (or the active hall's, if on "All").
+    const loc = state.hallView.loc || (state.hall.siteName || '').trim();
+    if (!loc) {
+      alert('Pick a location first, then add a building there.');
+      renderHallTabs();                       // reset the select display
+      return;
+    }
+    const name = (prompt('Name the new building (e.g. Building B, DFW VIII):') || '').trim();
+    if (!name) { renderHallTabs(); return; }
+    state.hallView.loc = loc;
+    state.hallView.bld = name;
+    ensureHallAt(loc, name);                  // creates the building's Hall 1
+    renderHallTabs(); update();
+    return;
+  }
   state.hallView.bld = this.value;
   ensureHallAt(state.hallView.loc, this.value);
   renderHallTabs(); update();
