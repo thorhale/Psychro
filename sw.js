@@ -1,6 +1,6 @@
 // Stream Psychrometric Tool — offline cache
 // Cache-first: after the first visit, the app works with no network at all.
-const CACHE = 'sdc-psychro-v17';
+const CACHE = 'sdc-psychro-v20';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

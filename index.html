@@ -2,6 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Security hardening: the app is fully self-contained (no CDNs, fonts,
+     analytics, or API calls). This CSP blocks any request to an external
+     host, so injected or tampered code can't load resources or exfiltrate.
+     'unsafe-inline' is required because all script/style is inline by design
+     (single-file offline app). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; manifest-src 'self'; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<!-- Keep the tool out of search engines — public URL, but unlisted. -->
+<meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#1a3a5c">
@@ -512,6 +521,14 @@
     <button class="scn-btn" id="scn-export-file">⤓ Export scenarios (file)</button>
     <button class="scn-btn" id="scn-import-file">⤒ Import scenarios</button>
     <input type="file" id="scn-file" accept="application/json,.json" style="display:none">
+  </div>
+  <div class="scn-divider"></div>
+  <div class="scn-export-label">Share your whole setup — every hall, building, SLA, custom site, and scenario — as one save file. Loading a colleague's file adds their data to yours (same names update, new ones append; nothing of yours is deleted):</div>
+  <div class="scn-actions">
+    <button class="scn-btn scn-btn-primary" id="save-share">📤 Share save file</button>
+    <button class="scn-btn" id="save-export">⤓ Export save file</button>
+    <button class="scn-btn" id="save-import">⤒ Load save file</button>
+    <input type="file" id="save-file" accept="application/json,.json" style="display:none">
   </div>
   <div class="scn-divider"></div>
   <div class="scn-export-label">Export the current view for a report or email:</div>
@@ -2500,6 +2517,10 @@ function renderHallEditor() {
 // ════════════════════════════════════════════════════════════
 //  HALL PROFILE TABS + CRUD + EXPORT/IMPORT — same pattern as SLAs
 // ════════════════════════════════════════════════════════════
+// Sentinel value for the Building select's "＋ Add a building…" option — a
+// control character no typed building name can contain, so it can't collide.
+const BLD_ADD = String.fromCharCode(1) + 'add';
+
 // The hall list is a hierarchy: Location → Building → Hall. Location is the
 // master site picker — the FULL Stream catalog (plus custom sites), not just
 // places that already have halls — and choosing one sets the site + elevation
@@ -2581,7 +2602,8 @@ function renderHallTabs() {
     if (v.bld && !names.has(v.bld)) v.bld = '';
     bldSel.innerHTML = `<option value="">All buildings (${inLoc.length} hall${inLoc.length === 1 ? '' : 's'})</option>`
       + [...names].sort().map(b =>
-        `<option value="${esc(b)}"${b === v.bld ? ' selected' : ''}>${esc(b)}${cnt(inLoc.filter(h => (h.building || '').trim() === b).length)}</option>`).join('');
+        `<option value="${esc(b)}"${b === v.bld ? ' selected' : ''}>${esc(b)}${cnt(inLoc.filter(h => (h.building || '').trim() === b).length)}</option>`).join('')
+      + `<option value="${BLD_ADD}">＋ Add a building…</option>`;
   }
 
   let shown = state.hallProfiles.map((h, i) => ({ h, i })).filter(x => hallVisible(x.h));
@@ -2620,6 +2642,23 @@ document.getElementById('hall-loc-filter').addEventListener('change', function()
   renderHallTabs(); update();
 });
 document.getElementById('hall-bld-filter').addEventListener('change', function() {
+  if (this.value === BLD_ADD) {
+    // Name a new building yourself — it doesn't have to be a campus code.
+    // It lives at the chosen location (or the active hall's, if on "All").
+    const loc = state.hallView.loc || (state.hall.siteName || '').trim();
+    if (!loc) {
+      alert('Pick a location first, then add a building there.');
+      renderHallTabs();                       // reset the select display
+      return;
+    }
+    const name = (prompt('Name the new building (e.g. Building B, DFW VIII):') || '').trim();
+    if (!name) { renderHallTabs(); return; }
+    state.hallView.loc = loc;
+    state.hallView.bld = name;
+    ensureHallAt(loc, name);                  // creates the building's Hall 1
+    renderHallTabs(); update();
+    return;
+  }
   state.hallView.bld = this.value;
   ensureHallAt(state.hallView.loc, this.value);
   renderHallTabs(); update();
@@ -3339,6 +3378,100 @@ document.getElementById('scn-file').addEventListener('change', function() {
       scenarios = scenarios.concat(incoming.filter(s => s && s.aTemp != null));
       persistScenarios(); renderScenarios();
     } catch (err) { alert('Could not import scenarios: ' + err.message); }
+  };
+  reader.readAsText(file); this.value = '';
+});
+
+// ════════════════════════════════════════════════════════════
+//  SAVE FILE — the whole workspace in one shareable JSON:
+//  halls (with their equipment), SLAs, custom sites, scenarios.
+//  Loading MERGES: same keys update, new entries append — a
+//  colleague's file adds to yours, it never wipes your data.
+// ════════════════════════════════════════════════════════════
+function buildSaveFile() {
+  return {
+    app: 'SDC Hall Environment Planner', kind: 'saveFile', version: 1,
+    exported: new Date().toISOString(),
+    hallProfiles: state.hallProfiles,
+    slaProfiles: state.slaProfiles,
+    customSites,
+    scenarios,
+    tempUnit: state.tempUnit,
+  };
+}
+function saveFileName() {
+  return `sdc_planner_save_${new Date().toISOString().slice(0, 10)}.json`;
+}
+function downloadSaveFile() {
+  const blob = new Blob([JSON.stringify(buildSaveFile(), null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = saveFileName();
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+function mergeSaveFile(data) {
+  let halls = 0, slas = 0, sites = 0, scns = 0;
+  if (Array.isArray(data.hallProfiles)) data.hallProfiles.forEach(h => {
+    if (!h || typeof h !== 'object') return;
+    normalizeHall(h);
+    const i = state.hallProfiles.findIndex(x => x.name === h.name
+      && (x.siteName || '') === (h.siteName || '')
+      && (x.building || '') === (h.building || ''));
+    if (i >= 0) state.hallProfiles[i] = h; else state.hallProfiles.push(h);
+    halls++;
+  });
+  if (Array.isArray(data.slaProfiles)) data.slaProfiles.forEach(s => {
+    if (!s || typeof s !== 'object' || !s.name) return;
+    const i = state.slaProfiles.findIndex(x => x.name === s.name);
+    if (i >= 0) { if (!state.slaProfiles[i].locked) { state.slaProfiles[i] = s; slas++; } }
+    else { state.slaProfiles.push(s); slas++; }
+  });
+  if (Array.isArray(data.customSites)) data.customSites.forEach(c => {
+    if (!c || !c.city || !c.state) return;
+    if (customSites.some(x => x.code === c.code && x.city === c.city && x.state === c.state)) return;
+    customSites.push(c); sites++;
+  });
+  if (Array.isArray(data.scenarios)) data.scenarios.forEach(s => {
+    if (!s || s.aTemp == null) return;
+    // Skip exact duplicates (same name + save time) so re-loading a file is a no-op.
+    if (scenarios.some(x => x.name === s.name && x.saved === s.saved)) return;
+    scenarios.push(s); scns++;
+  });
+  persistCustomSites(); persistScenarios();
+  normalizeCaps(state.slaProfiles);
+  applyElevation();
+  renderSlaTabs(); renderSlaEditor(); renderHallTabs(); renderHallEditor(); renderScenarios(); update();
+  return `Loaded: ${halls} hall${halls === 1 ? '' : 's'}, ${slas} SLA${slas === 1 ? '' : 's'}, ${sites} custom site${sites === 1 ? '' : 's'}, ${scns} scenario${scns === 1 ? '' : 's'}.`;
+}
+
+document.getElementById('save-export').addEventListener('click', downloadSaveFile);
+document.getElementById('save-share').addEventListener('click', async () => {
+  // Native share sheet where available (phones/tablets: AirDrop, Teams,
+  // email…); anywhere else this falls back to a plain file download.
+  const file = new File([JSON.stringify(buildSaveFile(), null, 2)], saveFileName(), { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'Hall Environment Planner save file' });
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return;   // user closed the share sheet
+    }
+  }
+  downloadSaveFile();
+});
+document.getElementById('save-import').addEventListener('click', () => document.getElementById('save-file').click());
+document.getElementById('save-file').addEventListener('change', function() {
+  const file = this.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data || typeof data !== 'object') throw new Error('Not a save file');
+      if (!Array.isArray(data.hallProfiles) && !Array.isArray(data.slaProfiles)
+        && !Array.isArray(data.scenarios) && !Array.isArray(data.customSites))
+        throw new Error('No planner data in this file');
+      alert(mergeSaveFile(data));
+    } catch (err) { alert('Could not load save file: ' + err.message); }
   };
   reader.readAsText(file); this.value = '';
 });
