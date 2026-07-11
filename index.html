@@ -376,8 +376,24 @@
   <summary><span class="sect-title">Data Hall</span><span class="sect-sub" id="hall-summary">—</span><span class="sect-chev">▸</span></summary>
   <div class="sect-body">
     <div class="hall-filter-row">
-      <div class="hall-filter"><label>Location</label><select id="hall-loc-filter" class="sla-select"></select></div>
+      <div class="hall-filter"><label>Location <span class="cap-hint">sets site + elevation</span></label><select id="hall-loc-filter" class="sla-select"></select></div>
       <div class="hall-filter"><label>Building</label><select id="hall-bld-filter" class="sla-select"></select></div>
+    </div>
+    <div class="sla-addcity">
+      <button type="button" class="addcity-toggle" id="addcity-toggle">+ Add a city / site</button>
+      <div class="addcity-form" id="addcity-form" style="display:none">
+        <div class="addcity-grid">
+          <input type="text" id="ac-code"  class="ac-input" placeholder="Site code (e.g. DFW VII)">
+          <input type="text" id="ac-city"  class="ac-input" placeholder="City (e.g. Plano)">
+          <input type="text" id="ac-state" class="ac-input" placeholder="State (e.g. Texas)">
+          <input type="number" id="ac-elev" class="ac-input" placeholder="Elevation ft" step="10">
+        </div>
+        <div class="addcity-actions">
+          <button type="button" class="scn-btn scn-btn-primary" id="ac-save">Add site</button>
+          <button type="button" class="scn-btn" id="ac-cancel">Cancel</button>
+        </div>
+        <div class="addcity-hint">Added sites are saved on this device and appear in the Location list, sorted by state.</div>
+      </div>
     </div>
     <div class="sla-tabs-row">
       <div class="sla-tabs" id="hall-tabs"></div>
@@ -391,7 +407,7 @@
       </span>
     </div>
     <div class="sla-editor" id="hall-editor"></div>
-    <div class="formula-note">Each hall profile is one physical facility: location, building, hall, elevation, air volume, installed plant (capabilities + rates), plus its real-world efficiency factor and current capacity derates. Use the Location and Building selectors to narrow the tabs to one site or building, or leave them on "All" to see every hall. Import merges by hall name (same name replaces, new names append), so colleagues' files add to yours. The customer SLAs below are contracts evaluated inside the active hall at its barometric pressure.</div>
+    <div class="formula-note">Pick a Location (any Stream site — its elevation feeds the chart's barometric pressure), then a Building at that campus, then a hall tab. Each hall profile stores its own plant capability, rates, efficiency factor, and capacity derates, so switching halls recalls that hall's equipment. Leave the selectors on "All" to see every hall at once. Import merges by location + building + hall name (same triple replaces, new ones append), so colleagues' files add to yours. The customer SLAs below are contracts evaluated inside the active hall at its barometric pressure.</div>
   </div>
 </details>
 
@@ -2077,20 +2093,6 @@ function renderSlaTabs() {
 function renderHallEditor() {
   const hed = document.getElementById('hall-editor');
   if (!hed) return;
-  const sites = allSites();
-  const curSite = (state.hall.siteName || '').trim();
-  // Group <option>s under <optgroup> by state for readability.
-  let opts = '', curState = null;
-  sites.forEach(s => {
-    if (s.state !== curState) {
-      if (curState !== null) opts += '</optgroup>';
-      opts += `<optgroup label="${s.state}">`;
-      curState = s.state;
-    }
-    const val = `${s.code}||${s.siteName}||${s.elevFt}`;
-    opts += `<option value="${val.replace(/"/g,'&quot;')}">${s.code} · ${s.city} · ${s.elevFt.toLocaleString()} ft</option>`;
-  });
-  if (curState !== null) opts += '</optgroup>';
 
   hed.innerHTML = `
     <div class="sla-field">
@@ -2099,33 +2101,10 @@ function renderHallEditor() {
     </div>
     <div class="sla-field">
       <label>Building</label>
-      <input type="text" id="hall-building" value="${(state.hall.building||'').replace(/"/g,'&quot;')}" placeholder="e.g. Building A">
+      <input type="text" id="hall-building" value="${(state.hall.building||'').replace(/"/g,'&quot;')}" placeholder="e.g. DFW VII or Building A">
     </div>
-    <div class="sla-field name-field">
-      <label>Stream site (sets location + preset elevation)</label>
-      <select id="sla-citysel" class="sla-select">
-        <option value="">— select a Stream site —</option>
-        ${opts}
-      </select>
-    </div>
-    <div class="sla-addcity">
-      <button type="button" class="addcity-toggle" id="addcity-toggle">+ Add a city / site</button>
-      <div class="addcity-form" id="addcity-form" style="display:none">
-        <div class="addcity-grid">
-          <input type="text" id="ac-code"  class="ac-input" placeholder="Site code (e.g. DFW VII)">
-          <input type="text" id="ac-city"  class="ac-input" placeholder="City (e.g. Plano)">
-          <input type="text" id="ac-state" class="ac-input" placeholder="State (e.g. Texas)">
-          <input type="number" id="ac-elev" class="ac-input" placeholder="Elevation ft" step="10">
-        </div>
-        <div class="addcity-actions">
-          <button type="button" class="scn-btn scn-btn-primary" id="ac-save">Add site</button>
-          <button type="button" class="scn-btn" id="ac-cancel">Cancel</button>
-        </div>
-        <div class="addcity-hint">Added sites are saved on this device and appear in the list above, sorted by state.</div>
-      </div>
-    </div>
-    <div class="sla-field"><label>Site / location</label><input type="text" id="hall-site" value="${(state.hall.siteName||'').replace(/"/g,'&quot;')}" placeholder="e.g. Goodyear, AZ" ></div>
-    <div class="sla-field"><label>Elevation ft</label><input type="number" id="hall-elev" value="${state.hall.elevFt ?? 0}" step="10" min="-15000" max="20000" ></div>
+    <div class="sla-field"><label>Site / location <span class="cap-hint">set by the Location picker above</span></label><input type="text" id="hall-site" value="${(state.hall.siteName||'').replace(/"/g,'&quot;')}" placeholder="e.g. Goodyear, AZ" ></div>
+    <div class="sla-field"><label>Elevation ft <span class="cap-hint">preset from location; fine-tune here</span></label><input type="number" id="hall-elev" value="${state.hall.elevFt ?? 0}" step="10" min="-15000" max="20000" ></div>
     <div class="sla-caps">
       <div class="sla-caps-label">Plant capability &amp; rates — what this hall can actually do</div>
       <div class="cap-explain">Temperature rates: use commissioning-observed °F/hr, or derive a physics estimate below (IT load, excess sensible capacity, thermal mass). Moisture is first-principles: hall air mass × ΔW ÷ equipment lb/hr. Enter NET capacity (nameplate minus steady makeup-air latent load). Blank = not plant-limited; the SLA ramp limit still governs.</div>
@@ -2244,48 +2223,6 @@ function renderHallEditor() {
       <div id="pva-list" style="margin-top:10px"></div>
     </div>
   `;
-  // City picker is always active (even when the rest of the profile is locked).
-  document.getElementById('sla-citysel').addEventListener('change', function() {
-    if (!this.value) return;
-    const [code, siteName, elev] = this.value.split('||');
-    state.hall.siteName = siteName;
-    state.hall.elevFt = parseFloat(elev);
-    // Changing location must not filter this hall out of the visible tabs.
-    if (state.hallView.loc && siteName.trim() !== state.hallView.loc) state.hallView.loc = '';
-    applyElevation();                          // recompute pressure + chip
-    renderHallTabs();                           // location filter options refresh
-    renderHallEditor();                         // re-render so site/elev fields refresh
-    update();
-  });
-
-  // Add-city form: toggle + save a new custom site.
-  const acToggle = document.getElementById('addcity-toggle');
-  const acForm = document.getElementById('addcity-form');
-  if (acToggle) acToggle.addEventListener('click', () => {
-    acForm.style.display = acForm.style.display === 'none' ? 'block' : 'none';
-  });
-  const acCancel = document.getElementById('ac-cancel');
-  if (acCancel) acCancel.addEventListener('click', () => { acForm.style.display = 'none'; });
-  const acSave = document.getElementById('ac-save');
-  if (acSave) acSave.addEventListener('click', () => {
-    const code  = document.getElementById('ac-code').value.trim();
-    const city  = document.getElementById('ac-city').value.trim();
-    const stRaw = document.getElementById('ac-state').value.trim();
-    const elev  = parseFloat(document.getElementById('ac-elev').value);
-    if (!code || !city || !stRaw) { alert('Site code, city, and state are required.'); return; }
-    if (isNaN(elev)) { alert('Enter a numeric elevation in feet.'); return; }
-    // Title-case the state so it sorts/labels consistently.
-    const stName = stRaw.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
-    customSites.push({ state:stName, city, code, elevFt:Math.round(elev), custom:true });
-    persistCustomSites();
-    // Apply the new site to this profile immediately.
-    state.hall.siteName = `${city}, ${stAbbr(stName)}`;
-    state.hall.elevFt = Math.round(elev);
-    if (state.hallView.loc && state.hall.siteName !== state.hallView.loc) state.hallView.loc = '';
-    applyElevation();
-    renderSlaTabs(); renderHallTabs(); renderHallEditor(); update();
-  });
-
   // Capability checkboxes are always active (a site characteristic, like elevation).
   const capWire = (id, key) => {
     const el = document.getElementById(id);
@@ -2563,10 +2500,13 @@ function renderHallEditor() {
 // ════════════════════════════════════════════════════════════
 //  HALL PROFILE TABS + CRUD + EXPORT/IMPORT — same pattern as SLAs
 // ════════════════════════════════════════════════════════════
-// The hall list is a hierarchy: Location (site) → Building → Hall. The two
-// selects narrow the visible tabs; '' means "All". Filters never change the
-// math — only which tabs show. If the active hall falls outside the filter,
-// the first visible hall becomes active so the editor always matches a tab.
+// The hall list is a hierarchy: Location → Building → Hall. Location is the
+// master site picker — the FULL Stream catalog (plus custom sites), not just
+// places that already have halls — and choosing one sets the site + elevation
+// feeding the psychrometric chart. Building lists the campus codes at that
+// city plus any building names already on halls there. '' means "All". Each
+// hall profile keeps its own plant capability, so switching halls recalls
+// that hall's equipment and capacity.
 function hallVisible(h) {
   const v = state.hallView;
   if (v.loc && (h.siteName || '').trim() !== v.loc) return false;
@@ -2574,25 +2514,75 @@ function hallVisible(h) {
   return true;
 }
 
+// Guarantee at least one hall exists at the given location/building; create
+// "Hall 1" there (preset catalog elevation) and activate it if none does.
+// This is what makes picking a fresh Location drive the chart immediately.
+function ensureHallAt(loc, bld) {
+  if (!loc) return;
+  if (state.hallProfiles.some(h =>
+    (h.siteName || '').trim() === loc && (!bld || (h.building || '').trim() === bld))) return;
+  const sites = allSites();
+  const site = (bld && sites.find(s => s.siteName === loc && String(s.code) === bld))
+    || sites.find(s => s.siteName === loc);
+  state.hallProfiles.push(normalizeHall({
+    name: 'Hall 1', siteName: loc, building: bld || '',
+    elevFt: site ? site.elevFt : 0,
+  }));
+  state.activeHall = state.hallProfiles.length - 1;
+  applyElevation();
+  if (typeof renderHallEditor === 'function') renderHallEditor();
+  if (typeof syncAllControls === 'function') syncAllControls();
+}
+
 function renderHallTabs() {
   const tabs = document.getElementById('hall-tabs');
   if (!tabs) return;
   const v = state.hallView || (state.hallView = { loc: '', bld: '' });
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const nHalls = pred => state.hallProfiles.filter(pred).length;
+  const cnt = n => n ? ` · ${n} hall${n === 1 ? '' : 's'}` : '';
 
-  // Distinct locations across all halls; buildings within the chosen location.
-  const locs = [...new Set(state.hallProfiles.map(h => (h.siteName || '').trim()).filter(Boolean))].sort();
-  if (v.loc && !locs.includes(v.loc)) v.loc = '';
-  const inLoc = state.hallProfiles.filter(h => !v.loc || (h.siteName || '').trim() === v.loc);
-  const blds = [...new Set(inLoc.map(h => (h.building || '').trim()).filter(Boolean))].sort();
-  if (v.bld && !blds.includes(v.bld)) v.bld = '';
-
-  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  // ── Location: full site catalog grouped by state, one option per city.
+  const sites = allSites();
   const locSel = document.getElementById('hall-loc-filter');
+  if (locSel) {
+    const seen = new Set();
+    let html = `<option value="">All locations (${state.hallProfiles.length} hall${state.hallProfiles.length === 1 ? '' : 's'})</option>`;
+    let curState = null;
+    sites.forEach(s => {
+      if (seen.has(s.siteName)) return;
+      seen.add(s.siteName);
+      if (s.state !== curState) {
+        if (curState !== null) html += '</optgroup>';
+        html += `<optgroup label="${esc(s.state)}">`;
+        curState = s.state;
+      }
+      const n = nHalls(h => (h.siteName || '').trim() === s.siteName);
+      html += `<option value="${esc(s.siteName)}"${s.siteName === v.loc ? ' selected' : ''}>${esc(s.siteName)} · ${s.elevFt.toLocaleString()} ft${cnt(n)}</option>`;
+    });
+    if (curState !== null) html += '</optgroup>';
+    // Locations hand-typed on hall profiles that aren't in the catalog.
+    const extra = [...new Set(state.hallProfiles.map(h => (h.siteName || '').trim()).filter(Boolean))]
+      .filter(l => !seen.has(l)).sort();
+    if (extra.length) html += '<optgroup label="Other">' + extra.map(l =>
+      `<option value="${esc(l)}"${l === v.loc ? ' selected' : ''}>${esc(l)}${cnt(nHalls(h => (h.siteName || '').trim() === l))}</option>`).join('') + '</optgroup>';
+    locSel.innerHTML = html;
+    if (v.loc && locSel.value !== v.loc) v.loc = '';   // stale filter
+  }
+
+  // ── Building: campus codes from the catalog for this city (even with no
+  //    halls yet — the fleet is browsable) plus building names on halls here.
+  const inLoc = state.hallProfiles.filter(h => !v.loc || (h.siteName || '').trim() === v.loc);
   const bldSel = document.getElementById('hall-bld-filter');
-  if (locSel) locSel.innerHTML = `<option value="">All locations (${state.hallProfiles.length} hall${state.hallProfiles.length === 1 ? '' : 's'})</option>`
-    + locs.map(l => `<option value="${esc(l)}"${l === v.loc ? ' selected' : ''}>${esc(l)}</option>`).join('');
-  if (bldSel) bldSel.innerHTML = `<option value="">All buildings (${inLoc.length} hall${inLoc.length === 1 ? '' : 's'})</option>`
-    + blds.map(b => `<option value="${esc(b)}"${b === v.bld ? ' selected' : ''}>${esc(b)}</option>`).join('');
+  if (bldSel) {
+    const names = new Set();
+    if (v.loc) sites.filter(s => s.siteName === v.loc).forEach(s => names.add(String(s.code)));
+    inLoc.forEach(h => { const b = (h.building || '').trim(); if (b) names.add(b); });
+    if (v.bld && !names.has(v.bld)) v.bld = '';
+    bldSel.innerHTML = `<option value="">All buildings (${inLoc.length} hall${inLoc.length === 1 ? '' : 's'})</option>`
+      + [...names].sort().map(b =>
+        `<option value="${esc(b)}"${b === v.bld ? ' selected' : ''}>${esc(b)}${cnt(inLoc.filter(h => (h.building || '').trim() === b).length)}</option>`).join('');
+  }
 
   let shown = state.hallProfiles.map((h, i) => ({ h, i })).filter(x => hallVisible(x.h));
   if (!shown.length) { v.loc = ''; v.bld = ''; shown = state.hallProfiles.map((h, i) => ({ h, i })); }
@@ -2607,9 +2597,11 @@ function renderHallTabs() {
   shown.forEach(({ h, i }) => {
     const btn = document.createElement('button');
     btn.className = 'sla-tab' + (i === state.activeHall ? ' active' : '');
-    // When viewing across buildings, prefix the building so same-named halls stay distinguishable.
-    const bld = (h.building || '').trim();
-    btn.textContent = (!v.bld && bld ? bld + ' · ' : '') + (h.name || `Hall ${i + 1}`);
+    // Prefix whatever the selectors haven't already pinned down, so
+    // same-named halls in different places stay distinguishable.
+    const bld = (h.building || '').trim(), loc = (h.siteName || '').trim();
+    btn.textContent = (!v.loc && loc ? loc + ' · ' : '')
+      + (!v.bld && bld ? bld + ' · ' : '') + (h.name || `Hall ${i + 1}`);
     btn.onclick = () => {
       state.activeHall = i;
       applyElevation();            // pressure follows the newly active hall
@@ -2621,25 +2613,58 @@ function renderHallTabs() {
   if (del) del.disabled = state.hallProfiles.length <= 1;
 }
 
-['hall-loc-filter', 'hall-bld-filter'].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener('change', function() {
-    if (id === 'hall-loc-filter') { state.hallView.loc = this.value; state.hallView.bld = ''; }
-    else state.hallView.bld = this.value;
-    renderHallTabs(); update();
-  });
+document.getElementById('hall-loc-filter').addEventListener('change', function() {
+  state.hallView.loc = this.value;
+  state.hallView.bld = '';
+  ensureHallAt(this.value, '');    // fresh site → create Hall 1 there, chart follows
+  renderHallTabs(); update();
+});
+document.getElementById('hall-bld-filter').addEventListener('change', function() {
+  state.hallView.bld = this.value;
+  ensureHallAt(state.hallView.loc, this.value);
+  renderHallTabs(); update();
+});
+
+// Add-city form (next to the Location picker): saves a custom site to this
+// device, then navigates to it — same flow as picking a catalog location.
+document.getElementById('addcity-toggle').addEventListener('click', () => {
+  const f = document.getElementById('addcity-form');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+});
+document.getElementById('ac-cancel').addEventListener('click', () => {
+  document.getElementById('addcity-form').style.display = 'none';
+});
+document.getElementById('ac-save').addEventListener('click', () => {
+  const code  = document.getElementById('ac-code').value.trim();
+  const city  = document.getElementById('ac-city').value.trim();
+  const stRaw = document.getElementById('ac-state').value.trim();
+  const elev  = parseFloat(document.getElementById('ac-elev').value);
+  if (!code || !city || !stRaw) { alert('Site code, city, and state are required.'); return; }
+  if (isNaN(elev)) { alert('Enter a numeric elevation in feet.'); return; }
+  // Title-case the state so it sorts/labels consistently.
+  const stName = stRaw.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+  customSites.push({ state: stName, city, code, elevFt: Math.round(elev), custom: true });
+  persistCustomSites();
+  state.hallView.loc = `${city}, ${stAbbr(stName)}`;
+  state.hallView.bld = '';
+  ensureHallAt(state.hallView.loc, '');
+  document.getElementById('addcity-form').style.display = 'none';
+  ['ac-code', 'ac-city', 'ac-state', 'ac-elev'].forEach(id => { document.getElementById(id).value = ''; });
+  applyElevation(); renderHallTabs(); renderHallEditor(); update();
 });
 
 document.getElementById('hall-add').addEventListener('click', () => {
   // Seed the new hall from the active view: same location/building as the
-  // current filter, and the sibling halls' elevation, so it appears in the
-  // tab list you're looking at instead of vanishing behind the filter.
+  // current selection and that site's elevation, so it appears in the tab
+  // list you're looking at instead of vanishing behind the filter. Numbering
+  // counts within the view, so each building gets its own Hall 1, 2, 3…
   const v = state.hallView;
   const sib = state.hallProfiles.find(h => v.loc && (h.siteName || '').trim() === v.loc);
+  const site = v.loc ? allSites().find(s => s.siteName === v.loc) : null;
   state.hallProfiles.push(normalizeHall({
-    name: `Hall ${state.hallProfiles.length + 1}`,
+    name: `Hall ${state.hallProfiles.filter(hallVisible).length + 1}`,
     siteName: v.loc || '', building: v.bld || '',
-    elevFt: sib ? sib.elevFt : 0,
+    elevFt: sib ? sib.elevFt : (site ? site.elevFt : 0),
   }));
   state.activeHall = state.hallProfiles.length - 1;
   applyElevation(); renderHallTabs(); renderHallEditor(); update();
@@ -2690,9 +2715,12 @@ document.getElementById('hall-file').addEventListener('change', function() {
       incoming.forEach(h => {
         if (!h || typeof h !== 'object') return;
         normalizeHall(h);
-        // Merge by name: same name replaces, new names append — so a
-        // colleague's file adds to your list instead of wiping it.
-        const i = state.hallProfiles.findIndex(x => x.name === h.name);
+        // Merge by location + building + hall name: same triple replaces,
+        // anything else appends — so a colleague's file adds to your list
+        // instead of wiping it, and "Hall 1" in two buildings never collide.
+        const i = state.hallProfiles.findIndex(x => x.name === h.name
+          && (x.siteName || '') === (h.siteName || '')
+          && (x.building || '') === (h.building || ''));
         if (i >= 0) { state.hallProfiles[i] = h; if (firstIdx < 0) firstIdx = i; }
         else { state.hallProfiles.push(h); if (firstIdx < 0) firstIdx = state.hallProfiles.length - 1; }
       });
