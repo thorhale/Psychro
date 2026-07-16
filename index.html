@@ -225,6 +225,15 @@
   .calc-method.mt { margin-top:14px; }
   .calc-inline-note, .calc-typesel { font-size:.7rem; }
   .calc-inline-note { color:var(--muted); align-self:center; }
+  /* Sensor Validation card */
+  .sv-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  @media (max-width:560px) { .sv-grid { grid-template-columns:1fr; } }
+  .sv-big { font-size:1.05rem; font-weight:700; color:var(--stream-teal); }
+  .sv-pass { color:var(--ok); font-weight:700; }
+  .sv-marginal { color:var(--warn); font-weight:700; }
+  .sv-fail { color:var(--danger); font-weight:700; }
+  .sv-actions { margin-top:10px; }
+  .scn-btn:disabled { opacity:.35; cursor:not-allowed; }
   .calc-typesel { width:100%; margin-bottom:8px; }
   .dh-pane { margin-bottom:2px; }
   .cap-explain { font-size:.72rem; color:#cfe0ee; line-height:1.45; margin-bottom:10px; }
@@ -599,6 +608,23 @@
 </div>
 </details>
 
+<details class="card sect">
+  <summary><span class="sect-title">Sensor Validation</span><span class="sect-sub" id="sv-summary">RH from dry-bulb + wet-bulb</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+    <div class="calc-intro">Field-check an RH sensor against a sling / aspirated psychrometer: enter the dry-bulb and wet-bulb readings and the true RH is computed at site pressure. Add the sensor's displayed RH to see its deviation.</div>
+    <div class="sv-grid">
+      <div class="sla-field"><label>Dry bulb <span class="tunit">°F</span></label><input type="number" id="sv-db" step="0.1" placeholder="e.g. 75"></div>
+      <div class="sla-field"><label>Wet bulb <span class="tunit">°F</span></label><input type="number" id="sv-wb" step="0.1" placeholder="e.g. 62"></div>
+      <div class="sla-field"><label>Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" id="sv-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+    </div>
+    <div class="calc-res" id="sv-res">Enter dry-bulb and wet-bulb readings to compute RH.</div>
+    <div class="sv-actions">
+      <button class="scn-btn" id="sv-to-current" disabled>→ Set as Current point</button>
+    </div>
+    <div class="formula-note">Inverse psychrometrics: ASHRAE Eq. 35 solved for W at the observed wet bulb, RH backed out via Eq. 20 at site pressure <span id="sv-pressure">—</span>. Wet bulb can never exceed dry bulb. Pass bands: ±2% RH typical capacitive-sensor spec, ±5% marginal — recalibrate beyond that.</div>
+  </div>
+</details>
+
 </div><!-- /col-right -->
 </div><!-- /layout -->
 
@@ -738,6 +764,25 @@ function wetBulb(tc, rh, p) {
     if (Wstar > W) hi = twb; else lo = twb;
   }
   return twb;
+}
+
+// ── Inverse psychrometrics: RH from dry-bulb + wet-bulb readings (sling /
+//    aspirated psychrometer — the sensor-validation reference measurement).
+//    ASHRAE Eq. 35 solved forward for W at the observed wet bulb (Eq. 37
+//    over-ice form when twb < 0°C), then Eq. 20 inverted (enhancement-
+//    corrected) for vapor pressure, and RH backed out at the dry bulb.
+//    Returns % RH, or null for a physically impossible pair (twb > tdb). ──
+function rhFromWetBulb(tc, twb, p) {
+  if (!isFinite(tc) || !isFinite(twb) || twb > tc + 1e-9) return null;
+  const WsStar = humidityRatio(satPressure(twb), p); // saturation W at the wet bulb
+  const W = twb >= 0
+    ? ((2501 - 2.326*twb)*WsStar - 1.006*(tc - twb)) / (2501 + 1.86*tc - 4.186*twb)
+    : ((2830 - 0.24*twb)*WsStar - 1.006*(tc - twb)) / (2830 + 1.86*tc - 2.1*twb);
+  if (W <= 0) return 0; // depression exceeds the saturation deficit → fully dry
+  const Pw = W * p / (0.621945 + W);                 // enhanced partial pressure
+  const te = dewPoint(Pw);
+  const pw = Pw / enhancementFactor(te != null ? te : 0, p);
+  return Math.min(100, Math.max(0, rhFromVapor(tc, pw)));
 }
 
 function ashraeZone(tc, rh, p) {
@@ -1328,6 +1373,103 @@ document.querySelectorAll('#unit-toggle .unit-btn').forEach(btn => {
     syncTempInputs();
     update();
   });
+});
+
+// ════════════════════════════════════════════════════════════
+//  SENSOR VALIDATION — RH from dry-bulb + wet-bulb (psychrometer check)
+//  Readings are stored in °F (canonical) so the unit toggle re-displays
+//  them without drift; the math runs at the active site pressure, so an
+//  elevation change re-grades the sensor automatically.
+// ════════════════════════════════════════════════════════════
+const svState = { dbF: null, wbF: null, sensorRh: null };
+let svLastUnit = state.tempUnit;
+
+// Display a stored °F reading in the active unit, one decimal, no trailing .0
+const svFmtT = f => (Math.round(tU().fromF(f) * 10) / 10).toString();
+
+function renderSensorValidation() {
+  const res = document.getElementById('sv-res');
+  if (!res) return;
+  const pEl = document.getElementById('sv-pressure');
+  if (pEl) pEl.textContent = `${state.pressure.toFixed(2)} kPa`;
+
+  // Re-display the temp boxes only when the unit actually changed — never
+  // rewrite a box mid-typing (values are exact in °F underneath regardless).
+  if (state.tempUnit !== svLastUnit) {
+    svLastUnit = state.tempUnit;
+    [['sv-db','dbF'], ['sv-wb','wbF']].forEach(([id, key]) => {
+      const el = document.getElementById(id);
+      if (el && el !== document.activeElement)
+        el.value = svState[key] != null ? svFmtT(svState[key]) : '';
+    });
+  }
+
+  const btn = document.getElementById('sv-to-current');
+  const summary = document.getElementById('sv-summary');
+  const U = tLabel();
+
+  if (svState.dbF == null || svState.wbF == null) {
+    res.innerHTML = 'Enter dry-bulb and wet-bulb readings to compute RH.';
+    if (btn) btn.disabled = true;
+    if (summary) summary.textContent = 'RH from dry-bulb + wet-bulb';
+    return;
+  }
+
+  const tc = fToC(svState.dbF), twbC = fToC(svState.wbF), p = state.pressure;
+  const rh = rhFromWetBulb(tc, twbC, p);
+  if (rh == null) {
+    res.innerHTML = '<span class="calc-warn">Wet bulb is above dry bulb — physically impossible. Check the wick is wet and the probes aren\'t swapped.</span>';
+    if (btn) btn.disabled = true;
+    if (summary) summary.textContent = 'invalid reading';
+    return;
+  }
+
+  const pw = vaporPressure(tc, rh);
+  const W = humidityRatioG(pw, p);
+  const dpC = dewPoint(pw);
+  const depF = svState.dbF - svState.wbF;
+
+  let verdict = '';
+  if (svState.sensorRh != null) {
+    const err = svState.sensorRh - rh;
+    const cls = Math.abs(err) <= 2 ? 'sv-pass' : Math.abs(err) <= 5 ? 'sv-marginal' : 'sv-fail';
+    const word = Math.abs(err) <= 2 ? 'PASS' : Math.abs(err) <= 5 ? 'MARGINAL' : 'FAIL';
+    verdict = `<br>Sensor reads ${svState.sensorRh.toFixed(1)}% → error <span class="${cls}">${err >= 0 ? '+' : ''}${err.toFixed(1)}% RH · ${word}</span>`;
+  }
+
+  res.innerHTML =
+    `True RH <span class="sv-big">${rh.toFixed(1)}%</span>` +
+    ` · dew point <strong>${dpC != null ? svFmtT(cToF(dpC)) + ' ' + U : '—'}</strong>` +
+    ` · W <strong>${W.toFixed(2)} g/kg</strong>` +
+    ` · depression ${(Math.round(dispDeltaT(depF) * 10) / 10)}${deltaLabel()}` +
+    verdict;
+  if (btn) btn.disabled = false;
+  if (summary) summary.textContent = `${svFmtT(svState.dbF)}/${svFmtT(svState.wbF)}${U} → ${rh.toFixed(1)}% RH`;
+}
+
+document.getElementById('sv-db').addEventListener('input', function() {
+  const v = parseFloat(this.value);
+  svState.dbF = isNaN(v) ? null : tU().toF(v);
+  renderSensorValidation();
+});
+document.getElementById('sv-wb').addEventListener('input', function() {
+  const v = parseFloat(this.value);
+  svState.wbF = isNaN(v) ? null : tU().toF(v);
+  renderSensorValidation();
+});
+document.getElementById('sv-rh').addEventListener('input', function() {
+  const v = parseFloat(this.value);
+  svState.sensorRh = isNaN(v) ? null : Math.min(100, Math.max(0, v));
+  renderSensorValidation();
+});
+document.getElementById('sv-to-current').addEventListener('click', function() {
+  if (svState.dbF == null || svState.wbF == null) return;
+  const rh = rhFromWetBulb(fToC(svState.dbF), fToC(svState.wbF), state.pressure);
+  if (rh == null) return;
+  state.aTemp = clampF(svState.dbF);
+  state.aRH = clampRH(rh);
+  syncAllControls();
+  update();
 });
 
 // ════════════════════════════════════════════════════════════
@@ -2088,6 +2230,7 @@ function update() {
   updateControlReadout();
   refreshSlaSummary();
   refreshHallSummary();
+  renderSensorValidation();  // re-grade at the new unit / site pressure
   if (typeof saveProfiles === 'function') saveProfiles();
 }
 window.addEventListener('resize', update);
@@ -3262,6 +3405,12 @@ function runSelfTest() {
   const Wact=humidityRatio(vaporPressure(tc,rh),p0);
   T('wb line = table (W g/kg)', Wline*1000, Wact*1000, 0.001, 'g/kg');
 
+  // 9. RH from dry bulb + wet bulb (inverse Eq. 35) — must round-trip wetBulb()
+  T('rh(25°C, twb@50%)',  rhFromWetBulb(25, wetBulb(25,50,p0), p0), 50, 0.05, '%');
+  T('rh(30°C, twb@40%)',  rhFromWetBulb(30, wetBulb(30,40,p0), p0), 40, 0.05, '%');
+  T('rh @85 kPa round-trip', rhFromWetBulb(20, wetBulb(20,60,85), 85), 60, 0.05, '%');
+  T('rh(twb=tdb) = sat',  rhFromWetBulb(25, 25, p0), 100, 0.01, '%');
+
   const passed = cases.filter(c=>c.pass).length;
   const failed = cases.length - passed;
   return { passed, total: cases.length, failed, cases };
@@ -3661,7 +3810,7 @@ renderScenarios();
   </div>
   <div style="color:#9db8d0; font-size:.8rem; margin-bottom:10px;">Hall Environment Planner · Critical Engineering · ASHRAE TC 9.9</div>
   <div style="font-size:.72rem; color:#9db8d0; line-height:1.5;">
-    ASHRAE Fundamentals Ch.1 — barometric pressure corrected for site elevation · all properties validated against published tables · self-test 22/22 passing
+    ASHRAE Fundamentals Ch.1 — barometric pressure corrected for site elevation · all properties validated against published tables · self-test 26/26 passing
   </div>
 </footer>
 <script>
