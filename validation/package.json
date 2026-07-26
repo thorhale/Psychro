@@ -1,0 +1,15 @@
+{
+  "name": "psychro-validation",
+  "private": true,
+  "type": "module",
+  "description": "Accuracy validation harness for the Psychro psychrometric core",
+  "scripts": {
+    "audit": "node audit.mjs",
+    "envelope": "node envelope.mjs",
+    "behaviour": "node behaviour.mjs",
+    "sensor": "node sensor.mjs",
+    "smoke": "node smoke.mjs",
+    "all": "node audit.mjs && node envelope.mjs && node behaviour.mjs && node sensor.mjs && node smoke.mjs"
+  },
+  "devDependencies": { "playwright": "^1.49.0" }
+}

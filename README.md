@@ -47,6 +47,32 @@ Replace `index.html` in the repo and bump the version suffix in `sw.js`'s
 `CACHE` constant (currently `sdc-psychro-v14` → next would be `sdc-psychro-v15`).
 Installed phones pick up the new version on their next online launch.
 
+## Accuracy
+
+The psychrometric core is validated against **CoolProp 8.0.0** (IAPWS-95 water,
+IAPWS-06 ice, ASHRAE RP-1485 moist air) on a 1,521-point grid spanning
+0–45 °C, 1–100 % RH and 22–124 kPa. Over 65–125 kPa, where every real site sits:
+
+| Property | Max error vs CoolProp |
+|---|---|
+| saturation pressure | 0.0071 % (water) · exact (ice) |
+| humidity ratio `W` | 0.0041 % |
+| dew point | 0.0012 °C |
+| wet bulb | 0.0155 °C (within the ASHRAE A1–A4 envelope) |
+| enthalpy | 0.011 kJ/kg |
+| specific volume | 0.0062 % |
+
+Saturation pressure evaluates the IAPWS reference equations directly rather than
+the ASHRAE Eq. 5/6 correlations to them. Enthalpy, specific volume and the
+enhancement factor are real-gas, fitted to CoolProp. The app also runs 42
+self-tests on every load — tap the badge in the footer to see the table.
+
+`validation/` holds the scripts that derive every fitted coefficient and
+reproduce every number above, plus the committed reference data. See
+[`validation/README.md`](validation/README.md). It is **development-only** — the
+deployed app is still just the five files listed at the top, and the validation
+folder does not need to be hosted.
+
 ## Notes
 
 - Saved scenarios and custom cities live on each person's own device (browser
