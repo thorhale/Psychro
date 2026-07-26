@@ -477,21 +477,21 @@
   </div>
 
   <div class="ctl-group ctl-a">
-    <div class="ctl-head"><span class="ctl-dot" style="background:#d4d400"></span><span class="ctl-name">Current</span><span class="ctl-sub">room now · sets the moisture line</span></div>
+    <div class="ctl-head"><span class="ctl-dot" style="background:#d4d400"></span><span class="ctl-name">Current</span><span class="ctl-sub">room now · temp &amp; dew pt drive RH</span></div>
     <div class="ctl-row">
       <span class="ctl-k">Temp</span>
       <input type="range" id="slider-a-temp" min="32" max="130" step="1" value="68">
       <input type="number" id="a-temp" class="ctl-num" value="68" step="any"><span class="ctl-unit tunit">°F</span>
     </div>
     <div class="ctl-row">
+      <span class="ctl-k">Dew pt</span>
+      <input type="range" id="slider-a-dp" min="-40" max="100" step="1" value="46">
+      <input type="number" id="a-dp" class="ctl-num" value="46" step="any"><span class="ctl-unit tunit">°F</span>
+    </div>
+    <div class="ctl-row">
       <span class="ctl-k">RH</span>
       <input type="range" id="slider-a-rh" min="1" max="100" step="1" value="45">
       <input type="number" id="a-rh" class="ctl-num" value="45" step="any"><span class="ctl-unit">%</span>
-    </div>
-    <div class="ctl-row">
-      <span class="ctl-k">Dew pt</span>
-      <input type="range" id="slider-a-dp" min="10" max="90" step="1" value="46">
-      <input type="number" id="a-dp" class="ctl-num" value="46" step="any"><span class="ctl-unit tunit">°F</span>
     </div>
   </div>
   <div class="ctl-group ctl-b">
@@ -502,14 +502,14 @@
       <input type="number" id="b-temp" class="ctl-num" value="87" step="any"><span class="ctl-unit tunit">°F</span>
     </div>
     <div class="ctl-row">
+      <span class="ctl-k">Dew pt</span>
+      <input type="range" id="slider-b-dp" min="-40" max="100" step="1" value="52">
+      <input type="number" id="b-dp" class="ctl-num" value="52" step="any"><span class="ctl-unit tunit">°F</span>
+    </div>
+    <div class="ctl-row">
       <span class="ctl-k">RH</span>
       <input type="range" id="slider-b-rh" min="1" max="100" step="1" value="28">
       <input type="number" id="b-rh" class="ctl-num" value="28" step="any"><span class="ctl-unit">%</span>
-    </div>
-    <div class="ctl-row">
-      <span class="ctl-k">Dew pt</span>
-      <input type="range" id="slider-b-dp" min="10" max="90" step="1" value="52">
-      <input type="number" id="b-dp" class="ctl-num" value="52" step="any"><span class="ctl-unit tunit">°F</span>
     </div>
   </div>
 
@@ -719,16 +719,56 @@ function humidityRatio(pw, p) {
 // g/kg convenience
 const humidityRatioG = (pw, p) => humidityRatio(pw, p) * 1000;
 
-// ── Dew point: ASHRAE Eq. 37/38 (inverse of sat pressure), input p_w in kPa ──
+// ── d(ln p_ws)/dT (per K) — analytic derivative of Eq. 5/6. Drives the
+//    Newton refinement in dewPoint(); branch matches satPressure() exactly. ──
+function dLnSatPressure_dT(tc) {
+  const T = tc + 273.15;
+  if (tc >= 0) {
+    const C8 = -5800.2206, C10 = -0.048640239,
+          C11 = 4.1764768e-5, C12 = -1.4452093e-8, C13 = 6.5459673;
+    return -C8/(T*T) + C10 + 2*C11*T + 3*C12*T*T + C13/T;
+  }
+  const C1 = -5674.5359, C3 = -0.009677843,
+        C4 = 6.2215701e-7, C5 = 2.0747825e-9, C6 = -9.484024e-13, C7 = 4.1635019;
+  return -C1/(T*T) + C3 + 2*C4*T + 3*C5*T*T + 4*C6*T*T*T + C7/T;
+}
+
+// ── Dew point (°C) from vapor pressure p_w (kPa) — EXACT numerical inversion
+//    of Eq. 5/6, the CoolProp approach, rather than the Eq. 39/40 curve fit.
+//    The fit carries up to ~0.03°C of error, which matters here because dew
+//    point is a control input: dpF_from() and rh_from_dpF() must be true
+//    inverses or dragging temperature would ratchet RH by ~0.15%/drag.
+//    ASHRAE Eq. 39 seeds the search (already within 0.03°C), then Newton on
+//    ln p_ws converges to machine precision in 2–3 passes; bisection is the
+//    fallback if a seed ever lands outside the convergence basin. ──
 function dewPoint(pw) {
-  if (pw <= 0) return null;
+  if (!(pw > 0)) return null;
   const alpha = Math.log(pw); // pw in kPa
-  // ASHRAE Eq. 39 (0 to 93°C), coefficients for kPa input
+  // ASHRAE Eq. 39 (0–93°C) / Eq. 40 (sub-freezing) — seed only
   const C14 = 6.54, C15 = 14.526, C16 = 0.7389, C17 = 0.09486, C18 = 0.4569;
   let td = C14 + C15*alpha + C16*alpha*alpha + C17*alpha*alpha*alpha + C18*Math.pow(pw, 0.1984);
-  if (td < 0) {
-    // Eq. 40 for sub-freezing
-    td = 6.09 + 12.608*alpha + 0.4959*alpha*alpha;
+  if (td < 0) td = 6.09 + 12.608*alpha + 0.4959*alpha*alpha;
+  if (!isFinite(td)) td = 0;
+  td = Math.max(-100, Math.min(200, td));
+
+  for (let i = 0; i < 6; i++) {
+    const g  = Math.log(satPressure(td)) - alpha;   // zero at the dew point
+    if (Math.abs(g) < 1e-12) break;
+    const dg = dLnSatPressure_dT(td);
+    if (!isFinite(dg) || dg === 0) break;
+    const step = Math.max(-20, Math.min(20, g / dg));  // bounded — no runaway
+    const next = td - step;
+    if (!isFinite(next)) break;
+    td = Math.max(-100, Math.min(200, next));
+  }
+  // Newton lands within 1e-9°C from this seed; bisect only if it somehow didn't.
+  if (Math.abs(Math.log(satPressure(td)) - alpha) > 1e-7) {
+    let lo = -100, hi = 200;
+    for (let i = 0; i < 200; i++) {
+      const m = (lo + hi) / 2;
+      if (satPressure(m) < pw) lo = m; else hi = m;
+    }
+    td = (lo + hi) / 2;
   }
   return td;
 }
@@ -1236,10 +1276,11 @@ const clampF  = f => Math.max(32, Math.min(130, f));  // 32°F floor (chart anch
 const clampRH = r => Math.max(1, Math.min(100, r));
 
 // Target temperature is bounded by the active SLA's allowed band, so you
-// can't drive the target outside the contractual envelope. Temperature, RH,
-// and dew point each move independently — dragging one never auto-adjusts
-// another. (Plant capability still governs the TIME a move would take, via
-// rampPlanFor() / the water-flag annotation — it just doesn't lock the sliders.)
+// can't drive the target outside the contractual envelope. Temperature and dew
+// point move independently of each other; each re-derives RH (see
+// setTempHoldingDp below). (Plant capability still governs the TIME a move
+// would take, via rampPlanFor() / the water-flag annotation — it just doesn't
+// lock the sliders.)
 function clampTargetF(f) {
   const sla = state.slaProfiles[state.activeSla];
   const lo = Math.max(32,  sla.tMinF ?? 32);
@@ -1247,9 +1288,30 @@ function clampTargetF(f) {
   return Math.max(lo, Math.min(hi, f));
 }
 // Dew point ↔ RH at a fixed dry-bulb (bijective; DP is the moisture truth-teller:
-// constant DP = constant water, rising DP = adding water).
-const dpF_from   = (tempF, rh)  => { const pw = vaporPressure(fToC(tempF), rh); return pw > 0 ? cToF(dewPoint(pw)) : 0; };
+// constant DP = constant water, rising DP = adding water). Exact inverses of
+// each other now that dewPoint() is a true inversion of Eq. 5/6.
+const dpF_from   = (tempF, rh)  => { const pw = vaporPressure(fToC(tempF), rh); return pw > 0 ? cToF(dewPoint(pw)) : -100; };
 const rh_from_dpF = (tempF, dpF) => clampRH(satPressure(fToC(dpF)) / satPressure(fToC(tempF)) * 100);
+// Dew point has its own bounds: it runs far below the 32°F dry-bulb floor
+// (68°F at 1% RH dews out near −26°F), so clampF would pin the thumb and
+// misreport dry air. Ceiling is the dry-bulb max — DP can never exceed it.
+const clampDpF = f => Math.max(-40, Math.min(130, f));
+
+// ── Temperature and dew point are the independent pair; RH is what they
+//    produce. Heating or cooling air doesn't add or remove water, so moving
+//    temperature holds the dew point and re-derives RH — the behaviour a
+//    psychrometric chart shows as sliding along a constant-W line. Moving dew
+//    point holds temperature and re-derives RH. Moving RH directly re-derives
+//    dew point instead (RH is what's stored, so that falls out for free). ──
+function setTempHoldingDp(key, newTempF) {
+  const tKey = key === 'a' ? 'aTemp' : 'bTemp';
+  const rKey = key === 'a' ? 'aRH'   : 'bRH';
+  const dpF = dpF_from(state[tKey], state[rKey]);   // water content before the move
+  state[tKey] = newTempF;
+  // If the new temp falls below the dew point, RH pins at 100 and the dew
+  // point follows the dry bulb down — you cannot hold water past saturation.
+  state[rKey] = rh_from_dpF(newTempF, dpF);
+}
 
 // Push state into the four sliders + input boxes. `skipInput` is the id of an
 // input box currently being typed in — it is left untouched so typing isn't
@@ -1269,8 +1331,8 @@ function syncAllControls(skipInput) {
   setControl('slider-a-rh',   'a-rh',   'slider-a-rh-val',   state.aRH,   'rh',   skipInput);
   setControl('slider-b-temp', 'b-temp', 'slider-b-temp-val', state.bTemp, 'temp', skipInput);
   setControl('slider-b-rh',   'b-rh',   'slider-b-rh-val',   state.bRH,   'rh',   skipInput);
-  setControl('slider-a-dp', 'a-dp', null, dpF_from(state.aTemp, state.aRH), 'temp', skipInput);
-  setControl('slider-b-dp', 'b-dp', null, dpF_from(state.bTemp, state.bRH), 'temp', skipInput);
+  setControl('slider-a-dp', 'a-dp', null, dpF_from(state.aTemp, state.aRH), 'dp', skipInput);
+  setControl('slider-b-dp', 'b-dp', null, dpF_from(state.bTemp, state.bRH), 'dp', skipInput);
   document.querySelectorAll('.tunit').forEach(el => el.textContent = tLabel());
 }
 function syncControlsexcept(skipInput) { syncAllControls(skipInput); }
@@ -1280,8 +1342,9 @@ function setControl(sliderId, inputId, valId, valF, kind, skipInput) {
   const input  = document.getElementById(inputId);
   const val    = document.getElementById(valId);
   // sliders are bounded; input boxes are free
-  const sliderClampF = (sliderId.includes('-b-')) ? clampTargetF : clampF;
-  if (kind === 'temp') {
+  const sliderClampF = kind === 'dp' ? clampDpF
+    : (sliderId.includes('-b-')) ? clampTargetF : clampF;
+  if (kind === 'temp' || kind === 'dp') {
     if (slider) slider.value = Math.round(sliderClampF(valF));   // slider clamped
     if (input && inputId !== skipInput)  input.value  = dispTs(valF);  // box: true value
     if (val)    val.textContent = dispTs(valF) + ' ' + tLabel();
@@ -1301,7 +1364,7 @@ function afterCurrentChange() {
   syncAllControls(); update();
 }
 document.getElementById('slider-a-temp').addEventListener('input', function() {
-  state.aTemp = clampF(parseFloat(this.value)); afterCurrentChange();
+  setTempHoldingDp('a', clampF(parseFloat(this.value))); afterCurrentChange();
 });
 document.getElementById('slider-a-rh').addEventListener('input', function() {
   state.aRH = clampRH(parseFloat(this.value)); afterCurrentChange();
@@ -1312,7 +1375,7 @@ document.getElementById('slider-a-rh').addEventListener('input', function() {
 // setting DP directly adjusts RH at the CURRENT target temp, same as typing
 // an RH value would; it does not touch temperature.)
 document.getElementById('slider-b-temp').addEventListener('input', function() {
-  state.bTemp = clampTargetF(parseFloat(this.value));
+  setTempHoldingDp('b', clampTargetF(parseFloat(this.value)));
   syncAllControls(); update();
 });
 document.getElementById('slider-b-rh').addEventListener('input', function() {
@@ -1323,7 +1386,7 @@ document.getElementById('slider-b-rh').addEventListener('input', function() {
 // ── Typed input boxes — independent, same as sliders. ──
 document.getElementById('a-temp').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
-  state.aTemp = tU().toF(v);
+  setTempHoldingDp('a', tU().toF(v));
   syncControlsexcept('a-temp'); update();
 });
 document.getElementById('a-rh').addEventListener('input', function() {
@@ -1333,7 +1396,7 @@ document.getElementById('a-rh').addEventListener('input', function() {
 });
 document.getElementById('b-temp').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
-  state.bTemp = clampTargetF(tU().toF(v));
+  setTempHoldingDp('b', clampTargetF(tU().toF(v)));
   syncControlsexcept('b-temp'); update();
 });
 document.getElementById('b-rh').addEventListener('input', function() {
@@ -3384,6 +3447,13 @@ function runSelfTest() {
   T('dp(25°C,50%)', dewPoint(vaporPressure(25,50)), 13.89, 0.12, '°C');
   T('dp(30°C,60%)', dewPoint(vaporPressure(30,60)), 21.40, 0.12, '°C');
   T('dp(20°C,sat)=20', dewPoint(satPressure(20)), 20.00, 0.05, '°C');
+  // Exact inversion of Eq.5/6 — saturation must round-trip to machine precision,
+  // including across the water/ice branch at 0°C (the Eq.39/40 fit could not).
+  T('dp(35°C,sat) exact', dewPoint(satPressure(35)), 35, 1e-6, '°C');
+  T('dp(-15°C,sat) ice',  dewPoint(satPressure(-15)), -15, 1e-6, '°C');
+  // Control round-trip: temp→dp→RH must return the RH it started from, or the
+  // temperature slider would ratchet RH a little on every drag.
+  T('dp↔RH round-trip @70°F/45%', rh_from_dpF(70, dpF_from(70, 45)), 45, 1e-6, '%');
 
   // 5. Enthalpy (kJ/kg) — ASHRAE Eq.30 (uses the enhanced W; CoolProp Hda≈50.42)
   const W25_50 = humidityRatio(vaporPressure(25,50), p0);
@@ -3410,6 +3480,13 @@ function runSelfTest() {
   T('rh(30°C, twb@40%)',  rhFromWetBulb(30, wetBulb(30,40,p0), p0), 40, 0.05, '%');
   T('rh @85 kPa round-trip', rhFromWetBulb(20, wetBulb(20,60,85), 85), 60, 0.05, '%');
   T('rh(twb=tdb) = sat',  rhFromWetBulb(25, 25, p0), 100, 0.01, '%');
+
+  // 10. Temperature slider holds dew point: heating dry air adds no water, so W
+  //     must be unchanged after a temp move at constant dew point.
+  const dp70 = dpF_from(70, 45);
+  const W70  = humidityRatioG(vaporPressure(fToC(70), 45), p0);
+  const W90  = humidityRatioG(vaporPressure(fToC(90), rh_from_dpF(90, dp70)), p0);
+  T('W held across temp move', W90, W70, 0.001, 'g/kg');
 
   const passed = cases.filter(c=>c.pass).length;
   const failed = cases.length - passed;
@@ -3810,7 +3887,7 @@ renderScenarios();
   </div>
   <div style="color:#9db8d0; font-size:.8rem; margin-bottom:10px;">Hall Environment Planner · Critical Engineering · ASHRAE TC 9.9</div>
   <div style="font-size:.72rem; color:#9db8d0; line-height:1.5;">
-    ASHRAE Fundamentals Ch.1 — barometric pressure corrected for site elevation · all properties validated against published tables · self-test 26/26 passing
+    ASHRAE Fundamentals Ch.1 — barometric pressure corrected for site elevation · all properties validated against published tables · self-test 30/30 passing
   </div>
 </footer>
 <script>
