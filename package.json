@@ -16,10 +16,13 @@
     "analyze": "node scripts/analyze-accuracy.mjs",
     "fit:enhancement": "node scripts/fit-enhancement.mjs",
     "fit:secondary": "node scripts/fit-secondary.mjs",
-    "verify:bundle": "node scripts/verify-bundle.mjs"
+    "verify:bundle": "node scripts/verify-bundle.mjs",
+    "e2e": "playwright test",
+    "e2e:update": "playwright test --update-snapshots"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.0",
     "@types/node": "^26.1.1",
     "eslint": "^10.8.0",
     "globals": "^17.8.0",

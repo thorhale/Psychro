@@ -4,7 +4,13 @@ import globals from 'globals';
 export default [
   js.configs.recommended,
   {
-    files: ['src/**/*.js', 'test/**/*.js', 'scripts/**/*.mjs', 'vite.config.js'],
+    files: [
+      'src/**/*.js',
+      'test/**/*.js',
+      'scripts/**/*.mjs',
+      // Config and E2E files are Node-side; they need the Node globals too.
+      '*.config.js',
+    ],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
