@@ -1,0 +1,36 @@
+Third-party attributions
+========================
+
+ASHRAE equations
+----------------
+The psychrometric correlations implemented in src/core/psychro.js follow the
+equations published in the ASHRAE Handbook — Fundamentals, Chapter 1
+("Psychrometrics"), and the ASHRAE TC 9.9 thermal guideline envelope limits.
+Equation numbers are cited at each implementation site. This project implements
+the published mathematics; it includes no ASHRAE text or tables and is not
+endorsed by ASHRAE.
+
+CoolProp (MIT License)
+----------------------
+The committed reference dataset test/reference/coolprop-reference.json is
+generated with CoolProp (https://coolprop.org), the open-source thermophysical
+property library, via its HAPropsSI humid-air interface (ASHRAE RP-1485
+formulation: Herrmann, Kretzschmar & Gatley 2009). CoolProp is used as a
+development/test-time accuracy oracle only; no CoolProp code ships in the app.
+
+  Bell, I.H., Wronski, J., Quoilin, S., Lemort, V. (2014). "Pure and
+  Pseudo-pure Fluid Thermophysical Property Evaluation and the Open-Source
+  Thermophysical Property Library CoolProp", Ind. Eng. Chem. Res. 53(6),
+  2498–2508.
+
+three.js (MIT License)
+----------------------
+blockworld/three.module.min.js is a vendored copy of three.js
+(https://threejs.org), © 2010–present three.js authors, MIT License. It is used
+only by the independent BlockWorld mini-game in blockworld/.
+
+Disclaimer
+----------
+This application is a planning aid, not a control system. Verify every planned
+move against site instrumentation and your facility's operating procedures
+before acting.

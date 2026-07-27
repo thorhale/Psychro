@@ -1,0 +1,30 @@
+{
+  "name": "psychro",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Stream Hall Environment Planner \u2014 ASHRAE TC 9.9 psychrometric planning tool for data center halls",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "reference": "python3 test/reference/generate_reference.py",
+    "analyze": "node scripts/analyze-accuracy.mjs",
+    "fit:enhancement": "node scripts/fit-enhancement.mjs",
+    "fit:secondary": "node scripts/fit-secondary.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.1",
+    "eslint": "^10.8.0",
+    "globals": "^17.8.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^4.1.10"
+  }
+}
