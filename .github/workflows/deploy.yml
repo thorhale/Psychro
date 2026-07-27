@@ -1,0 +1,87 @@
+name: Deploy to GitHub Pages
+
+# Publishes the built app on every merge to main — but only behind the full
+# gate. A deploy that skipped the CoolProp oracle or the offline E2E test would
+# defeat the point of having them.
+#
+# One-time setup by a repo admin:
+#   Settings → Pages → Source: "GitHub Actions"
+# Until that is done the workflow runs and produces the artifact, and only the
+# final publish step fails.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to Pages (uncheck for a dry run)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; let a newer commit supersede an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Full verification gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run analyze
+      - run: npm run build
+      - run: npm run verify:bundle
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E and visual regression
+        run: npm run e2e
+
+      - name: Upload verified bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-dist
+          path: dist/
+
+  deploy:
+    name: Publish
+    runs-on: ubuntu-latest
+    needs: gate
+    # Dry runs stop after the gate; scheduled/merge deploys publish.
+    if: github.event_name == 'push' || inputs.publish
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download the exact bundle the gate verified
+        uses: actions/download-artifact@v4
+        with:
+          name: verified-dist
+          path: dist/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
