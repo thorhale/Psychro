@@ -1,0 +1,170 @@
+/**
+ * Save-file and profile schema: validation, normalization, and migration.
+ *
+ * Everything that enters persistent state — from localStorage, an imported JSON
+ * file, or a colleague's share — passes through here. v1 validated loosely and
+ * could half-apply a malformed import before throwing; v2 validates the whole
+ * payload FIRST and only then merges, so an import either applies cleanly or
+ * not at all.
+ *
+ * Migration history:
+ *   v0 (legacy)  hall data (elevation, plant rates, calc) lived on each SLA
+ *                profile — `migrateLegacyProfiles` lifts it onto the hall.
+ *   v1           split hall profiles / SLA profiles / scenarios / customSites.
+ */
+
+/** Fields that belong to the physical HALL, not the customer contract. */
+export const HALL_KEYS = [
+  'siteName',
+  'elevFt',
+  'hallVolFt3',
+  'airflowCfm',
+  'canHeat',
+  'canDehumidify',
+  'canHumidify',
+  'rateCoolF',
+  'rateWarmF',
+  'rateDehumLb',
+  'rateHumLb',
+  'calc',
+];
+
+const isNum = (v) => typeof v === 'number' && isFinite(v);
+const numOrNull = (v) => (isNum(v) ? v : null);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/** Ensure a hall object has every field with a sane, typed default. Mutates. */
+export function normalizeHall(h) {
+  if (typeof h.siteName !== 'string') h.siteName = '';
+  if (typeof h.building !== 'string') h.building = '';
+  h.elevFt = isNum(h.elevFt) ? clamp(h.elevFt, -15000, 20000) : 0;
+  h.hallVolFt3 = numOrNull(h.hallVolFt3);
+  h.airflowCfm = numOrNull(h.airflowCfm);
+  for (const k of ['canHeat', 'canDehumidify', 'canHumidify']) h[k] = h[k] === true;
+  for (const k of ['rateCoolF', 'rateWarmF', 'rateDehumLb', 'rateHumLb'])
+    h[k] = numOrNull(h[k]);
+  if (h.calc == null || typeof h.calc !== 'object') h.calc = {};
+  if (!h.name || typeof h.name !== 'string')
+    h.name = h.siteName ? `${h.siteName} · Hall` : 'Hall 1';
+  h.effPct = isNum(h.effPct) ? clamp(h.effPct, 1, 100) : 85;
+  for (const k of ['derateCoolPct', 'derateWarmPct', 'derateDehumPct', 'derateHumPct'])
+    h[k] = isNum(h[k]) ? clamp(h[k], 0, 100) : 100;
+  if (!Array.isArray(h.results)) h.results = [];
+  return h;
+}
+
+/** Ensure an SLA profile is a pure, typed contract. Mutates. */
+export function normalizeSla(s) {
+  if (!s.name || typeof s.name !== 'string') s.name = 'SLA';
+  s.tMinF = isNum(s.tMinF) ? s.tMinF : 50;
+  s.tMaxF = isNum(s.tMaxF) ? s.tMaxF : 95;
+  if (s.tMaxF < s.tMinF) [s.tMinF, s.tMaxF] = [s.tMaxF, s.tMinF];
+  s.rhMin = isNum(s.rhMin) ? clamp(s.rhMin, 0, 100) : 5;
+  s.rhMax = isNum(s.rhMax) ? clamp(s.rhMax, 0, 100) : 80;
+  if (s.rhMax < s.rhMin) [s.rhMin, s.rhMax] = [s.rhMax, s.rhMin];
+  s.dpMaxF = s.dpMaxF === '' || s.dpMaxF == null ? null : numOrNull(s.dpMaxF);
+  s.maxDtHr = numOrNull(s.maxDtHr);
+  s.maxDrhHr = numOrNull(s.maxDrhHr);
+  s.locked = s.locked === true;
+  return s;
+}
+
+/**
+ * MIGRATION (v0 → v1): legacy saves kept hall data on each SLA profile. Lift it
+ * onto the given hall once (from the first profile carrying real values), then
+ * strip those keys so profiles become pure contracts.
+ * @returns the same profiles array, cleaned.
+ */
+export function migrateLegacyProfiles(profiles, hall) {
+  const src = profiles.find(
+    (p) =>
+      p.hallVolFt3 != null ||
+      p.rateCoolF != null ||
+      p.canDehumidify ||
+      p.canHumidify ||
+      (p.calc && Object.keys(p.calc).length) ||
+      (p.elevFt != null && p.elevFt !== 0) ||
+      (p.siteName && p.siteName !== ''),
+  );
+  if (src && hall) {
+    for (const k of HALL_KEYS) {
+      const cur = hall[k];
+      const empty =
+        cur === undefined ||
+        cur === null ||
+        cur === false ||
+        cur === '' ||
+        (k === 'calc' && !Object.keys(cur || {}).length);
+      if (empty && src[k] !== undefined && src[k] !== null) hall[k] = src[k];
+    }
+    normalizeHall(hall);
+  }
+  profiles.forEach((s) => {
+    for (const k of HALL_KEYS) delete s[k];
+  });
+  return profiles;
+}
+
+/** A scenario is valid if it has the four state-point numbers. */
+export function isValidScenario(s) {
+  return (
+    s != null &&
+    typeof s === 'object' &&
+    isNum(s.aTemp) &&
+    isNum(s.aRH) &&
+    isNum(s.bTemp) &&
+    isNum(s.bRH)
+  );
+}
+
+/** A custom site needs at least city + state; elevation defaults to 0. */
+export function isValidSite(c) {
+  return (
+    c != null &&
+    typeof c === 'object' &&
+    typeof c.city === 'string' &&
+    c.city.length > 0 &&
+    typeof c.state === 'string' &&
+    c.state.length > 0
+  );
+}
+
+/**
+ * Validate a whole save-file payload WITHOUT applying anything.
+ *
+ * @returns {{ok: boolean, error?: string,
+ *            halls: object[], slas: object[], sites: object[], scenarios: object[]}}
+ *   The returned arrays contain only entries that passed validation, already
+ *   normalized — the caller can merge them without further checks.
+ */
+export function validateSaveFile(data) {
+  if (data == null || typeof data !== 'object' || Array.isArray(data)) {
+    return { ok: false, error: 'Not a save file', halls: [], slas: [], sites: [], scenarios: [] };
+  }
+  const anyPayload =
+    Array.isArray(data.hallProfiles) ||
+    Array.isArray(data.slaProfiles) ||
+    Array.isArray(data.scenarios) ||
+    Array.isArray(data.customSites);
+  if (!anyPayload) {
+    return {
+      ok: false,
+      error: 'No planner data in this file',
+      halls: [],
+      slas: [],
+      sites: [],
+      scenarios: [],
+    };
+  }
+
+  const halls = (Array.isArray(data.hallProfiles) ? data.hallProfiles : [])
+    .filter((h) => h != null && typeof h === 'object')
+    .map((h) => normalizeHall({ ...h }));
+  const slas = (Array.isArray(data.slaProfiles) ? data.slaProfiles : [])
+    .filter((s) => s != null && typeof s === 'object' && typeof s.name === 'string' && s.name)
+    .map((s) => normalizeSla({ ...s }));
+  const sites = (Array.isArray(data.customSites) ? data.customSites : []).filter(isValidSite);
+  const scenarios = (Array.isArray(data.scenarios) ? data.scenarios : []).filter(isValidScenario);
+
+  return { ok: true, halls, slas, sites, scenarios };
+}

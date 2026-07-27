@@ -1,57 +1,93 @@
 # Stream Hall Environment Planner
 
-A phone-installable psychrometric tool (ASHRAE TC 9.9) for planning
-temperature and humidity moves in data center halls while staying within
-SLA envelopes.
+A phone-installable psychrometric tool (ASHRAE TC 9.9) for planning temperature
+and humidity moves in data center halls while staying within SLA envelopes.
 
-This folder is a complete installable web app: `index.html`, `manifest.webmanifest`,
-`sw.js` (offline cache), and two icons. Host these five files anywhere and the tool
-installs to phones like a native app — Stream icon, fullscreen, works offline.
+The physics core is validated point-by-point against
+[CoolProp](https://coolprop.org) (ASHRAE RP-1485 real-gas model) — worst-case
+humidity-ratio deviation across the whole operating envelope is 0.0013 %. See
+[`docs/coolprop-comparison.md`](docs/coolprop-comparison.md) for the full
+comparison and measured accuracy table, regenerated in CI on every push.
 
-## Run locally (development)
+## Layout
 
-No build step — it's a single static app.
+```
+index.html            app shell (markup + styles)
+src/core/             tested physics: psychro, envelopes, planner, domain guards, units
+src/config/           site catalog + branding
+src/state/            save-file schema, validation, migrations
+src/app/              UI wiring, chart, self-test, PWA plumbing
+src/ui/ src/lib/      toasts/dialogs, error log
+src/platform/         storage / share / file adapters (Capacitor-ready seam)
+test/                 Vitest suite + committed CoolProp reference grid
+scripts/              accuracy analyzer + coefficient fitters
+blockworld/           independent bonus voxel game (untouched by the build)
+```
 
-- **Quick check:** open `index.html` directly in a browser.
-- **Full check** (installing, offline mode, and the service worker all require
-  an `http(s)` origin, not `file://`): serve the folder with any static server,
-  e.g.
+## Develop
 
-  ```
-  python3 -m http.server 8080
-  ```
+```bash
+npm ci
+npm run dev        # live-reload dev server
+npm test           # 52 tests incl. 3,898-point CoolProp oracle
+npm run lint
+npm run typecheck
+npm run analyze    # per-property accuracy table vs CoolProp
+```
 
-  then visit `http://localhost:8080/`.
+## Build & deploy
 
-## Fastest free hosting: GitHub Pages (~10 minutes, once)
+```bash
+npm run build      # → dist/
+```
 
-1. Create a free account at github.com (skip if you have one).
-2. New repository → name it `psychro` → Public → Create.
-3. "Uploading an existing file" → drag all 5 files from this folder → Commit.
-4. Repo Settings → Pages → Source: "Deploy from a branch" → Branch: `main`, folder `/ (root)` → Save.
-5. Wait ~2 minutes. Your app is live at:  `https://YOURUSERNAME.github.io/psychro/`
+`dist/` keeps the original drop-anywhere story: `index.html` is a **single
+self-contained file** (all JS/CSS inlined), alongside `sw.js`,
+`manifest.webmanifest`, and the icons. Host the folder on any static host —
+GitHub Pages works as before:
 
-## Installing on a phone (you and coworkers)
+1. Repo Settings → Pages → deploy from branch, folder `/ (root)` of a branch
+   containing the *built* files (or use an Actions deploy of `dist/`).
+2. Your app is live at `https://YOURUSERNAME.github.io/psychro/`.
 
-**Android (Chrome):** open the link → Chrome shows an "Install app" prompt
-(or menu ⋮ → *Add to Home screen* → *Install*). Icon appears on the home screen;
-launches fullscreen; works with no signal after the first load.
+The service-worker cache name is stamped from the package version + git SHA at
+build time, so **updates roll out automatically** — no more manual cache-version
+bumps. Users with the app open get a "new version ready — reload" toast.
 
-**iPhone (Safari):** open the link → Share button → *Add to Home Screen*.
+## Installing on a phone
 
-Share the link with coworkers — each person installs it the same way in ~5 seconds.
+**Android (Chrome):** open the link → "Install app" prompt (or ⋮ → *Add to Home
+screen*). Launches fullscreen, works with no signal after the first load.
 
-## Updating the tool later
+**iPhone (Safari):** open the link → Share → *Add to Home Screen*.
 
-Replace `index.html` in the repo and bump the version suffix in `sw.js`'s
-`CACHE` constant (currently `sdc-psychro-v14` → next would be `sdc-psychro-v15`).
-Installed phones pick up the new version on their next online launch.
+The `src/platform/` adapter layer is the seam for the next step — wrapping the
+app with Capacitor for real App Store / Play Store distribution. The web
+implementations (localStorage, Web Share, blob download) swap for
+`@capacitor/preferences`, `@capacitor/share`, `@capacitor/filesystem` behind the
+same function signatures, with no UI changes.
 
-## Notes
+## Data & privacy
 
-- Saved scenarios and custom cities live on each person's own device (browser
-  storage). Use the in-app **Export scenarios** button to hand someone a setup file.
-- No data leaves the phone — the app makes zero network calls after install.
+Saved scenarios, halls, SLAs, and custom sites live on each person's own device
+(browser storage). Use the in-app **save file** buttons to export/share a
+workspace; imports are schema-validated and merge without overwriting local
+data. The app makes zero network calls after install.
+
+If device storage is full, the app warns loudly instead of silently dropping
+writes — export a save file when you see that warning.
+
+## Validation
+
+- CI (GitHub Actions): lint, typecheck, unit tests, CoolProp oracle grid,
+  accuracy report, and a build sanity check on every push.
+- In-app: the footer self-test badge re-runs a 30-case validation from the
+  shipped code on every load — tap it for the full table.
+- To regenerate the oracle grid after changing the domain:
+  `pip install CoolProp && npm run reference`.
+
+**This is a planning aid, not a control system.** Verify moves against site
+instrumentation before acting.
 
 ---
 

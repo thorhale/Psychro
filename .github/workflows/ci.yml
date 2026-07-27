@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck (core modules)
+        run: npm run typecheck
+
+      - name: Unit tests + CoolProp oracle grid
+        run: npm test
+
+      - name: Accuracy report vs CoolProp
+        run: npm run analyze
+
+      - name: Build (single-file bundle + PWA assets)
+        run: npm run build
+
+      - name: Sanity-check the bundle
+        run: |
+          test -f dist/index.html
+          test -f dist/sw.js
+          test -f dist/manifest.webmanifest
+          # The stamped SW must not still carry the placeholder
+          ! grep -q "__BUILD_VERSION__" dist/sw.js
+          # Single-file promise: no external JS chunks
+          ! ls dist/assets 2>/dev/null | grep -q "\.js$" || true
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: psychro-dist
+          path: dist/
+          retention-days: 14

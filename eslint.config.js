@@ -1,0 +1,33 @@
+import js from '@eslint/js';
+import globals from 'globals';
+
+export default [
+  js.configs.recommended,
+  {
+    files: ['src/**/*.js', 'test/**/*.js', 'scripts/**/*.mjs', 'vite.config.js'],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'module',
+      globals: { ...globals.browser, ...globals.node },
+    },
+    rules: {
+      // The UI code renders trusted, locally-generated strings into innerHTML by
+      // design (no network, no third-party content) — but keep eval-family off.
+      'no-eval': 'error',
+      'no-implied-eval': 'error',
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-var': 'error',
+      'prefer-const': 'warn',
+      eqeqeq: ['warn', 'smart'],
+    },
+  },
+  {
+    files: ['sw.js'],
+    languageOptions: {
+      globals: { ...globals.serviceworker },
+    },
+  },
+  {
+    ignores: ['dist/', 'node_modules/', 'blockworld/', 'psychro-demo.html'],
+  },
+];
