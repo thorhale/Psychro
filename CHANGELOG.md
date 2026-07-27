@@ -11,6 +11,25 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — native
+
+- **Capacitor projects for iOS and Android** (`android/`, `ios/`), wrapping the
+  same `dist/` the web app deploys — one build artifact, not two. Platform
+  differences live entirely behind `src/platform/`, selected by runtime bridge
+  detection, so no UI code imports a Capacitor package.
+- **Durable native storage.** Reads stay synchronous from localStorage; writes
+  mirror to Capacitor Preferences; boot restores localStorage from Preferences.
+  This is what survives iOS evicting WebView storage from an app left unused.
+  Same-key mirrors are serialised per key — without that, a write resolving after
+  a later delete resurrects data the user removed.
+- Status-bar styling, splash dismissal after first render, and an Android
+  hardware-back handler that closes dialogs and panels before closing the app.
+- `docs/store/` — listing copy, both stores' privacy answers, screenshot
+  checklist, and a signing guide covering every credential and step.
+- `ios/App/App/PrivacyInfo.xcprivacy` declaring no tracking and no collected data.
+- `native.yml` CI: unsigned Android debug APK on push, iOS compile check on PRs.
+  Neither gates the web pipeline.
+
 ### Fixed
 
 - **Offline correctness.** Vite fingerprinted the `<link rel="manifest">`
@@ -19,6 +38,12 @@ what rolls an update out to installed apps.
   PWA actually referenced was never in the offline cache. PWA assets now live in
   `public/` with stable names. Side effect: the icon is no longer inlined as a
   data URI, cutting the bundle from 50.9 to 46.3 kB gzipped.
+- **Manifest icon references were unverified.** `@capacitor/assets` rewrote the
+  manifest to point at `../icons/*.webp` — outside the deploy root, wrong MIME
+  type, and absent from the precache list — and the bundle verifier passed it,
+  because it checked the link *reaching* the manifest but never the manifest's
+  own contents. Now checked: path containment, existence, precache membership,
+  MIME/extension agreement, required fields.
 
 ### Added
 
@@ -50,7 +75,17 @@ what rolls an update out to installed apps.
   operator-facing badge strings.
 - The PNG/PDF export header gained a derived-properties line; an exported sheet
   previously omitted dew point, the number SLA caps are written against.
-- Test count: 52 → 111 unit + 22 E2E.
+- Test count: 52 → 131 unit + 22 E2E. Bundle checks: 20 → 40.
+- Bundle size 46.3 → 53.4 kB gzipped: one artifact serves web and native, so the
+  Capacitor plugin code ships to web even though the web path never runs it.
+  Two builds would mean E2E verifies a different artifact from the one on a
+  phone — a worse consistency risk than 8 kB. A size budget (220 kB raw /
+  65 kB gzipped) now fails the build on accidental growth.
+
+### Verified
+
+No accuracy drift: `npm run analyze` reproduces the table in
+`docs/coolprop-comparison.md` §4 digit-for-digit after all of the above.
 
 ## [2.0.0] — 2026-07-27
 
