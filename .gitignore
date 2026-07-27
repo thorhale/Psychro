@@ -4,3 +4,18 @@ dist/
 .DS_Store
 test-results/
 playwright-report/
+
+# Native build outputs — the projects are committed, their artifacts are not.
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/app/src/main/assets/public/
+ios/App/build/
+ios/App/Pods/
+ios/App/App/public/
+ios/App/Podfile.lock
+*.jks
+*.keystore
+*.p12
+*.mobileprovision

@@ -55,7 +55,13 @@ import {
   clearErrorLog,
   onErrorLogChange,
 } from '../lib/errors.js';
-import { storage, saveFile as platformSaveFile, shareFile } from '../platform/index.js';
+import {
+  storage,
+  saveFile as platformSaveFile,
+  shareFile,
+  hydrateFromNative,
+  initNativeShell,
+} from '../platform/index.js';
 import { runSelfTest } from './selftest.js';
 import { VERSION_LABEL } from './version.js';
 import { registerServiceWorker, initInstallBanner } from './pwa.js';
@@ -2681,6 +2687,20 @@ function exportPdfJpeg(canvas) {
 
 // ════════════════════════════════════════════════════════════
 // Init
+//
+// Wrapped in an async bootstrap for ONE reason: on a native shell, durable
+// storage (Capacitor Preferences) has to be restored into localStorage before
+// anything reads it, and that restore is async. On web `hydrateFromNative()`
+// resolves immediately without touching anything, so the boot path is unchanged
+// — which is what the E2E boot test on the web build verifies.
+async function boot() {
+  const { restored, platform } = await hydrateFromNative();
+  if (restored.length) {
+    // Worth saying out loud: this means the WebView storage had been evicted and
+    // we just recovered the operator's work from the durable copy.
+    logError('storage-recovered', new Error(`restored ${restored.length} key(s) from ${platform} durable storage`));
+  }
+
 normalizeCaps(state.slaProfiles);  // default capability flags OFF on preloaded profiles
 loadCustomSites();                 // restore user-added cities
 loadProfiles();                  // restore persisted profiles if available (re-normalizes)
@@ -2737,6 +2757,32 @@ renderScenarios();
     badge.textContent = badge.textContent.replace(/[▾▴]$/, open ? '▴' : '▾');
   });
 })();
+
+  // Native shell: status bar, splash dismissal, Android hardware back. The back
+  // handler closes open UI before it closes the app — a dialog or an expanded
+  // panel should absorb the press.
+  await initNativeShell({
+    onBack: () => {
+      const scrim = document.querySelector('.ntf-scrim');
+      if (scrim) { scrim.remove(); return true; }
+      const chip = document.getElementById('chip-panel');
+      if (chip && chip.classList.contains('open')) { chip.classList.remove('open'); return true; }
+      const openPanel = document.querySelector('#selftest-panel.open');
+      if (openPanel) { openPanel.classList.remove('open'); return true; }
+      return false;
+    },
+  });
+}
+
+boot().catch((err) => {
+  logError('boot', err);
+  // A failed bootstrap must not leave a blank screen with no explanation.
+  const badge = document.getElementById('selftest-badge');
+  if (badge) {
+    badge.textContent = '⚠ Startup failed — see the error log';
+    badge.className = 'selftest-badge st-fail';
+  }
+});
 
 // ── Version stamp + error log access in the footer ──────────────────────────
 (function initFooterDiagnostics() {

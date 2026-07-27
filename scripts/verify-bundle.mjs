@@ -10,7 +10,8 @@
  *   npm run build && npm run verify:bundle
  */
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -85,6 +86,49 @@ if (assetsMatch) {
   }
 }
 
+// ── 4b. The manifest's OWN references must resolve and be cached ────────────
+// Added after `@capacitor/assets` rewrote the manifest to point at
+// `../icons/*.webp` — paths that escape the deploy root, carry a mismatched MIME
+// type, and are absent from the precache list. Checking only the <link> that
+// reaches the manifest (§3) missed it entirely: an installed PWA would have had
+// no usable icon offline. Anything the manifest names is part of the install.
+if (files.includes('manifest.webmanifest')) {
+  let manifest = null;
+  try {
+    manifest = JSON.parse(readFileSync(join(dist, 'manifest.webmanifest'), 'utf8'));
+    check('manifest.webmanifest is valid JSON', true);
+  } catch (err) {
+    check('manifest.webmanifest is valid JSON', false, err.message);
+  }
+  if (manifest) {
+    const icons = Array.isArray(manifest.icons) ? manifest.icons : [];
+    check('manifest declares at least one icon', icons.length > 0);
+    const swEntries = assetsMatch
+      ? [...assetsMatch[1].matchAll(/'([^']+)'/g)].map((m) => m[1].replace(/^\.\//, ''))
+      : [];
+    for (const icon of icons) {
+      const src = String(icon.src ?? '');
+      check(`manifest icon stays inside the deploy root: ${src}`, !src.includes('..'));
+      const rel = src.replace(/^\.?\//, '');
+      check(`manifest icon exists: ${src}`, files.includes(rel));
+      check(`manifest icon is precached: ${src}`, swEntries.includes(rel));
+      // A declared type that disagrees with the extension breaks some installers.
+      const ext = rel.split('.').pop()?.toLowerCase();
+      const declared = String(icon.type ?? '');
+      if (ext && declared) {
+        const consistent =
+          (ext === 'png' && declared === 'image/png') ||
+          (ext === 'webp' && declared === 'image/webp') ||
+          (ext === 'svg' && declared === 'image/svg+xml');
+        check(`manifest icon type matches extension: ${src} (${declared})`, consistent);
+      }
+    }
+    for (const field of ['name', 'short_name', 'start_url', 'display']) {
+      check(`manifest has ${field}`, Boolean(manifest[field]));
+    }
+  }
+}
+
 // ── 5. Service worker is version-stamped ────────────────────────────────────
 check('sw.js placeholder was substituted', !sw.includes('__BUILD_VERSION__'));
 const cacheName = (sw.match(/CACHE\s*=\s*'([^']+)'/) || [])[1];
@@ -98,6 +142,28 @@ check('no external resource references', externalRefs.length === 0, externalRefs
 
 // ── 7. BlockWorld passthrough ───────────────────────────────────────────────
 check('blockworld/ copied through', existsSync(join(dist, 'blockworld', 'index.html')));
+
+// ── 8. Size budget ──────────────────────────────────────────────────────────
+// One artifact serves both web and the native shells, so the Capacitor plugin
+// code is bundled even though the web path never executes it (~8 kB gzipped).
+// That was a deliberate trade: two builds would mean the E2E suite verifies a
+// different artifact from the one running on a phone, which is a worse
+// consistency risk than a few kB. The budget exists to catch ACCIDENTAL growth
+// — raise it only with a note in CHANGELOG.md saying what was added and why.
+const RAW_BUDGET_KB = 220;
+const GZIP_BUDGET_KB = 65;
+const rawKb = statSync(join(dist, 'index.html')).size / 1024;
+const gzipKb = gzipSync(readFileSync(join(dist, 'index.html'))).length / 1024;
+check(
+  `index.html within ${RAW_BUDGET_KB} kB raw`,
+  rawKb <= RAW_BUDGET_KB,
+  `${rawKb.toFixed(1)} kB`,
+);
+check(
+  `index.html within ${GZIP_BUDGET_KB} kB gzipped`,
+  gzipKb <= GZIP_BUDGET_KB,
+  `${gzipKb.toFixed(1)} kB`,
+);
 
 // ── Report ──────────────────────────────────────────────────────────────────
 const width = Math.max(...checks.map((c) => c.name.length));

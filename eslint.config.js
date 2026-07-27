@@ -34,6 +34,15 @@ export default [
     },
   },
   {
-    ignores: ['dist/', 'node_modules/', 'blockworld/', 'psychro-demo.html'],
+    ignores: [
+      'dist/',
+      'node_modules/',
+      'blockworld/',
+      'psychro-demo.html',
+      // Native projects hold a COPY of the built web assets plus Capacitor's own
+      // generated bridge files. Both are build output, not source.
+      'android/',
+      'ios/',
+    ],
   },
 ];
