@@ -15,7 +15,8 @@
     "reference": "python3 test/reference/generate_reference.py",
     "analyze": "node scripts/analyze-accuracy.mjs",
     "fit:enhancement": "node scripts/fit-enhancement.mjs",
-    "fit:secondary": "node scripts/fit-secondary.mjs"
+    "fit:secondary": "node scripts/fit-secondary.mjs",
+    "verify:bundle": "node scripts/verify-bundle.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
