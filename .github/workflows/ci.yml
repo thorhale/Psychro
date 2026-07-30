@@ -47,16 +47,19 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      - name: Committed shareable file is a build of the current source
+        run: |
+          # StreamHallPlanner.html is committed (Pages serves the repo raw) and
+          # is what people download. This catches an edit to src/ that was never
+          # rebuilt into it. Byte equality can't be used: the bundle embeds the
+          # build's git SHA, so a file committed at one commit never matches a
+          # rebuild at a later one. The checker normalises that stamp only.
+          cp StreamHallPlanner.html "$RUNNER_TEMP/committed.html"
+          npm run shareable
+          node scripts/check-shareable-fresh.mjs "$RUNNER_TEMP/committed.html" StreamHallPlanner.html
+
       - name: End-to-end regression tests (hosted app + single file)
         run: npm run test:e2e
-
-      - name: Committed shareable file matches a fresh build
-        run: |
-          # StreamHallPlanner.html is committed so Pages can serve it. If it
-          # drifts from the source it was built from, the file people download
-          # stops being the app people see — which has happened. `test:e2e`
-          # rebuilds it, so any diff here means the commit is stale.
-          git diff --exit-code -- StreamHallPlanner.html
 
       - name: Upload Playwright report on failure
         if: failure()
