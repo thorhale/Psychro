@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Privacy manifest.
+
+  This app collects nothing, transmits nothing, and makes no network calls after
+  install. Everything the operator enters stays in device storage and only leaves
+  the device if they explicitly export or share a save file.
+
+  NSPrivacyAccessedAPITypes declares UserDefaults, which Capacitor Preferences
+  uses as the durable copy of the app's own data — reason code CA92.1, "access
+  info from same app".
+
+  If telemetry, crash reporting or any analytics SDK is ever added, this file and
+  the App Store Connect privacy answers must both change.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

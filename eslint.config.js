@@ -9,8 +9,8 @@ export default [
       'test/**/*.js',
       'test/**/*.mjs',
       'scripts/**/*.mjs',
-      'vite.config.js',
-      'playwright.config.mjs',
+      // Config and E2E files are Node-side; they need the Node globals too.
+      '*.config.js',
     ],
     languageOptions: {
       ecmaVersion: 2023,
@@ -40,8 +40,14 @@ export default [
       'node_modules/',
       'blockworld/',
       'psychro-demo.html',
+      // Native projects hold a COPY of the built web assets plus Capacitor's own
+      // generated bridge files. Both are build output, not source.
+      'android/',
+      'ios/',
       'playwright-report/',
       'test-results/',
+      // The shareable single file is generated: every module inlined into one
+      // <script>. Linting it lints the same source twice.
       'StreamHallPlanner.html',
     ],
   },

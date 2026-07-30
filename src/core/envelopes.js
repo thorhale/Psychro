@@ -13,7 +13,7 @@
  *   dpMin/dpMax  dew point °C (null = no cap)
  */
 
-import { fToC } from './units.js';
+import { fToC, cToF } from './units.js';
 import { humidityRatioG, humidityRatioFromPw, satPressure, dewPointFrom } from './psychro.js';
 
 /**
@@ -161,19 +161,40 @@ export function ashraeZone(tc, rh, p) {
 }
 
 /**
- * Does a state point satisfy an SLA profile? Returns `{ ok, reason }`.
- * Extracted from v1's `checkSLA` with pressure passed in.
+ * Does a state point satisfy an SLA profile?
+ *
+ * This is the single implementation of the contract the whole tool exists to
+ * enforce, so it lives in the tested core and carries the operator-facing
+ * message with it — a second copy in the UI layer (which is how v1 shipped)
+ * is exactly the kind of drift that puts a "✓ in SLA" badge on an
+ * out-of-contract point.
+ *
+ * `reason` is the short badge string (`T < 50°F`); `detail` names the bound in
+ * words for tooltips and the accessible description. Checks run in the order an
+ * engineer would read them: temperature, humidity, then the dew-point cap.
+ *
+ * @param {{tMinF:number,tMaxF:number,rhMin:number,rhMax:number,dpMaxF:(number|null|string)}} profile
+ * @param {number} tempF dry bulb °F
+ * @param {number} rh relative humidity %
+ * @returns {{ok: boolean, reason: string, detail: string}}
  */
-export function checkSLA(profile, tempF, rh, _p) {
-  const tc = fToC(tempF);
-  if (tempF < profile.tMinF) return { ok: false, reason: 'below temp min' };
-  if (tempF > profile.tMaxF) return { ok: false, reason: 'above temp max' };
-  if (rh < profile.rhMin) return { ok: false, reason: 'below RH min' };
-  if (rh > profile.rhMax) return { ok: false, reason: 'above RH max' };
+export function checkSLA(profile, tempF, rh) {
+  if (tempF < profile.tMinF)
+    return { ok: false, reason: `T < ${profile.tMinF}°F`, detail: 'below temp min' };
+  if (tempF > profile.tMaxF)
+    return { ok: false, reason: `T > ${profile.tMaxF}°F`, detail: 'above temp max' };
+  if (rh < profile.rhMin)
+    return { ok: false, reason: `RH < ${profile.rhMin}%`, detail: 'below RH min' };
+  if (rh > profile.rhMax)
+    return { ok: false, reason: `RH > ${profile.rhMax}%`, detail: 'above RH max' };
   if (profile.dpMaxF != null && profile.dpMaxF !== '') {
-    const dp = dewPointFrom(tc, rh);
-    if (dp !== null && dp > fToC(Number(profile.dpMaxF)))
-      return { ok: false, reason: 'above dew point cap' };
+    const dp = dewPointFrom(fToC(tempF), rh);
+    if (dp !== null && cToF(dp) > Number(profile.dpMaxF))
+      return {
+        ok: false,
+        reason: `DP > ${profile.dpMaxF}°F`,
+        detail: 'above dew point cap',
+      };
   }
-  return { ok: true, reason: '' };
+  return { ok: true, reason: 'within SLA', detail: 'within SLA' };
 }

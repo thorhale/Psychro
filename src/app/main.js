@@ -13,22 +13,26 @@ import {
   vaporPressure,
   humidityRatio,
   humidityRatioFromPw,
-  humidityRatioG as humidityRatioGCore,
+  humidityRatioG,
   saturationHumidityRatio,
   vaporPressureFromW,
   rhFromW,
   dewPoint,
-  enthalpy,
   specificVolume,
-  absHumidity,
   wetBulb,
   rhFromWetBulb,
   rhFromPsychrometer,
 } from '../core/psychro.js';
 import { fToC, cToF, TEMP_UNITS, deltaFromF, deltaLabelFor } from '../core/units.js';
-import { ASHRAE_ENVELOPES, envelopePolygon, slaPolygon, ashraeZone } from '../core/envelopes.js';
+import {
+  ASHRAE_ENVELOPES,
+  envelopePolygon,
+  slaPolygon,
+  checkSLA as checkSLACore,
+} from '../core/envelopes.js';
 import { rampPlanFor as rampPlanCore, fmtHrs } from '../core/planner.js';
 import { checkDomain } from '../core/domain.js';
+import { deriveState, deriveStateF } from '../core/derive.js';
 import { stAbbr, allSites as allSitesFor } from '../config/sites.js';
 import {
   normalizeHall,
@@ -36,6 +40,13 @@ import {
   validateSaveFile,
   isValidScenario,
 } from '../state/schema.js';
+import {
+  LS_KEY_V1,
+  LS_KEY_V3,
+  LS_KEY_V4,
+  parseStoredState,
+  buildStoredState,
+} from '../state/persistence.js';
 import { toast, confirmDialog } from '../ui/notify.js';
 import {
   logError,
@@ -45,7 +56,13 @@ import {
   clearErrorLog,
   onErrorLogChange,
 } from '../lib/errors.js';
-import { storage, saveFile as platformSaveFile, shareFile } from '../platform/index.js';
+import {
+  storage,
+  saveFile as platformSaveFile,
+  shareFile,
+  hydrateFromNative,
+  initNativeShell,
+} from '../platform/index.js';
 import { runSelfTest } from './selftest.js';
 import { VERSION_LABEL } from './version.js';
 import { registerServiceWorker, initInstallBanner } from './pwa.js';
@@ -68,7 +85,6 @@ const deltaLabel = () => deltaLabelFor(state.tempUnit || 'F');
 // The core's humidityRatio now takes (tc, rh, p) — the dry bulb is needed for
 // the enhancement factor. These wrappers keep the extracted UI code readable
 // where it already holds a vapour pressure.
-const humidityRatioPw = (pw, p, tc) => humidityRatioFromPw(pw, p, tc);
 const humidityRatioGPw = (pw, p, tc) => humidityRatioFromPw(pw, p, tc) * 1000;
 
 /** Storage quota warning — shown once per session, not per keystroke. */
@@ -162,7 +178,6 @@ Object.defineProperty(state, 'hall', {
   set(h) { this.hallProfiles[Math.min(this.activeHall, this.hallProfiles.length - 1)] = h; },
 });
 // Convenience: the active profile's elevation is the live site elevation.
-function _activeElevFt() { return state.hall.elevFt ?? 0; }
 
 // Capability flags control DEGREES OF FREEDOM, not slider bounds. Temperature
 // is always free (cooling lowers it; IT load / heating raises it — every hall
@@ -180,7 +195,6 @@ function _activeElevFt() { return state.hall.elevFt ?? 0; }
 function normalizeCaps(profiles) {
   return migrateLegacyProfiles(profiles, state.hall);
 }
-const normalizeProfiles = normalizeCaps;
 
 // ════════════════════════════════════════════════════════════
 //  SITE / PRESSURE — driven by the active SLA profile's elevation
@@ -245,18 +259,6 @@ function currentW() {
 // RH (%) at a given °F on a fixed-W line — the core's enhanced-Eq.20 inversion.
 function rhFromW_F(tempF, Wkg) {
   return Math.min(100, Math.max(0, rhFromW(fToC(tempF), Wkg, state.pressure)));
-}
-// Temp (°F) that yields a given RH on a fixed-W line (binary search on satP).
-// f depends on the search temperature, so evaluate it at each candidate.
-function _tempForW_RH_F(Wkg, rh) {
-  let lo = -40, hi = 95;                         // °C search bounds
-  for (let i = 0; i < 60; i++) {
-    const m = (lo + hi) / 2;
-    const pw = vaporPressureFromW(Wkg, state.pressure, m);
-    const targetSat = pw / (rh / 100);           // satP needed at this RH & temp
-    if (satPressure(m) < targetSat) lo = m; else hi = m;
-  }
-  return cToF((lo + hi) / 2);
 }
 
 // RH (%) and vapor pressure at an arbitrary chart point (t °C, W g/kg) —
@@ -332,7 +334,7 @@ function syncAllControls(skipInput) {
   setControl('slider-b-dp', 'b-dp', null, dpF_from(state.bTemp, state.bRH), 'dp', skipInput);
   document.querySelectorAll('.tunit').forEach(el => el.textContent = tLabel());
 }
-function syncControlsexcept(skipInput) { syncAllControls(skipInput); }
+function syncControlsExcept(skipInput) { syncAllControls(skipInput); }
 
 function setControl(sliderId, inputId, valId, valF, kind, skipInput) {
   const slider = document.getElementById(sliderId);
@@ -384,22 +386,22 @@ document.getElementById('slider-b-rh').addEventListener('input', function() {
 document.getElementById('a-temp').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
   setTempHoldingDp('a', tU().toF(v));
-  syncControlsexcept('a-temp'); update();
+  syncControlsExcept('a-temp'); update();
 });
 document.getElementById('a-rh').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
   state.aRH = clampRH(v);
-  syncControlsexcept('a-rh'); update();
+  syncControlsExcept('a-rh'); update();
 });
 document.getElementById('b-temp').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
   setTempHoldingDp('b', clampTargetF(tU().toF(v)));
-  syncControlsexcept('b-temp'); update();
+  syncControlsExcept('b-temp'); update();
 });
 document.getElementById('b-rh').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
   state.bRH = clampRH(v);
-  syncControlsexcept('b-rh'); update();
+  syncControlsExcept('b-rh'); update();
 });
 
 // ── Dew point controls: DP sets RH at the fixed dry-bulb (temp untouched). ──
@@ -410,7 +412,7 @@ document.getElementById('slider-a-dp').addEventListener('input', function() {
 document.getElementById('a-dp').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
   state.aRH = rh_from_dpF(state.aTemp, tU().toF(v));
-  syncControlsexcept('a-dp'); update();
+  syncControlsExcept('a-dp'); update();
 });
 document.getElementById('slider-b-dp').addEventListener('input', function() {
   state.bRH = clampRH(rh_from_dpF(state.bTemp, parseFloat(this.value)));
@@ -419,7 +421,7 @@ document.getElementById('slider-b-dp').addEventListener('input', function() {
 document.getElementById('b-dp').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
   state.bRH = clampRH(rh_from_dpF(state.bTemp, tU().toF(v)));
-  syncControlsexcept('b-dp'); update();
+  syncControlsExcept('b-dp'); update();
 });
 
 // Back-compat shim: unit toggle calls syncTempInputs(); route to syncAllControls.
@@ -717,7 +719,7 @@ function drawChart() {
     const tStepCurve = (drawTmax-drawTmin)/400;
     const pxPts = [];   // pixel points along this curve, for viewport-aware labeling
     for(let t=drawTmin;t<=drawTmax;t+=tStepCurve){
-      const hr2=humidityRatioGCore(t,rh,p);
+      const hr2=humidityRatioG(t,rh,p);
       const[x,y]=xy(t,hr2);
       pxPts.push([x,y]);
       if(!started){ctx.moveTo(x,y);started=true;}else ctx.lineTo(x,y);
@@ -882,9 +884,9 @@ function drawChart() {
   } // end SLA visibility
 
   // Points
-  const tcA=fToC(state.aTemp), hrA=humidityRatioGCore(tcA,state.aRH,p);
+  const tcA=fToC(state.aTemp), hrA=humidityRatioG(tcA,state.aRH,p);
   const[axp,ayp]=xy(tcA,hrA);
-  const tcB=fToC(state.bTemp), hrB=humidityRatioGCore(tcB,state.bRH,p);
+  const tcB=fToC(state.bTemp), hrB=humidityRatioG(tcB,state.bRH,p);
   const[bxp,byp]=xy(tcB,hrB);
 
   // ── A→B change plan line + arrow (toggleable) ──
@@ -986,17 +988,11 @@ function buildTable() {
     {label:'● A (start)',cls:'row-a',dot:'#ffff00',temp:state.aTemp,rh:state.aRH},
     {label:'● B (target)',cls:'row-b',dot:'#f0a500',temp:state.bTemp,rh:state.bRH},
   ];
+  // One derivation per point, shared with the readout, hover and export — see
+  // src/core/derive.js. Field aliases keep the existing row template readable.
   const derived = pts.map(pt => {
-    const tc=fToC(pt.temp), pws=satPressure(tc), pw=vaporPressure(tc,pt.rh);
-    const Wkg=humidityRatioPw(pw,p,tc);
-    return { ...pt, tc, pws, pw,
-      W: Wkg*1000,
-      ah: absHumidity(tc,pw),
-      dp: dewPoint(pw),
-      wb: wetBulb(tc,pt.rh,p),
-      h: enthalpy(tc,Wkg,p),
-      v: specificVolume(tc,Wkg,p),
-      zone: ashraeZone(tc,pt.rh,p) };
+    const d = deriveStateF(pt.temp, pt.rh, p);
+    return { ...pt, ...d, ah: d.absHum, dp: d.tdpC, wb: d.twbC, W: d.Wg };
   });
   const fmt=(n,d)=>(isNaN(n)||n===null)?'—':n.toFixed(d);
   const rhCls=rh=>rh>80?'rh-bad':rh>60?'rh-warn':'rh-ok';
@@ -1048,19 +1044,10 @@ function planMove(opts) {
 // ════════════════════════════════════════════════════════════
 //  BADGES
 // ════════════════════════════════════════════════════════════
-// Check a point against the active SLA. Returns {ok, reason}.
-function checkSLA(tempF, rh, _p) {
-  const sla = state.slaProfiles[state.activeSla];
-  const tc = fToC(tempF);
-  const pw = vaporPressure(tc, rh);
-  const dpC = dewPoint(pw);
-  if (tempF < sla.tMinF) return { ok:false, reason:`T < ${sla.tMinF}°F` };
-  if (tempF > sla.tMaxF) return { ok:false, reason:`T > ${sla.tMaxF}°F` };
-  if (rh < sla.rhMin)    return { ok:false, reason:`RH < ${sla.rhMin}%` };
-  if (rh > sla.rhMax)    return { ok:false, reason:`RH > ${sla.rhMax}%` };
-  if (sla.dpMaxF != null && sla.dpMaxF !== '' && dpC != null && cToF(dpC) > sla.dpMaxF)
-    return { ok:false, reason:`DP > ${sla.dpMaxF}°F` };
-  return { ok:true, reason:'within SLA' };
+// Check a point against the ACTIVE SLA. The contract logic itself lives in
+// src/core/envelopes.js (tested); this only binds it to the current profile.
+function checkSLA(tempF, rh) {
+  return checkSLACore(state.slaProfiles[state.activeSla], tempF, rh);
 }
 
 // Merged readout: big RH→RH headline + collapsible computed details for both points.
@@ -1071,18 +1058,10 @@ function updateControlReadout() {
   const el = document.getElementById('control-readout');
   if (!el) return;
 
+  // Shared derivation (src/core/derive.js); `W` is g/kg here as the copy reads.
   function props(tempF, rh) {
-    const tc = fToC(tempF);
-    const pw = vaporPressure(tc, rh);
-    const Wkg = humidityRatioPw(pw, p, tc);
-    const dpC = dewPoint(pw);
-    return {
-      tempF, rh,
-      W: Wkg * 1000,
-      dpF: dpC != null ? cToF(dpC) : null,
-      wbF: cToF(wetBulb(tc, rh, p)),
-      h: enthalpy(tc, Wkg, p),
-    };
+    const d = deriveStateF(tempF, rh, p);
+    return { ...d, W: d.Wg, dpF: d.tdpF, wbF: d.twbF };
   }
   const A = props(state.aTemp, state.aRH);
   const B = props(state.bTemp, state.bRH);
@@ -1254,8 +1233,8 @@ function updateControlReadout() {
   }
 
   // Live SLA verdicts for both points — the at-a-glance compliance truth.
-  const chkA = checkSLA(state.aTemp, state.aRH, p);
-  const chkB = checkSLA(state.bTemp, state.bRH, p);
+  const chkA = checkSLA(state.aTemp, state.aRH);
+  const chkB = checkSLA(state.bTemp, state.bRH);
   const slaChip = c => `<span class="cr-slachip"><span class="badge ${c.ok ? 'badge-ok' : 'badge-bad'}">${c.ok ? '✓ in SLA' : '✗ ' + c.reason}</span></span>`;
 
   el.innerHTML = `
@@ -2122,78 +2101,45 @@ document.querySelectorAll('#legend .leg-item').forEach(btn => {
 //  Quota failures surface as a toast (see persistJSON); the export/
 //  import path is always available as the reliable fallback.
 // ════════════════════════════════════════════════════════════
-const LS_KEY    = 'sdc_psychro_slaProfiles_v1';   // legacy (migration only)
-const LS_KEY_V3 = 'sdc_hep_v3';                   // legacy single-hall (migration only)
-const LS_KEY_V4 = 'sdc_hep_v4';
-
 function saveProfiles() {
-  persistJSON(LS_KEY_V4, {
-    v: 4, hallProfiles: state.hallProfiles, activeHall: state.activeHall,
-    hallView: state.hallView,
-    slaProfiles: state.slaProfiles, activeSla: state.activeSla,
-    tempUnit: state.tempUnit
-  });
+  persistJSON(LS_KEY_V4, buildStoredState(state));
 }
-function applySavedSlas(list) {
-  state.slaProfiles = list.some(s => s.locked) ? list
-    : [{ name:'Base SLA', tMinF:50, tMaxF:95, rhMin:5, rhMax:80, dpMaxF:null, maxDtHr:18, maxDrhHr:20, locked:true }, ...list];
-  normalizeProfiles(state.slaProfiles);
-}
+
+/**
+ * Restore persisted profiles. Parsing and cross-version migration live in
+ * src/state/persistence.js (pure, fixture-tested); this only reads storage and
+ * applies the returned patch, so a corrupt payload can never half-apply.
+ */
 function loadProfiles() {
   try {
-    const raw4 = storage.get(LS_KEY_V4);
-    if (raw4) {
-      const d = JSON.parse(raw4);
-      if (d && d.v === 4) {
-        if (Array.isArray(d.hallProfiles) && d.hallProfiles.length) {
-          state.hallProfiles = d.hallProfiles.map(h => normalizeHall(h));
-          state.activeHall = Math.min(d.activeHall || 0, state.hallProfiles.length - 1);
-        }
-        if (d.hallView && typeof d.hallView === 'object') {
-          state.hallView = { loc: d.hallView.loc || '', bld: d.hallView.bld || '' };
-        }
-        if (Array.isArray(d.slaProfiles) && d.slaProfiles.length) applySavedSlas(d.slaProfiles);
-        state.activeSla = Math.min(d.activeSla || 0, state.slaProfiles.length - 1);
-        if (d.tempUnit) state.tempUnit = d.tempUnit;
-        return true;
-      }
+    const { found, patch } = parseStoredState(
+      {
+        v4: storage.get(LS_KEY_V4),
+        v3: storage.get(LS_KEY_V3),
+        v1: storage.get(LS_KEY_V1),
+      },
+      state.hall,
+    );
+    if (!found) return false;
+
+    if (patch.hallProfiles) {
+      state.hallProfiles = patch.hallProfiles;
+      state.activeHall = patch.activeHall ?? 0;
     }
-    const raw3 = storage.get(LS_KEY_V3);
-    if (raw3) {
-      const d = JSON.parse(raw3);
-      if (d && d.v === 3) {
-        if (d.hall) {
-          const merged = Object.assign({}, state.hall, d.hall);
-          if (!d.hall.name) merged.name = '';   // let normalizeHall name it from its site
-          state.hall = normalizeHall(merged);
-        }
-        if (Array.isArray(d.slaProfiles) && d.slaProfiles.length) applySavedSlas(d.slaProfiles);
-        state.activeSla = Math.min(d.activeSla || 0, state.slaProfiles.length - 1);
-        if (d.tempUnit) state.tempUnit = d.tempUnit;
-        return true;
-      }
-    }
-    const raw = storage.get(LS_KEY);
-    if (!raw) return false;
-    const data = JSON.parse(raw);
-    if (Array.isArray(data.slaProfiles) && data.slaProfiles.length) {
-      // always keep a locked Base SLA at index 0
-      const hasLocked = data.slaProfiles.some(s => s.locked);
-      state.slaProfiles = hasLocked ? data.slaProfiles
-        : [{ name:'Base SLA', siteName:'', elevFt:0, tMinF:50, tMaxF:95, rhMin:5, rhMax:80, dpMaxF:null, maxDtHr:18, maxDrhHr:20, locked:true }, ...data.slaProfiles];
-      // Backfill fields on older saved profiles that predate features
-      state.slaProfiles.forEach(s => {
-        if (s.maxDtHr === undefined) s.maxDtHr = 18;
-        if (s.maxDrhHr === undefined) s.maxDrhHr = 20;
-        if (s.elevFt === undefined) s.elevFt = 0;
-        if (s.siteName === undefined) s.siteName = '';
-      });
+    if (patch.hall) state.hall = patch.hall; // v3: single hall onto the active slot
+    if (patch.hallView) state.hallView = patch.hallView;
+    if (patch.slaProfiles) {
+      state.slaProfiles = patch.slaProfiles;
       normalizeCaps(state.slaProfiles);
-      state.activeSla = Math.min(data.activeSla||0, state.slaProfiles.length-1);
-      if (data.tempUnit) state.tempUnit = data.tempUnit;
-      return true;
     }
-  } catch (e) { logError('loadProfiles', e); }
+    if (patch.activeSla != null) {
+      state.activeSla = Math.min(patch.activeSla, state.slaProfiles.length - 1);
+    }
+    if (patch.tempUnit) state.tempUnit = patch.tempUnit;
+    return true;
+  } catch (e) {
+    logError('loadProfiles', e);
+  }
   return false;
 }
 
@@ -2296,8 +2242,8 @@ function zoomToSLA() {
 // Frame the A→B change plan: fit both points with margin so the move fills the view.
 function zoomToPlan() {
   const p = state.pressure;
-  const tA=fToC(state.aTemp), wA=humidityRatioGCore(tA,state.aRH,p);
-  const tB=fToC(state.bTemp), wB=humidityRatioGCore(tB,state.bRH,p);
+  const tA=fToC(state.aTemp), wA=humidityRatioG(tA,state.aRH,p);
+  const tB=fToC(state.bTemp), wB=humidityRatioG(tB,state.bRH,p);
   const tmin=Math.min(tA,tB), tmax=Math.max(tA,tB);
   const hmin=Math.min(wA,wB), hmax=Math.max(wA,wB);
   const tspan=Math.max(tmax-tmin,4), hspan=Math.max(hmax-hmin,3);
@@ -2310,8 +2256,8 @@ function zoomToPlan() {
 // Center the current view on the midpoint of A and B without changing zoom level.
 function centerView() {
   const p = state.pressure;
-  const tA=fToC(state.aTemp), wA=humidityRatioGCore(tA,state.aRH,p);
-  const tB=fToC(state.bTemp), wB=humidityRatioGCore(tB,state.bRH,p);
+  const tA=fToC(state.aTemp), wA=humidityRatioG(tA,state.aRH,p);
+  const tB=fToC(state.bTemp), wB=humidityRatioG(tB,state.bRH,p);
   const cT=(tA+tB)/2, cW=(wA+wB)/2;
   const tHalf=(view.tMax-view.tMin)/2, hHalf=(view.hrMax-view.hrMin)/2;
   view.tMin=cT-tHalf; view.tMax=cT+tHalf;
@@ -2351,7 +2297,7 @@ function centerView() {
     const { W, H, pad } = lastGeom;
     if (px < pad.l || px > W - pad.r || py < pad.t || py > H - pad.b) { hideHover(); return; }
     const [tc, hr] = fromXY(px, py, W, H, pad);
-    const { rh, pw } = rhAtPoint(tc, hr);
+    const { rh } = rhAtPoint(tc, hr);
     const p = state.pressure;
     const tF = cToF(tc);
     let body;
@@ -2360,11 +2306,9 @@ function centerView() {
         <div class="tt-row"><span class="tt-k">W</span><span>${hr.toFixed(2)} g/kg</span></div>
         <div class="tt-sla" style="color:var(--warn)">above saturation — supersaturated</div>`;
     } else {
-      const dpC = dewPoint(pw);
-      const wbC = wetBulb(tc, rh, p);
-      const h   = enthalpy(tc, Math.max(0, hr) / 1000, p);
-      const zone = ashraeZone(tc, rh, p);
-      const chk = checkSLA(tF, rh, p);
+      const d = deriveState(tc, rh, p);
+      const dpC = d.tdpC, wbC = d.twbC, h = d.h, zone = d.zone;
+      const chk = checkSLA(tF, rh);
       body = `<div class="tt-head">${dispTs(tF)}${tLabel()} · ${rh.toFixed(0)}% RH</div>
         <div class="tt-row"><span class="tt-k">W</span><span>${hr.toFixed(2)} g/kg</span></div>
         <div class="tt-row"><span class="tt-k">Dew pt</span><span>${dpC != null ? dispTs(cToF(dpC)) + ' ' + tLabel() : '—'}</span></div>
@@ -2684,7 +2628,21 @@ function buildExportCanvas() {
   const tgt = `${dispTs(state.bTemp)}${U} / ${Math.round(state.bRH)}%`;
   const plan = planMove();
   const planTxt = plan.hours > 0 ? `      ·      est. ≥ ${fmtHrs(plan.hours)} (${plan.binding})` : '';
-  x.fillText(`CURRENT  ${cur}      →      TARGET  ${tgt}${planTxt}`, 28, 114);
+  x.fillText(`CURRENT  ${cur}      →      TARGET  ${tgt}${planTxt}`, 28, 112);
+
+  // Derived properties, from the same deriveState() the table and readout use —
+  // an exported sheet has to stand on its own, and dew point in particular is
+  // what SLA caps are written against.
+  const dA = deriveStateF(state.aTemp, state.aRH, state.pressure);
+  const dB = deriveStateF(state.bTemp, state.bRH, state.pressure);
+  const dpTxt = (d) => (d.tdpF != null ? `${dispTs(d.tdpF)}${U}` : '—');
+  x.fillStyle = '#9db8d0'; x.font = '12px -apple-system,Segoe UI,sans-serif';
+  x.fillText(
+    `dew pt ${dpTxt(dA)} → ${dpTxt(dB)}   ·   W ${dA.Wg.toFixed(2)} → ${dB.Wg.toFixed(2)} g/kg   ·   ` +
+      `wet bulb ${dispTs(dA.twbF)} → ${dispTs(dB.twbF)}${U}   ·   ASHRAE ${dA.zone} → ${dB.zone}`,
+    28,
+    132,
+  );
 
   // Chart image
   if (src) {
@@ -2763,6 +2721,20 @@ function exportPdfJpeg(canvas) {
 
 // ════════════════════════════════════════════════════════════
 // Init
+//
+// Wrapped in an async bootstrap for ONE reason: on a native shell, durable
+// storage (Capacitor Preferences) has to be restored into localStorage before
+// anything reads it, and that restore is async. On web `hydrateFromNative()`
+// resolves immediately without touching anything, so the boot path is unchanged
+// — which is what the E2E boot test on the web build verifies.
+async function boot() {
+  const { restored, platform } = await hydrateFromNative();
+  if (restored.length) {
+    // Worth saying out loud: this means the WebView storage had been evicted and
+    // we just recovered the operator's work from the durable copy.
+    logError('storage-recovered', new Error(`restored ${restored.length} key(s) from ${platform} durable storage`));
+  }
+
 normalizeCaps(state.slaProfiles);  // default capability flags OFF on preloaded profiles
 loadCustomSites();                 // restore user-added cities
 loadProfiles();                  // restore persisted profiles if available (re-normalizes)
@@ -2819,6 +2791,32 @@ renderScenarios();
     badge.textContent = badge.textContent.replace(/[▾▴]$/, open ? '▴' : '▾');
   });
 })();
+
+  // Native shell: status bar, splash dismissal, Android hardware back. The back
+  // handler closes open UI before it closes the app — a dialog or an expanded
+  // panel should absorb the press.
+  await initNativeShell({
+    onBack: () => {
+      const scrim = document.querySelector('.ntf-scrim');
+      if (scrim) { scrim.remove(); return true; }
+      const chip = document.getElementById('chip-panel');
+      if (chip && chip.classList.contains('open')) { chip.classList.remove('open'); return true; }
+      const openPanel = document.querySelector('#selftest-panel.open');
+      if (openPanel) { openPanel.classList.remove('open'); return true; }
+      return false;
+    },
+  });
+}
+
+boot().catch((err) => {
+  logError('boot', err);
+  // A failed bootstrap must not leave a blank screen with no explanation.
+  const badge = document.getElementById('selftest-badge');
+  if (badge) {
+    badge.textContent = '⚠ Startup failed — see the error log';
+    badge.className = 'selftest-badge st-fail';
+  }
+});
 
 // ── Version stamp + error log access in the footer ──────────────────────────
 (function initFooterDiagnostics() {

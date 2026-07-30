@@ -97,18 +97,79 @@ describe('SLA polygons and compliance', () => {
     }
   });
 
-  it('checkSLA reports the specific violated bound', () => {
-    expect(checkSLA(sla, 72, 45, P0).ok).toBe(true);
-    expect(checkSLA(sla, 50, 45, P0)).toEqual({ ok: false, reason: 'below temp min' });
-    expect(checkSLA(sla, 95, 45, P0)).toEqual({ ok: false, reason: 'above temp max' });
-    expect(checkSLA(sla, 72, 5, P0)).toEqual({ ok: false, reason: 'below RH min' });
-    expect(checkSLA(sla, 72, 90, P0)).toEqual({ ok: false, reason: 'above RH max' });
+  it('checkSLA reports the specific violated bound, badge string and all', () => {
+    // The badge string is what an operator reads off the screen, so it is part of
+    // the contract this test pins — not just the boolean.
+    expect(checkSLA(sla, 72, 45)).toEqual({
+      ok: true,
+      reason: 'within SLA',
+      detail: 'within SLA',
+    });
+    expect(checkSLA(sla, 50, 45)).toEqual({
+      ok: false,
+      reason: 'T < 59°F',
+      detail: 'below temp min',
+    });
+    expect(checkSLA(sla, 95, 45)).toEqual({
+      ok: false,
+      reason: 'T > 89.6°F',
+      detail: 'above temp max',
+    });
+    expect(checkSLA(sla, 72, 5)).toEqual({
+      ok: false,
+      reason: 'RH < 8%',
+      detail: 'below RH min',
+    });
+    expect(checkSLA(sla, 72, 90)).toEqual({
+      ok: false,
+      reason: 'RH > 80%',
+      detail: 'above RH max',
+    });
     // 85 °F / 75 %: inside the temp/RH box but past the 62.6 °F dew-point cap.
-    expect(checkSLA(sla, 85, 75, P0)).toEqual({ ok: false, reason: 'above dew point cap' });
+    expect(checkSLA(sla, 85, 75)).toEqual({
+      ok: false,
+      reason: 'DP > 62.6°F',
+      detail: 'above dew point cap',
+    });
+  });
+
+  it('checks bounds in reading order: temperature before humidity before dew point', () => {
+    // A point violating several bounds reports the first an engineer would look
+    // at, so the badge is stable rather than depending on evaluation order.
+    expect(checkSLA(sla, 50, 90).detail).toBe('below temp min');
+    expect(checkSLA(sla, 72, 95).detail).toBe('above RH max');
   });
 
   it('a missing dew-point cap disables that check', () => {
+    for (const noCap of [
+      { ...sla, dpMaxF: null },
+      { ...sla, dpMaxF: '' },
+      { ...sla, dpMaxF: undefined },
+    ]) {
+      expect(checkSLA(noCap, 85, 75).ok).toBe(true);
+    }
+  });
+
+  it('boundary points are inclusive — exactly on a limit is still compliant', () => {
+    // Cap removed so this isolates the temp/RH bounds. With the cap in play,
+    // 89.6 °F / 45 % has a 65.5 °F dew point and correctly fails on the cap
+    // instead — which the next test covers.
     const noCap = { ...sla, dpMaxF: null };
-    expect(checkSLA(noCap, 85, 75, P0).ok).toBe(true);
+    expect(checkSLA(noCap, noCap.tMinF, 45).ok).toBe(true);
+    expect(checkSLA(noCap, noCap.tMaxF, 45).ok).toBe(true);
+    expect(checkSLA(noCap, 72, noCap.rhMin).ok).toBe(true);
+    expect(checkSLA(noCap, 72, noCap.rhMax).ok).toBe(true);
+  });
+
+  it('the dew-point cap binds independently of the temp/RH box', () => {
+    // 89.6 °F is exactly the temp max and 45 % is inside the RH band, but the
+    // resulting 65.5 °F dew point exceeds the 62.6 °F cap. Drying the same air
+    // to 30 % (54.1 °F dew point) brings it back into contract.
+    expect(checkSLA(sla, 89.6, 45)).toEqual({
+      ok: false,
+      reason: 'DP > 62.6°F',
+      detail: 'above dew point cap',
+    });
+    expect(checkSLA(sla, 89.6, 30).ok).toBe(true);
   });
 });

@@ -2,7 +2,7 @@
   "name": "psychro",
   "version": "2.0.0",
   "private": true,
-  "description": "Stream Hall Environment Planner \u2014 ASHRAE TC 9.9 psychrometric planning tool for data center halls",
+  "description": "Stream Hall Environment Planner — ASHRAE TC 9.9 psychrometric planning tool for data center halls",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,20 +16,35 @@
     "analyze": "node scripts/analyze-accuracy.mjs",
     "fit:enhancement": "node scripts/fit-enhancement.mjs",
     "fit:secondary": "node scripts/fit-secondary.mjs",
+    "verify:bundle": "node scripts/verify-bundle.mjs",
     "shareable": "vite build && node scripts/make-shareable.mjs",
-    "test:e2e": "npm run shareable && playwright test",
+    "e2e": "playwright test",
+    "e2e:update": "playwright test --update-snapshots",
+    "test:e2e": "npm run shareable && npm run verify:bundle && npm run e2e",
     "test:all": "npm run lint && npm run typecheck && npm test && npm run test:e2e"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.4.2",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/share": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.0",
     "@types/node": "^26.1.1",
     "eslint": "^10.8.0",
     "globals": "^17.8.0",
+    "http-server": "^14.1.1",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vite-plugin-singlefile": "^2.3.3",
-    "vitest": "^4.1.10",
-    "@playwright/test": "^1.49.0",
-    "http-server": "^14.1.1"
+    "vitest": "^4.1.10"
   }
 }

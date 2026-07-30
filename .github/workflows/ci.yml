@@ -6,7 +6,9 @@ on:
   pull_request:
 
 jobs:
+  # ── Static analysis + unit/oracle/invariant suites ────────────────────────
   test:
+    name: Lint, typecheck, tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,27 +27,36 @@ jobs:
       - name: Typecheck (core modules)
         run: npm run typecheck
 
-      - name: Unit tests + CoolProp oracle grid
+      - name: Unit, CoolProp oracle, invariant and consistency suites
         run: npm test
 
       - name: Accuracy report vs CoolProp
+        # Printed in the log so any accuracy drift is visible in the PR without
+        # having to reproduce it locally.
         run: npm run analyze
 
-      - name: Build (single-file bundle + PWA assets)
+  # ── Build + artifact integrity ────────────────────────────────────────────
+  build:
+    name: Build and verify bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
         run: npm run build
 
-      - name: Sanity-check the bundle
-        run: |
-          test -f dist/index.html
-          test -f dist/sw.js
-          test -f dist/manifest.webmanifest
-          # The stamped SW must not still carry the placeholder
-          ! grep -q "__BUILD_VERSION__" dist/sw.js
-          # Single-file promise: no external JS chunks
-          ! ls dist/assets 2>/dev/null | grep -q "\.js$" || true
-
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+      - name: Verify bundle
+        # Asserts the single-file promise, that no PWA asset got fingerprinted,
+        # and that every service-worker precache entry actually exists.
+        run: npm run verify:bundle
 
       - name: Committed shareable file is a build of the current source
         run: |
@@ -58,20 +69,55 @@ jobs:
           npm run shareable
           node scripts/check-shareable-fresh.mjs "$RUNNER_TEMP/committed.html" StreamHallPlanner.html
 
-      - name: End-to-end regression tests (hosted app + single file)
-        run: npm run test:e2e
-
-      - name: Upload Playwright report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 14
-
-      - name: Upload bundle artifact
+      - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
           name: psychro-dist
           path: dist/
+          retention-days: 14
+
+  # ── End-to-end against the real artifacts ─────────────────────────────────
+  # Three surfaces, one job: the raw module tree Pages serves, the built
+  # single-file dist/, and StreamHallPlanner.html opened over file://.
+  e2e:
+    name: E2E and visual regression
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Download bundle
+        # E2E runs against the exact artifact the build job produced, not a
+        # rebuild — so what is tested is what would ship.
+        uses: actions/download-artifact@v4
+        with:
+          name: psychro-dist
+          path: dist/
+
+      - name: Run E2E and visual tests
+        # `e2e`, not `test:e2e`: the dist/ under test is the one downloaded
+        # above, and StreamHallPlanner.html is the committed download, already
+        # proven fresh by the build job. Rebuilding either here would test
+        # something other than what ships.
+        run: npm run e2e
+
+      - name: Upload failure diffs and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures
+          path: |
+            test-results/
+            playwright-report/
           retention-days: 14

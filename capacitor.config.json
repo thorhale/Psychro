@@ -1,0 +1,33 @@
+{
+  "appId": "com.streamdatacenters.psychro",
+  "appName": "Hall Environment Planner",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "android": {
+    "backgroundColor": "#0d1b2a",
+    "allowMixedContent": false
+  },
+  "ios": {
+    "backgroundColor": "#0d1b2a",
+    "contentInset": "always",
+    "limitsNavigationsToAppBoundDomains": true
+  },
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": false,
+      "backgroundColor": "#0d1b2a",
+      "showSpinner": false,
+      "androidSpinnerStyle": "small",
+      "splashFullScreen": true,
+      "splashImmersive": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0d1b2a",
+      "overlaysWebView": false
+    }
+  }
+}

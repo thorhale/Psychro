@@ -1,0 +1,111 @@
+name: Native shells
+
+# Proves the iOS and Android projects still build whenever the web app changes.
+# Neither job gates the web pipeline: they exist so a change that breaks the
+# native shells is caught at the commit that causes it, rather than months later
+# when someone finally tries to ship a store build.
+#
+# Without signing credentials these produce an unsigned debug APK and a
+# compile-only iOS build. See docs/store/signing.md for turning them into
+# release artifacts.
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'src/**'
+      - 'index.html'
+      # The PWA assets live at the repo root, not under public/ — see the
+      # header comment in vite.config.js for why.
+      - 'manifest.webmanifest'
+      - 'icon-*.png'
+      - 'sw.js'
+      - 'android/**'
+      - 'ios/**'
+      - 'capacitor.config.json'
+      - 'package.json'
+      - '.github/workflows/native.yml'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  android:
+    name: Android debug build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Verify bundle before it is packaged
+        run: npm run verify:bundle
+
+      - name: Sync into the Android project
+        run: npx cap sync android
+
+      - name: Assemble debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: psychro-android-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+  ios:
+    name: iOS compile check
+    # macOS runners bill at a premium, so this is manual or on PRs touching the
+    # shell — enough to catch a break without paying for it on every push.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Sync into the iOS project
+        run: npx cap sync ios
+
+      - name: Compile (signing disabled — no credentials needed)
+        # Capacitor 8 wires plugins through Swift Package Manager, not CocoaPods:
+        # `cap sync` writes ios/App/CapApp-SPM/Package.swift and there is no
+        # Podfile and no .xcworkspace to open. So this builds the .xcodeproj
+        # directly and lets xcodebuild resolve the local package.
+        working-directory: ios/App
+        run: |
+          xcodebuild build \
+            -project App.xcodeproj \
+            -scheme App \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Confirm the privacy manifest is present
+        # A missing PrivacyInfo.xcprivacy is an App Store rejection, and it is
+        # easy to drop when the project is regenerated.
+        run: test -f ios/App/App/PrivacyInfo.xcprivacy

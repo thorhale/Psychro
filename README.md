@@ -12,15 +12,22 @@ comparison and measured accuracy table, regenerated in CI on every push.
 ## Layout
 
 ```
-index.html            app shell (markup + styles)
-src/core/             tested physics: psychro, envelopes, planner, domain guards, units
+index.html            app shell (markup + styles) — served raw by GitHub Pages
+manifest.webmanifest  PWA assets, unhashed at the root so raw serving and the
+icon-*.png            service-worker precache list both resolve them
+sw.js                 offline cache; its key is stamped per build
+StreamHallPlanner.html  committed single-file build — the app's own download
+src/core/             tested physics: psychro, derive, envelopes, planner, domain, units
 src/config/           site catalog + branding
-src/state/            save-file schema, validation, migrations
+src/state/            save-file schema + storage migration (v4/v3/v1)
 src/app/              UI wiring, chart, self-test, PWA plumbing
 src/ui/ src/lib/      toasts/dialogs, error log
-src/platform/         storage / share / file adapters (Capacitor-ready seam)
-test/                 Vitest suite + committed CoolProp reference grid
-scripts/              accuracy analyzer + coefficient fitters
+src/platform/         storage / share / file / haptics adapters (web + Capacitor)
+test/                 Vitest suites + committed CoolProp reference grid
+test/e2e/             Playwright specs + committed chart goldens
+scripts/              accuracy analyzer, coefficient fitters, bundle verifier
+android/ ios/         Capacitor projects (wrap the same dist/)
+docs/store/           listing copy, privacy answers, signing guide
 blockworld/           independent bonus voxel game (untouched by the build)
 ```
 
@@ -28,12 +35,23 @@ blockworld/           independent bonus voxel game (untouched by the build)
 
 ```bash
 npm ci
-npm run dev        # live-reload dev server
-npm test           # 52 tests incl. 3,898-point CoolProp oracle
+npm run dev            # live-reload dev server
+npm test               # 136 tests: oracle, invariants, consistency, assets, schema, platform
 npm run lint
 npm run typecheck
-npm run analyze    # per-property accuracy table vs CoolProp
+npm run analyze        # per-property accuracy table vs CoolProp
+npm run build
+npm run verify:bundle  # 41 artifact-integrity checks
+npm run e2e            # 58 Playwright tests across all three artifacts
 ```
+
+`npm run e2e` deliberately tests shipped artifacts, never the dev server. It
+runs two Playwright projects against one static server rooted at the repo:
+`raw` (the repo root, exactly what GitHub Pages publishes) and `built`
+(`dist/index.html`), plus `StreamHallPlanner.html` opened over `file://`. The
+behaviour suite runs under both projects, so the artifacts cannot drift apart
+without failing. Use `npm run test:e2e` to build the artifacts first, or
+`npm run e2e` on its own if they are already current.
 
 ## Build & deploy
 
@@ -43,12 +61,17 @@ npm run build      # → dist/
 
 `dist/` keeps the original drop-anywhere story: `index.html` is a **single
 self-contained file** (all JS/CSS inlined), alongside `sw.js`,
-`manifest.webmanifest`, and the icons. Host the folder on any static host —
-GitHub Pages works as before:
+`manifest.webmanifest`, and the icons. Host the folder on any static host.
 
-1. Repo Settings → Pages → deploy from branch, folder `/ (root)` of a branch
-   containing the *built* files (or use an Actions deploy of `dist/`).
-2. Your app is live at `https://YOURUSERNAME.github.io/psychro/`.
+Merges to `main` deploy to GitHub Pages automatically, behind the full gate —
+lint, typecheck, every test, the accuracy report, bundle verification and E2E all
+have to pass before anything publishes, and the job deploys the exact artifact it
+verified rather than rebuilding. One-time setup by a repo admin:
+
+> Settings → Pages → Source: **GitHub Actions**
+
+To publish by hand instead, copy the contents of `dist/` to wherever you serve
+from; the app is live at `https://YOURUSERNAME.github.io/psychro/`.
 
 The service-worker cache name is stamped from the package version + git SHA at
 build time, so **updates roll out automatically** — no more manual cache-version
@@ -61,11 +84,27 @@ screen*). Launches fullscreen, works with no signal after the first load.
 
 **iPhone (Safari):** open the link → Share → *Add to Home Screen*.
 
-The `src/platform/` adapter layer is the seam for the next step — wrapping the
-app with Capacitor for real App Store / Play Store distribution. The web
-implementations (localStorage, Web Share, blob download) swap for
-`@capacitor/preferences`, `@capacitor/share`, `@capacitor/filesystem` behind the
-same function signatures, with no UI changes.
+## Native apps (iOS + Android)
+
+`android/` and `ios/` are committed Capacitor projects that wrap the same
+`dist/` the web app deploys — there is one build artifact, not two.
+
+```bash
+npm run build && npx cap sync   # push web assets into both projects
+npx cap open android            # Android Studio
+npx cap open ios                # Xcode (macOS only)
+```
+
+Platform differences live entirely behind `src/platform/`, chosen at runtime by
+bridge detection, so no UI code imports a Capacitor package. Storage is a
+write-through cache: reads stay synchronous from localStorage, writes mirror to
+Capacitor Preferences, and boot restores localStorage from Preferences — which is
+what survives iOS evicting WebView storage from an app left unused.
+
+Both projects build today without credentials; CI produces an unsigned Android
+debug APK and compiles the iOS project with signing disabled. Everything needed
+to ship to the stores — listing copy, both privacy questionnaires, signing steps
+and secrets — is in [`docs/store/`](docs/store/).
 
 ## Data & privacy
 
@@ -79,12 +118,19 @@ writes — export a save file when you see that warning.
 
 ## Validation
 
-- CI (GitHub Actions): lint, typecheck, unit tests, CoolProp oracle grid,
-  accuracy report, and a build sanity check on every push.
-- In-app: the footer self-test badge re-runs a 30-case validation from the
-  shipped code on every load — tap it for the full table.
+- **CI on every push**: lint, typecheck, 136 tests (CoolProp oracle, physical
+  invariants over seeded-random states, cross-surface consistency, asset layout,
+  storage migration, platform adapters), the accuracy report, 41 bundle-integrity
+  checks, and 58 Playwright tests covering all three artifacts — the raw module
+  tree Pages serves, the built single-file `dist/`, and `StreamHallPlanner.html`
+  opened over `file://` — including an offline boot and five chart goldens.
+- **In-app**: the footer self-test badge re-runs a 30-case validation from the
+  shipped code on every load — tap it for the full table. It runs the same core
+  CI validates, so what the badge asserts is what that build computes.
 - To regenerate the oracle grid after changing the domain:
   `pip install CoolProp && npm run reference`.
+- Contribution rules, including the accuracy contract for `src/core/` changes,
+  are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 **This is a planning aid, not a control system.** Verify moves against site
 instrumentation before acting.
