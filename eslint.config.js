@@ -4,7 +4,14 @@ import globals from 'globals';
 export default [
   js.configs.recommended,
   {
-    files: ['src/**/*.js', 'test/**/*.js', 'scripts/**/*.mjs', 'vite.config.js'],
+    files: [
+      'src/**/*.js',
+      'test/**/*.js',
+      'test/**/*.mjs',
+      'scripts/**/*.mjs',
+      'vite.config.js',
+      'playwright.config.mjs',
+    ],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
@@ -28,6 +35,14 @@ export default [
     },
   },
   {
-    ignores: ['dist/', 'node_modules/', 'blockworld/', 'psychro-demo.html'],
+    ignores: [
+      'dist/',
+      'node_modules/',
+      'blockworld/',
+      'psychro-demo.html',
+      'playwright-report/',
+      'test-results/',
+      'StreamHallPlanner.html',
+    ],
   },
 ];
