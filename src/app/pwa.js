@@ -91,8 +91,40 @@ export function initInstallBanner() {
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e;
+    document.getElementById('install-title').textContent = 'Install this app';
+    document.getElementById('install-sub').textContent =
+      'Works offline · opens fullscreen like a native app';
+    document.getElementById('install-go').style.display = '';
     show();
   });
+
+  // Fallback. `beforeinstallprompt` is not guaranteed: Firefox and desktop
+  // Safari never fire it, and Chromium withholds it until its own engagement
+  // heuristics are satisfied — so waiting for it alone means many visitors see
+  // no install affordance at all and no way to get the file either. If nothing
+  // has armed the prompt shortly after load, show the banner anyway with
+  // instructions this browser can actually follow, keeping the download action
+  // (which always works) alongside it.
+  setTimeout(() => {
+    if (deferredPrompt || !banner || recentlyDismissed()) return;
+    const ua = navigator.userAgent;
+    const isFirefox = /firefox/i.test(ua);
+    const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(ua);
+    const go = document.getElementById('install-go');
+    if (isFirefox || isSafari) {
+      // No install path in these browsers — lead with the file.
+      document.getElementById('install-title').textContent = 'Keep this app';
+      document.getElementById('install-sub').textContent =
+        'Download it as one file — opens anywhere, works offline, no install needed';
+      if (go) go.style.display = 'none';
+    } else {
+      document.getElementById('install-title').textContent = 'Install this app';
+      document.getElementById('install-sub').textContent =
+        'Use your browser menu ⋮ → "Install", or download it as a single file';
+      if (go) go.style.display = 'none'; // no saved event; our button can't prompt
+    }
+    show();
+  }, 3000);
   document.getElementById('install-go').addEventListener('click', async () => {
     if (!deferredPrompt) {
       hide();
