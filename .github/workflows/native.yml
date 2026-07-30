@@ -15,7 +15,11 @@ on:
     paths:
       - 'src/**'
       - 'index.html'
-      - 'public/**'
+      # The PWA assets live at the repo root, not under public/ — see the
+      # header comment in vite.config.js for why.
+      - 'manifest.webmanifest'
+      - 'icon-*.png'
+      - 'sw.js'
       - 'android/**'
       - 'ios/**'
       - 'capacitor.config.json'
@@ -87,15 +91,15 @@ jobs:
       - name: Sync into the iOS project
         run: npx cap sync ios
 
-      - name: Install CocoaPods dependencies
-        working-directory: ios/App
-        run: pod install --repo-update
-
       - name: Compile (signing disabled — no credentials needed)
+        # Capacitor 8 wires plugins through Swift Package Manager, not CocoaPods:
+        # `cap sync` writes ios/App/CapApp-SPM/Package.swift and there is no
+        # Podfile and no .xcworkspace to open. So this builds the .xcodeproj
+        # directly and lets xcodebuild resolve the local package.
         working-directory: ios/App
         run: |
           xcodebuild build \
-            -workspace App.xcworkspace \
+            -project App.xcodeproj \
             -scheme App \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
