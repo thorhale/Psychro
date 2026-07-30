@@ -130,9 +130,46 @@ if (files.includes('manifest.webmanifest')) {
 }
 
 // ── 5. Service worker is version-stamped ────────────────────────────────────
+// The cache name is no longer a literal — sw.js picks between the Vite-stamped
+// build version and a hand-bumped RAW_VERSION, because GitHub Pages serves this
+// repo unbuilt. So EVALUATE the shipped expression instead of pattern-matching
+// it: a regex would have to restate the rule, and would then agree with a
+// service worker whose rule had silently changed. This is what the browser gets.
+/**
+ * Run sw.js's declarations up to and including CACHE, and return its value.
+ * Only the const block is evaluated — the `self.addEventListener` calls below
+ * it are never reached, so no service-worker globals are needed.
+ * @returns {string|null} the cache name, or null if it cannot be determined
+ */
+function evaluateCacheName(source) {
+  const end = source.search(/^const ASSETS\b/m);
+  if (end < 0) return null;
+  try {
+    return String(new Function(`${source.slice(0, end)}\nreturn CACHE;`)());
+  } catch {
+    return null;
+  }
+}
+
 check('sw.js placeholder was substituted', !sw.includes('__BUILD_VERSION__'));
-const cacheName = (sw.match(/CACHE\s*=\s*'([^']+)'/) || [])[1];
-check('sw.js cache name is build-specific', Boolean(cacheName && /\d/.test(cacheName)), cacheName);
+const cacheName = evaluateCacheName(sw);
+check(
+  'sw.js cache name is build-specific',
+  Boolean(cacheName && /\d/.test(cacheName) && cacheName !== 'sdc-psychro-'),
+  cacheName ?? '(could not evaluate)',
+);
+
+// The raw-served deploy takes the other branch of that same expression. Nothing
+// in dist/ exercises it, so check the source: an empty or unchanged fallback
+// would leave every Pages deploy sharing one cache, and cache-first clients
+// would never see an update — the exact failure the fallback exists to prevent.
+const swSource = readFileSync(join(root, 'sw.js'), 'utf8');
+const rawCacheName = evaluateCacheName(swSource);
+check(
+  'unbuilt sw.js falls back to a distinct raw cache name',
+  Boolean(rawCacheName && rawCacheName !== 'sdc-psychro-' && rawCacheName !== cacheName),
+  rawCacheName ?? '(could not evaluate)',
+);
 
 // ── 6. Offline self-containment ─────────────────────────────────────────────
 // The app promises zero network calls after install. Any absolute http(s) URL in

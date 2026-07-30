@@ -83,7 +83,9 @@ export function deriveState(tc, rh, p) {
     twbC: wb.value,
     twbF: cToF(wb.value),
     twbAmbiguous: wb.ambiguous === true,
-    h: enthalpy(tc, W),
+    // main's enthalpy is a pressure-dependent RP-1485 fit, not the old Eq. 30 —
+    // passing p is required, not optional, for the value to be right at altitude.
+    h: enthalpy(tc, W, p),
     v: specificVolume(tc, W, p),
     rho: moistAirDensity(tc, rh, p),
     absHum: absHumidity(tc, pw),

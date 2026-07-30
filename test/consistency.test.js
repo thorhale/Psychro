@@ -76,7 +76,7 @@ describe('deriveState equals independent recomputation', () => {
       expect(Object.is(d.tdpC, tdp), `tdp — ${at(s)}`).toBe(true);
       expect(Object.is(d.twbC, wb.value), `twb — ${at(s)}`).toBe(true);
       expect(Object.is(d.twbAmbiguous, wb.ambiguous === true), `twbAmbiguous — ${at(s)}`).toBe(true);
-      expect(Object.is(d.h, enthalpy(s.tc, W)), `h — ${at(s)}`).toBe(true);
+      expect(Object.is(d.h, enthalpy(s.tc, W, s.p)), `h — ${at(s)}`).toBe(true);
       expect(Object.is(d.v, specificVolume(s.tc, W, s.p)), `v — ${at(s)}`).toBe(true);
       expect(Object.is(d.rho, moistAirDensity(s.tc, s.rh, s.p)), `rho — ${at(s)}`).toBe(true);
       expect(Object.is(d.absHum, absHumidity(s.tc, pw)), `absHum — ${at(s)}`).toBe(true);

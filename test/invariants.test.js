@@ -240,8 +240,8 @@ describe('monotonicity in each variable', () => {
 
   it('enthalpy rises with temperature and with moisture', () => {
     for (const s of STATES.slice(0, 200)) {
-      sweepStrict('h vs T', range(s.tc - 8, s.tc + 8, 25), (tc) => enthalpy(tc, s.W), +1);
-      sweepStrict('h vs W', range(0, 0.05, 25), (W) => enthalpy(s.tc, W), +1);
+      sweepStrict('h vs T', range(s.tc - 8, s.tc + 8, 25), (tc) => enthalpy(tc, s.W, s.p), +1);
+      sweepStrict('h vs W', range(0, 0.05, 25), (W) => enthalpy(s.tc, W, s.p), +1);
     }
   });
 
@@ -338,7 +338,7 @@ describe('saturation limits', () => {
       expect(dewPointFrom(s.tc, 0)).toBeNull();
       expect(degreeOfSaturation(s.tc, 0, s.p)).toBe(0);
       // Dry-air enthalpy and volume stay finite and physical.
-      expect(isFinite(enthalpy(s.tc, 0))).toBe(true);
+      expect(isFinite(enthalpy(s.tc, 0, s.p))).toBe(true);
       expect(specificVolume(s.tc, 0, s.p)).toBeGreaterThan(0);
     }
   });
@@ -355,7 +355,7 @@ describe('determinism', () => {
       ['humidityRatio', (s) => humidityRatio(s.tc, s.rh, s.p)],
       ['dewPointFrom', (s) => dewPointFrom(s.tc, s.rh)],
       ['wetBulb', (s) => wetBulbSolve(s.tc, s.rh, s.p).value],
-      ['enthalpy', (s) => enthalpy(s.tc, s.W)],
+      ['enthalpy', (s) => enthalpy(s.tc, s.W, s.p)],
       ['specificVolume', (s) => specificVolume(s.tc, s.W, s.p)],
       ['entropy', (s) => entropy(s.tc, s.rh, s.p)],
       ['viscosity', (s) => viscosity(s.tc, s.rh, s.p)],

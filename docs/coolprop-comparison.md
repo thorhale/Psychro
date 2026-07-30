@@ -102,9 +102,9 @@ Over all 3,898 reference points inside the declared operating domain
 property             unit          max abs     RMS abs    max rel              worst point
 ------------------------------------------------------------------------------------------
 humidity ratio W     g/kg         6.861e-4    5.647e-5    0.0013%         55°C 95% 79.5kPa
-enthalpy h           kJ/kg        4.612e-1    6.876e-2          —          55°C 100% 85kPa
-specific volume v    m³/kg        1.725e-3    4.682e-4    0.1125%          50°C 100% 65kPa
-density ρ            kg/m³        1.433e-3    5.800e-4    0.1124%        -20°C 100% 108kPa
+enthalpy h           kJ/kg        4.373e-1    6.221e-2          —          52.5°C 90% 65kPa
+specific volume v    m³/kg        1.678e-4    1.973e-5    0.0114%          50°C 100% 65kPa
+density ρ            kg/m³        9.782e-5    1.470e-5    0.0114%         55°C 100% 95kPa
 dew point Tdp        °C           2.285e-2    6.269e-3          —          55°C 5% 79.5kPa
 wet bulb Twb         °C           8.339e-1    1.903e-2          —            15°C 1% 65kPa
 entropy s            kJ/kg·K      3.747e-4    1.188e-4          —         55°C 100% 108kPa
@@ -117,22 +117,40 @@ Reading notes:
 - The wet-bulb max (0.83 °C) is entirely the **flagged** near-freezing ambiguity
   band described in §3 — the tool tells you when you're in it. Outside that band
   the max error is **0.011 °C** (the RMS of 0.019 reflects how rare the band is).
-- Enthalpy and specific volume deviations are dominated by Ch. 1's constant
-  specific heats (1.006 / 1.86 kJ·kg⁻¹·K⁻¹) vs. RP-1485's temperature-dependent
-  ones — a known, bounded model difference, worst at the hot-saturated corner no
-  hall operates at. At 25 °C/50 % the enthalpy gap is < 0.01 kJ/kg.
+- **Enthalpy** no longer uses Ch. 1 Eq. 30's constant specific heats
+  (1.006 / 1.86 kJ·kg⁻¹·K⁻¹), whose difference from RP-1485's temperature-
+  dependent ones was the dominant error term. It is now a pressure-dependent
+  polynomial fitted to RP-1485 directly. Residual max 0.44 kJ/kg sits at the
+  hot-saturated corner no hall operates at; at 25 °C/50 % the gap is
+  < 0.01 kJ/kg.
+- **Specific volume** carries a compressibility factor Z(t, p, W) fitted to
+  RP-1485 rather than assuming Z = 1. Real moist air is ~0.06 % denser than an
+  ideal mixture at 1 atm, and that was the entire former deviation: max relative
+  error drops from 0.1125 % to 0.0114 %, a factor of ten. **Density** is derived
+  from v, so it improves identically — the two rows agreeing to the fourth digit
+  is itself the check that ρ = (1 + W)/v still holds exactly.
 - Transport properties are engineering estimates by construction (ASHRAE Ch. 1
   doesn't define them); 0.3–0.4 % is ample for pressure-drop and coil work.
 - Relative error is only shown for strictly-positive properties; it is
   meaningless for quantities that cross zero.
 
 Spot check, end-to-end through the built app (sensor validation, 75 °F dry bulb /
-62 °F wet bulb at the Goodyear AZ site, 1,066 ft):
+62 °F wet bulb at the Goodyear AZ site, 1,066 ft → 97.4821 kPa):
 
 | | RH | dew point | W |
 |---|---|---|---|
-| App | 48.7 % | 54.4 °F | 9.40 g/kg |
-| CoolProp | 48.70 % | 54.4 °F | 9.39 g/kg |
+| App — **thermodynamic** wet bulb | 48.7 % | 54.4 °F | 9.40 g/kg |
+| CoolProp `HAPropsSI` | 48.70 % | 54.4 °F | 9.39 g/kg |
+| App — **psychrometer** wet bulb (default) | 48.2 % | 54.1 °F | 9.30 g/kg |
+
+The card's default is the psychrometer formula, because that is what a sling or
+aspirated psychrometer physically reads: a wet wick exchanges heat with its
+surroundings by radiation and imperfect convection, so it settles slightly above
+the thermodynamic wet bulb. CoolProp only offers the thermodynamic definition,
+so only the first row is a comparison — the third is a different quantity, not a
+disagreement. The 0.5 % RH gap between them is small enough to be mistaken for
+rounding and large enough to fail a calibration audit, which is why the card
+makes you choose and `test/e2e/app.spec.js` pins both numbers.
 
 ## 5. What this tool has that CoolProp doesn't
 

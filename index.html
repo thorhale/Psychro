@@ -359,6 +359,11 @@
   .install-actions { display:flex; gap:8px; flex:none; align-items:center; }
   .install-btn { padding:7px 14px; border-radius:6px; border:none; background:var(--stream-teal); color:#062a33; font-size:.78rem; font-weight:700; font-family:var(--sans); cursor:pointer; white-space:nowrap; }
   .install-btn:hover { filter:brightness(1.08); }
+  .install-alt { padding:7px 12px; border-radius:6px; border:1px solid rgba(0,169,206,.5); background:transparent;
+    color:var(--stream-teal); font-size:.76rem; font-weight:700; font-family:var(--sans); cursor:pointer;
+    white-space:nowrap; text-decoration:none; }
+  .install-alt:hover { background:rgba(0,169,206,.12); }
+  @media (max-width:560px) { .install-alt { display:none; } }
   .install-dismiss { background:none; border:none; color:var(--muted); font-size:1rem; cursor:pointer; padding:2px 6px; line-height:1; }
   .install-dismiss:hover { color:var(--text); }
   @media (max-width:480px) { .install-sub { display:none; } }
@@ -383,6 +388,8 @@
   </div>
   <div class="install-actions">
     <button class="install-btn" id="install-go">Install</button>
+    <a class="install-alt" id="install-download" href="./StreamHallPlanner.html"
+       download="StreamHallPlanner.html">⤓ Download file</a>
     <button class="install-dismiss" id="install-dismiss" title="Dismiss" aria-label="Dismiss">✕</button>
   </div>
 </div>
@@ -478,21 +485,21 @@
   </div>
 
   <div class="ctl-group ctl-a">
-    <div class="ctl-head"><span class="ctl-dot" style="background:#d4d400"></span><span class="ctl-name">Current</span><span class="ctl-sub">room now · sets the moisture line</span></div>
+    <div class="ctl-head"><span class="ctl-dot" style="background:#d4d400"></span><span class="ctl-name">Current</span><span class="ctl-sub">room now · temp &amp; dew pt drive RH</span></div>
     <div class="ctl-row">
       <span class="ctl-k">Temp</span>
       <input type="range" id="slider-a-temp" min="32" max="130" step="1" value="68">
       <input type="number" id="a-temp" class="ctl-num" value="68" step="any"><span class="ctl-unit tunit">°F</span>
     </div>
     <div class="ctl-row">
+      <span class="ctl-k">Dew pt</span>
+      <input type="range" id="slider-a-dp" min="-40" max="100" step="1" value="46">
+      <input type="number" id="a-dp" class="ctl-num" value="46" step="any"><span class="ctl-unit tunit">°F</span>
+    </div>
+    <div class="ctl-row">
       <span class="ctl-k">RH</span>
       <input type="range" id="slider-a-rh" min="1" max="100" step="1" value="45">
       <input type="number" id="a-rh" class="ctl-num" value="45" step="any"><span class="ctl-unit">%</span>
-    </div>
-    <div class="ctl-row">
-      <span class="ctl-k">Dew pt</span>
-      <input type="range" id="slider-a-dp" min="10" max="90" step="1" value="46">
-      <input type="number" id="a-dp" class="ctl-num" value="46" step="any"><span class="ctl-unit tunit">°F</span>
     </div>
   </div>
   <div class="ctl-group ctl-b">
@@ -503,14 +510,14 @@
       <input type="number" id="b-temp" class="ctl-num" value="87" step="any"><span class="ctl-unit tunit">°F</span>
     </div>
     <div class="ctl-row">
+      <span class="ctl-k">Dew pt</span>
+      <input type="range" id="slider-b-dp" min="-40" max="100" step="1" value="52">
+      <input type="number" id="b-dp" class="ctl-num" value="52" step="any"><span class="ctl-unit tunit">°F</span>
+    </div>
+    <div class="ctl-row">
       <span class="ctl-k">RH</span>
       <input type="range" id="slider-b-rh" min="1" max="100" step="1" value="28">
       <input type="number" id="b-rh" class="ctl-num" value="28" step="any"><span class="ctl-unit">%</span>
-    </div>
-    <div class="ctl-row">
-      <span class="ctl-k">Dew pt</span>
-      <input type="range" id="slider-b-dp" min="10" max="90" step="1" value="52">
-      <input type="number" id="b-dp" class="ctl-num" value="52" step="any"><span class="ctl-unit tunit">°F</span>
     </div>
   </div>
 
@@ -539,6 +546,12 @@
     <button class="scn-btn" id="save-export">⤓ Export save file</button>
     <button class="scn-btn" id="save-import">⤒ Load save file</button>
     <input type="file" id="save-file" accept="application/json,.json" style="display:none">
+  </div>
+  <div class="scn-divider"></div>
+  <div class="scn-export-label">Send someone the whole app as one file — no install, no link, works offline. They open it like a document:</div>
+  <div class="scn-actions">
+    <a class="scn-btn scn-btn-primary" id="app-download" href="./StreamHallPlanner.html"
+       download="StreamHallPlanner.html" style="text-decoration:none; display:inline-block;">⤓ Download the app file</a>
   </div>
   <div class="scn-divider"></div>
   <div class="scn-export-label">Export the current view for a report or email:</div>
@@ -618,11 +631,18 @@
       <div class="sla-field"><label>Wet bulb <span class="tunit">°F</span></label><input type="number" id="sv-wb" step="0.1" placeholder="e.g. 62"></div>
       <div class="sla-field"><label>Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" id="sv-rh" step="0.1" min="0" max="100" placeholder="—"></div>
     </div>
+    <div class="sla-field" style="margin-top:10px">
+      <label>How was the wet bulb measured?</label>
+      <select id="sv-method" class="sla-select">
+        <option value="psy" selected>Sling / aspirated psychrometer — WMO (what an instrument reads)</option>
+        <option value="thermo">Thermodynamic wet bulb — ASHRAE Eq. 35 (a chart property)</option>
+      </select>
+    </div>
     <div class="calc-res" id="sv-res">Enter dry-bulb and wet-bulb readings to compute RH.</div>
     <div class="sv-actions">
       <button class="scn-btn" id="sv-to-current" disabled>→ Set as Current point</button>
     </div>
-    <div class="formula-note">Inverse psychrometrics: ASHRAE Eq. 35 solved for W at the observed wet bulb, RH backed out via Eq. 20 at site pressure <span id="sv-pressure">—</span>. Wet bulb can never exceed dry bulb. Pass bands: ±2% RH typical capacitive-sensor spec, ±5% marginal — recalibrate beyond that.</div>
+    <div class="formula-note">Inverse psychrometrics at site pressure <span id="sv-pressure">—</span>. A slung or aspirated instrument reads the <em>psychrometric</em> wet bulb (WMO CIMO formula, needs ≥3 m/s over a wet wick); ASHRAE Eq. 35 gives the <em>thermodynamic</em> wet bulb, a chart property. Reading one as the other biases RH low by ~0.5 points — systematic, so it will not average out. Wet bulb can never exceed dry bulb. Pass bands: ±2% RH typical capacitive-sensor spec, ±5% marginal — recalibrate beyond that.</div>
   </div>
 </details>
 

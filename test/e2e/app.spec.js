@@ -6,6 +6,17 @@
  * boots, that the four display surfaces read the tested core, that the service
  * worker really serves the app offline, that a corrupt import cannot damage
  * saved state.
+ *
+ * This file runs under BOTH Playwright projects (see playwright.config.js) —
+ * `raw`, the module tree GitHub Pages serves, and `built`, the single inlined
+ * `dist/index.html` — so every assertion below is made twice, once per artifact.
+ * Nothing here may depend on the bundler: the one thing that legitimately
+ * differs between the two is the version stamp, handled explicitly below.
+ *
+ * Navigation is `goto('./')`, never `goto('/')`. A leading slash is an absolute
+ * path and DISCARDS the baseURL's directory, so `/` sends both projects to the
+ * server root and the `built` project silently tests the raw app instead. That
+ * happened; the version assertion below is what caught it.
  */
 
 import { test, expect } from '@playwright/test';
@@ -29,9 +40,9 @@ async function expandAll(page) {
 }
 
 test.describe('boot', () => {
-  test('loads clean, self-test green, version stamped', async ({ page }) => {
+  test('loads clean, self-test green, version stamped', async ({ page }, testInfo) => {
     const errors = watchForErrors(page);
-    await page.goto('/');
+    await page.goto('./');
 
     const badge = page.locator('#selftest-badge');
     await expect(badge).toContainText('passed');
@@ -42,13 +53,19 @@ test.describe('boot', () => {
     expect(Number(total)).toBeGreaterThanOrEqual(30);
 
     // The footer stamp must match the package being built, not a stale literal.
-    await expect(page.locator('#app-version')).toContainText(`v${pkg.version}`);
+    // Only the bundler can know the version: `__APP_VERSION__` is a Vite
+    // `define`, so the raw module tree legitimately reports `vdev (local)`.
+    // Asserting the RIGHT one per artifact is what proves the define landed —
+    // a build that silently lost it would read `vdev` and be caught here.
+    await expect(page.locator('#app-version')).toContainText(
+      testInfo.project.name === 'built' ? `v${pkg.version}` : 'vdev',
+    );
 
     expect(errors, `console errors on boot:\n${errors.join('\n')}`).toEqual([]);
   });
 
   test('the self-test panel opens and lists every case', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await page.locator('#selftest-badge').click();
     const rows = page.locator('#selftest-panel tbody tr');
     await expect(rows.first()).toBeVisible();
@@ -60,7 +77,7 @@ test.describe('boot', () => {
 
 test.describe('chart', () => {
   test('renders actual content, not a blank canvas', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     const ink = await page.evaluate(() => {
       const c = document.getElementById('psychCanvas');
       const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
@@ -72,7 +89,7 @@ test.describe('chart', () => {
   });
 
   test('legend toggles change what is drawn', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     const snapshot = () =>
       page.evaluate(() => document.getElementById('psychCanvas').toDataURL().length);
     const before = await snapshot();
@@ -99,7 +116,7 @@ test.describe('physics wiring', () => {
     { name: 'Denver site (Westminster, 5,380 ft)', elevFt: 5380 },
   ]) {
     test(`the table agrees with the core — ${scenario.name}`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('./');
       await expandAll(page);
 
       if (scenario.elevFt != null) {
@@ -150,7 +167,7 @@ test.describe('physics wiring', () => {
   }
 
   test('elevation drives pressure, and pressure moves humidity ratio', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await expandAll(page);
     const readW = () =>
       page.evaluate(() =>
@@ -176,7 +193,7 @@ test.describe('physics wiring', () => {
 
 test.describe('validity domain guard', () => {
   test('warns outside the validated band and clears on return', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await expandAll(page);
     const chip = page.locator('#domain-chip');
     await expect(chip).toBeHidden();
@@ -195,20 +212,33 @@ test.describe('validity domain guard', () => {
 
 test.describe('sensor validation', () => {
   test('computes RH from a dry-bulb / wet-bulb pair', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await expandAll(page);
     await page.fill('#sv-db', '75');
     await page.dispatchEvent('#sv-db', 'input');
     await page.fill('#sv-wb', '62');
     await page.dispatchEvent('#sv-wb', 'input');
 
-    // CoolProp cross-checked: 48.70 % RH, 54.4 °F dew point at this site pressure.
+    // 75/62 °F at the default site (1,066 ft → 97.4821 kPa) has TWO correct
+    // answers, and which one the card shows depends on what the instrument
+    // measured. The default is the psychrometer formula, because that is what a
+    // sling psychrometer actually reads:
+    await expect(page.locator('#sv-method')).toHaveValue('psy');
+    await expect(page.locator('#sv-res')).toContainText('48.2%');
+    await expect(page.locator('#sv-res')).toContainText('54.1');
+
+    // The thermodynamic wet bulb is the other definition — CoolProp
+    // cross-checked at 48.72 % RH, 54.4 °F dew point. Pinning both is what
+    // keeps the two from being quietly swapped: they differ by only ~0.5 % RH,
+    // small enough to look like a rounding change and large enough to fail a
+    // calibration audit.
+    await page.locator('#sv-method').selectOption('thermo');
     await expect(page.locator('#sv-res')).toContainText('48.7%');
     await expect(page.locator('#sv-res')).toContainText('54.4');
   });
 
   test('rejects a physically impossible pair', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await expandAll(page);
     await page.fill('#sv-db', '70');
     await page.dispatchEvent('#sv-db', 'input');
@@ -218,7 +248,7 @@ test.describe('sensor validation', () => {
   });
 
   test('grades a sensor reading against the true value', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await expandAll(page);
     await page.fill('#sv-db', '75');
     await page.dispatchEvent('#sv-db', 'input');
@@ -236,7 +266,7 @@ test.describe('sensor validation', () => {
 
 test.describe('persistence', () => {
   test('a saved scenario survives a reload', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await expandAll(page);
     await page.fill('#scn-name', 'E2E scenario');
     await page.locator('#scn-save').click();
@@ -248,7 +278,7 @@ test.describe('persistence', () => {
   });
 
   test('a hall edit survives a reload', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await expandAll(page);
     await page.fill('#hall-name', 'Reload Test Hall');
     await page.dispatchEvent('#hall-name', 'input');
@@ -262,7 +292,7 @@ test.describe('persistence', () => {
 
 test.describe('save-file import', () => {
   test('malformed JSON toasts an error and leaves state intact', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await expandAll(page);
     const hallsBefore = await page.evaluate(
       () => document.querySelectorAll('#hall-tabs .sla-tab').length,
@@ -282,7 +312,7 @@ test.describe('save-file import', () => {
   });
 
   test('a valid save file merges and reports counts', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await expandAll(page);
     const payload = {
       app: 'SDC Hall Environment Planner',
@@ -307,7 +337,7 @@ test.describe('save-file import', () => {
 
 test.describe('units', () => {
   test('switching to °C converts displayed temperatures', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await expect(page.locator('#a-temp')).toHaveValue('68');
     await page.locator('#unit-toggle .unit-btn[data-unit="C"]').click();
     await expect(page.locator('#a-temp')).toHaveValue('20'); // 68 °F = 20 °C
@@ -320,7 +350,7 @@ test.describe('offline', () => {
   test('the app still boots with the network cut', async ({ page, context }) => {
     // Proves the service worker precached everything the app references — the
     // exact guarantee the manifest-hashing bug silently broke.
-    await page.goto('/');
+    await page.goto('./');
     await expect(page.locator('#selftest-badge')).toContainText('passed');
     await page.evaluate(() => navigator.serviceWorker.ready);
 

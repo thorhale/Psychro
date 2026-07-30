@@ -58,6 +58,17 @@ jobs:
         # and that every service-worker precache entry actually exists.
         run: npm run verify:bundle
 
+      - name: Committed shareable file is a build of the current source
+        run: |
+          # StreamHallPlanner.html is committed (Pages serves the repo raw) and
+          # is what people download. This catches an edit to src/ that was never
+          # rebuilt into it. Byte equality can't be used: the bundle embeds the
+          # build's git SHA, so a file committed at one commit never matches a
+          # rebuild at a later one. The checker normalises that stamp only.
+          cp StreamHallPlanner.html "$RUNNER_TEMP/committed.html"
+          npm run shareable
+          node scripts/check-shareable-fresh.mjs "$RUNNER_TEMP/committed.html" StreamHallPlanner.html
+
       - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
@@ -65,7 +76,9 @@ jobs:
           path: dist/
           retention-days: 14
 
-  # ── End-to-end against the real artifact ──────────────────────────────────
+  # ── End-to-end against the real artifacts ─────────────────────────────────
+  # Three surfaces, one job: the raw module tree Pages serves, the built
+  # single-file dist/, and StreamHallPlanner.html opened over file://.
   e2e:
     name: E2E and visual regression
     runs-on: ubuntu-latest
@@ -93,6 +106,10 @@ jobs:
           path: dist/
 
       - name: Run E2E and visual tests
+        # `e2e`, not `test:e2e`: the dist/ under test is the one downloaded
+        # above, and StreamHallPlanner.html is the committed download, already
+        # proven fresh by the build job. Rebuilding either here would test
+        # something other than what ships.
         run: npm run e2e
 
       - name: Upload failure diffs and traces

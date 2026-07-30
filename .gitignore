@@ -19,3 +19,6 @@ ios/App/Podfile.lock
 *.keystore
 *.p12
 *.mobileprovision
+
+# The shareable single file is a build artifact of `npm run shareable`, but it
+# is COMMITTED on purpose: it is the download the app links to. Left tracked.

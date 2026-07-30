@@ -35,9 +35,15 @@ what rolls an update out to installed apps.
 - **Offline correctness.** Vite fingerprinted the `<link rel="manifest">`
   target, rewriting the HTML to `manifest-<hash>.webmanifest` while `sw.js`
   precached the literal `./manifest.webmanifest` — so the manifest the installed
-  PWA actually referenced was never in the offline cache. PWA assets now live in
-  `public/` with stable names. Side effect: the icon is no longer inlined as a
-  data URI, cutting the bundle from 50.9 to 46.3 kB gzipped.
+  PWA actually referenced was never in the offline cache. Fingerprinting is now
+  off for assets (`build.rollupOptions.output.assetFileNames`), and the assets
+  stay at the repo root as a single copy. Moving them under `public/` would have
+  worked for the build and broken the raw GitHub Pages deploy, which serves
+  `index.html` from the root and needs its siblings there; keeping a copy in both
+  places makes Vite resolve the root one and start hashing again. Cache busting
+  never depended on filenames — it comes from the per-build service-worker key.
+  `test/assets.test.js` pins the root layout, including that every icon the
+  manifest names exists and is precached.
 - **Manifest icon references were unverified.** `@capacitor/assets` rewrote the
   manifest to point at `../icons/*.webp` — outside the deploy root, wrong MIME
   type, and absent from the precache list — and the bundle verifier passed it,
@@ -47,10 +53,12 @@ what rolls an update out to installed apps.
 
 ### Added
 
-- `scripts/verify-bundle.mjs` — post-build gate asserting 20 properties of the
+- `scripts/verify-bundle.mjs` — post-build gate asserting 41 properties of the
   shipped artifact: the single-file promise, no fingerprinted PWA assets, and
   that every service-worker precache entry exists and covers what the HTML
-  references. Exits non-zero; runs in CI after every build.
+  references. Exits non-zero; runs in CI after every build. The cache-key check
+  *evaluates* sw.js's own expression rather than pattern-matching a literal, so
+  it cannot agree with a service worker whose versioning rule silently changed.
 - `src/core/derive.js` — one `deriveState(tc, rh, p)` consumed by all four
   display surfaces (properties table, Current→Target readout, chart hover,
   export canvas), making cross-surface agreement structural.
@@ -75,17 +83,53 @@ what rolls an update out to installed apps.
   operator-facing badge strings.
 - The PNG/PDF export header gained a derived-properties line; an exported sheet
   previously omitted dew point, the number SLA caps are written against.
-- Test count: 52 → 131 unit + 22 E2E. Bundle checks: 20 → 40.
-- Bundle size 46.3 → 53.4 kB gzipped: one artifact serves web and native, so the
+- Test count: 52 → 136 unit + 58 E2E. Bundle checks: 20 → 41.
+- Bundle size 46.3 → 59.2 kB gzipped: one artifact serves web and native, so the
   Capacitor plugin code ships to web even though the web path never runs it.
   Two builds would mean E2E verifies a different artifact from the one on a
-  phone — a worse consistency risk than 8 kB. A size budget (220 kB raw /
+  phone — a worse consistency risk than the bytes. A size budget (220 kB raw /
   65 kB gzipped) now fails the build on accidental growth.
+
+### Merged with `main`
+
+`main` had evolved independently. Both deploy models are now supported rather
+than one replacing the other, and both test suites survive:
+
+- **The repo root stays directly servable.** GitHub Pages publishes this repo
+  raw, so `index.html` and its ES modules must work with no build step. The
+  Vite single-file build is now the *second* artifact, not the only one.
+- **E2E covers all three artifacts** under one static server: the raw module
+  tree, the built `dist/`, and `StreamHallPlanner.html` over `file://`. The
+  behaviour suite runs against the first two under separate Playwright projects,
+  so they cannot drift apart silently. This caught a real defect immediately:
+  `page.goto('/')` discards the baseURL's directory, so the `built` project had
+  been testing the raw app — the version-stamp assertion is what exposed it.
+- Duplicate `playwright.config.{js,mjs}` and `app.spec.{js,mjs}` unified; both
+  branches' specs kept (main's install/download/single-file-integrity coverage
+  alongside the boot/wiring/persistence/offline/visual suites).
+
+### Changed by the merge — physics accuracy improved
+
+`main` replaced two correlations, and `npm run analyze` measures both as better
+against CoolProp 8.0.0. `docs/coolprop-comparison.md` §4 is updated to match:
+
+- **Enthalpy** is now a pressure-dependent polynomial fitted to RP-1485 instead
+  of Ch. 1 Eq. 30's constant specific heats: max 0.461 → 0.437 kJ/kg.
+- **Specific volume** carries a fitted compressibility factor Z(t, p, W) instead
+  of assuming ideal mixing: max relative error 0.1125 % → 0.0114 %, a factor of
+  ten. **Density** derives from it and improves identically.
+- The **sensor-validation card defaults to the psychrometer formula** (what a
+  sling psychrometer physically reads) rather than the thermodynamic wet bulb.
+  At 75/62 °F that is 48.2 % RH, not 48.7 %. Both are now pinned by E2E and
+  documented side by side, because a 0.5 % RH swap looks like rounding and
+  fails a calibration audit.
 
 ### Verified
 
-No accuracy drift: `npm run analyze` reproduces the table in
-`docs/coolprop-comparison.md` §4 digit-for-digit after all of the above.
+Full gate green after the merge: 136 unit tests, 58 E2E (including the five
+committed chart goldens, which matched **without** re-blessing — the chart
+renders identically across both artifacts), 41 bundle checks, lint, typecheck.
+`npm run analyze` reproduces `docs/coolprop-comparison.md` §4 digit-for-digit.
 
 ## [2.0.0] — 2026-07-27
 

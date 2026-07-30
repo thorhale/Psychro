@@ -6,7 +6,14 @@
 // activate handler below deletes the old one — no manual version bumps, no
 // stale installs. `__BUILD_VERSION__` survives verbatim in dev, which is fine:
 // dev serves from Vite, not from this worker.
-const CACHE = 'sdc-psychro-__BUILD_VERSION__';
+// Cache identity. Vite stamps __BUILD_VERSION__ at build time (vite.config.js)
+// so built releases version themselves. GitHub Pages currently serves this
+// repo RAW — no build runs, the placeholder survives verbatim, and without
+// the fallback below every deploy would reuse one cache name and cache-first
+// clients would never see an update. Bump RAW_VERSION on every push to main.
+const BUILD = '__BUILD_VERSION__';
+const RAW_VERSION = 'raw-v4-install-download';
+const CACHE = 'sdc-psychro-' + (BUILD.charAt(0) === '_' ? RAW_VERSION : BUILD);
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -28,5 +35,22 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  e.respondWith(caches.match(e.request).then((r) => r || fetch(e.request)));
+  if (e.request.method !== 'GET') return;
+  // Cache-first, then network — and cache what the network returns. The
+  // precache list above can't name every module under src/, so without the
+  // runtime fill an installed app would load its shell offline and then fail
+  // fetching the modules the shell imports.
+  e.respondWith(
+    caches.match(e.request).then(
+      (hit) =>
+        hit ||
+        fetch(e.request).then((res) => {
+          if (res.ok && new URL(e.request.url).origin === location.origin) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(e.request, copy));
+          }
+          return res;
+        }),
+    ),
+  );
 });

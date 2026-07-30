@@ -7,6 +7,7 @@ export default [
     files: [
       'src/**/*.js',
       'test/**/*.js',
+      'test/**/*.mjs',
       'scripts/**/*.mjs',
       // Config and E2E files are Node-side; they need the Node globals too.
       '*.config.js',
@@ -43,6 +44,11 @@ export default [
       // generated bridge files. Both are build output, not source.
       'android/',
       'ios/',
+      'playwright-report/',
+      'test-results/',
+      // The shareable single file is generated: every module inlined into one
+      // <script>. Linting it lints the same source twice.
+      'StreamHallPlanner.html',
     ],
   },
 ];

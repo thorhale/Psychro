@@ -12,8 +12,11 @@ comparison and measured accuracy table, regenerated in CI on every push.
 ## Layout
 
 ```
-index.html            app shell (markup + styles)
-public/               PWA assets copied verbatim — stable names the SW can cache
+index.html            app shell (markup + styles) — served raw by GitHub Pages
+manifest.webmanifest  PWA assets, unhashed at the root so raw serving and the
+icon-*.png            service-worker precache list both resolve them
+sw.js                 offline cache; its key is stamped per build
+StreamHallPlanner.html  committed single-file build — the app's own download
 src/core/             tested physics: psychro, derive, envelopes, planner, domain, units
 src/config/           site catalog + branding
 src/state/            save-file schema + storage migration (v4/v3/v1)
@@ -33,18 +36,22 @@ blockworld/           independent bonus voxel game (untouched by the build)
 ```bash
 npm ci
 npm run dev            # live-reload dev server
-npm test               # 131 tests: oracle, invariants, consistency, schema, platform
+npm test               # 136 tests: oracle, invariants, consistency, assets, schema, platform
 npm run lint
 npm run typecheck
 npm run analyze        # per-property accuracy table vs CoolProp
 npm run build
-npm run verify:bundle  # 40 artifact-integrity checks
-npm run e2e            # 22 Playwright tests against dist/, incl. offline
+npm run verify:bundle  # 41 artifact-integrity checks
+npm run e2e            # 58 Playwright tests across all three artifacts
 ```
 
-`npm run e2e` deliberately tests the built `dist/`, not the dev server — the
-thing that ships is a single self-contained file, and bundling regressions only
-show up there. Run `npm run build` first.
+`npm run e2e` deliberately tests shipped artifacts, never the dev server. It
+runs two Playwright projects against one static server rooted at the repo:
+`raw` (the repo root, exactly what GitHub Pages publishes) and `built`
+(`dist/index.html`), plus `StreamHallPlanner.html` opened over `file://`. The
+behaviour suite runs under both projects, so the artifacts cannot drift apart
+without failing. Use `npm run test:e2e` to build the artifacts first, or
+`npm run e2e` on its own if they are already current.
 
 ## Build & deploy
 
@@ -111,10 +118,12 @@ writes — export a save file when you see that warning.
 
 ## Validation
 
-- **CI on every push**: lint, typecheck, 131 tests (CoolProp oracle, physical
-  invariants over seeded-random states, cross-surface consistency, storage
-  migration, platform adapters), the accuracy report, 40 bundle-integrity checks,
-  and 22 Playwright tests against the built artifact including an offline boot.
+- **CI on every push**: lint, typecheck, 136 tests (CoolProp oracle, physical
+  invariants over seeded-random states, cross-surface consistency, asset layout,
+  storage migration, platform adapters), the accuracy report, 41 bundle-integrity
+  checks, and 58 Playwright tests covering all three artifacts — the raw module
+  tree Pages serves, the built single-file `dist/`, and `StreamHallPlanner.html`
+  opened over `file://` — including an offline boot and five chart goldens.
 - **In-app**: the footer self-test badge re-runs a 30-case validation from the
   shipped code on every load — tap it for the full table. It runs the same core
   CI validates, so what the badge asserts is what that build computes.
