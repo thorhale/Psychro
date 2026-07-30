@@ -7,7 +7,9 @@
  * exactly what this build computes — not what some other build computed in CI.
  *
  * Tolerances tightened from v1 where the v2 core earned it: dew point is now a
- * Newton inversion (±0.02 °C here, was ±0.12), wet bulb ±0.02 °C (was ±0.1).
+ * Newton inversion (±0.02 °C here, was ±0.12), wet bulb ±0.02 °C (was ±0.1),
+ * and enthalpy/specific volume are real-gas fits checked at altitude as well
+ * as sea level (±0.08 kJ/kg and ±5e-4 m³/kg, were ±0.1 and ±1e-3).
  */
 
 import {
@@ -24,6 +26,7 @@ import {
   wetBulb,
   wetBulbSolve,
   rhFromWetBulb,
+  rhFromPsychrometer,
 } from '../core/psychro.js';
 
 export function runSelfTest() {
@@ -56,13 +59,16 @@ export function runSelfTest() {
   T('dp(20°C,sat)=20', dewPoint(satPressure(20)), 20.0, 0.001, '°C');
   T('dp(-15°C,sat)=-15', dewPoint(satPressure(-15)), -15.0, 0.001, '°C');
 
-  // 5. Enthalpy (kJ/kg) — ASHRAE Eq. 30 (CoolProp Hda ≈ 50.423)
+  // 5. Enthalpy (kJ/kg) — real-gas fit vs CoolProp, at sea level AND altitude
   const W25_50 = humidityRatio(25, 50, p0);
-  T('h(25°C,50%)', enthalpy(25, W25_50), 50.42, 0.1, 'kJ/kg');
+  T('h(25°C,50%)', enthalpy(25, W25_50, p0), 50.42345, 0.08, 'kJ/kg');
+  T('h(20°C,dry)', enthalpy(20, 0, p0), 20.11739, 0.02, 'kJ/kg');
+  T('h(25°C,50%,83kPa)', enthalpy(25, humidityRatio(25, 50, 83), 83), 56.14016, 0.08, 'kJ/kg');
 
-  // 6. Specific volume (m³/kg) — ASHRAE Eq. 26 — and mixture density
-  T('v(25°C,50%)', specificVolume(25, W25_50, p0), 0.858, 0.001, 'm³/kg');
-  T('v(20°C,dry)', specificVolume(20, 0, p0), 0.8305, 0.001, 'm³/kg');
+  // 6. Specific volume (m³/kg) — Eq. 26 + compressibility — and mixture density
+  T('v(25°C,50%)', specificVolume(25, W25_50, p0), 0.857788, 5e-4, 'm³/kg');
+  T('v(20°C,dry)', specificVolume(20, 0, p0), 0.830149, 5e-4, 'm³/kg');
+  T('v(25°C,50%,65kPa)', specificVolume(25, humidityRatio(25, 50, 65), 65), 1.349306, 1e-3, 'm³/kg');
   T('ρ(25°C,50%)', moistAirDensity(25, 50, p0), 1.1770, 0.002, 'kg/m³');
 
   // 7. Wet bulb (°C) — branch-aware Eq. 35 solve vs CoolProp
@@ -79,6 +85,15 @@ export function runSelfTest() {
   T('rh @85 kPa round-trip', rhFromWetBulb(20, wetBulb(20, 60, 85), 85), 60, 0.001, '%');
   T('rh(-5°C ice branch)', rhFromWetBulb(-5, wetBulb(-5, 40, p0), p0), 40, 0.001, '%');
   T('rh(twb=tdb) = sat', rhFromWetBulb(25, 25, p0), 100, 0.01, '%');
+
+  // 9b. WMO psychrometer formula — what a slung/aspirated instrument reads.
+  // Cross-checked against the thermodynamic wet bulb: the instrument formula
+  // must sit 0.3–0.7 RH points BELOW the Eq. 35 inverse at these conditions
+  // (the measured psychrometric-vs-thermodynamic offset), and saturate at 100.
+  const rhTh = rhFromWetBulb(24, 16.258, p0);
+  const rhPs = rhFromPsychrometer(24, 16.258, p0);
+  T('psychrometer offset @24°C', rhTh - rhPs, 0.5, 0.2, '% RH');
+  T('psychrometer(twb=tdb)=sat', rhFromPsychrometer(25, 25, p0), 100, 0.01, '%');
 
   // 10. Solver honesty: the near-freezing ambiguity is flagged, not hidden
   const amb = wetBulbSolve(7.5, 25, 79.5);

@@ -31,6 +31,7 @@ import {
   thermalConductivity,
   degreeOfSaturation,
   rhFromW,
+  rhFromPsychrometer,
 } from '../src/core/psychro.js';
 import { CORE_DOMAIN } from '../src/core/domain.js';
 
@@ -42,9 +43,9 @@ const core = ref.rows.filter((r) => r[col.core] === 1);
 /** Per-property tolerance vs CoolProp over the core operating domain. */
 const TOL = {
   w_rel: 2e-5, //      humidity ratio, relative  (measured max 1.3e-5)
-  h_abs: 0.5, //       enthalpy kJ/kg            (measured max 0.462)
-  v_rel: 1.5e-3, //    specific volume, relative (measured max 1.13e-3)
-  rho_rel: 1.5e-3, //  density, relative
+  h_abs: 0.05, //      enthalpy kJ/kg            (real-gas fit; measured max 0.031)
+  v_rel: 2e-4, //      specific volume, relative (Z-corrected; measured max 1.15e-4)
+  rho_rel: 2e-4, //    density, relative         (follows v; measured max 1.15e-4)
   tdp_abs: 0.03, //    dew point °C              (measured max 0.023)
   twb_abs: 0.05, //    wet bulb °C, unambiguous points (measured max 0.011)
   twb_amb_abs: 1.0, // wet bulb °C, flagged near-freezing ambiguity (max 0.83)
@@ -73,7 +74,7 @@ describe('CoolProp oracle grid', () => {
   it('enthalpy within tolerance at every core point', () => {
     for (const r of core) {
       const W = humidityRatio(r[col.t_c], r[col.rh_pct], r[col.p_kpa]);
-      const ours = enthalpy(r[col.t_c], W);
+      const ours = enthalpy(r[col.t_c], W, r[col.p_kpa]);
       expect(Math.abs(ours - r[col.h_kjkg]), `h at ${r[col.t_c]}°C ${r[col.rh_pct]}% ${r[col.p_kpa]}kPa`).toBeLessThan(TOL.h_abs);
     }
   });
@@ -176,9 +177,9 @@ describe('ASHRAE Fundamentals table checks (migrated from the v1 self-test)', ()
 
   it('enthalpy and specific volume spot values', () => {
     const W = humidityRatio(25, 50, 101.325);
-    near(enthalpy(25, W), 50.42, 0.05); // CoolProp Hda: 50.423
-    near(specificVolume(25, W, 101.325), 0.8578, 0.001);
-    near(specificVolume(20, 0, 101.325), 0.8305, 0.001);
+    near(enthalpy(25, W, 101.325), 50.423, 0.05); // CoolProp Hda: 50.423
+    near(specificVolume(25, W, 101.325), 0.857788, 2e-4); // CoolProp Vda
+    near(specificVolume(20, 0, 101.325), 0.830149, 2e-4); // CoolProp Vda, dry
   });
 
   it('rh ⇄ wet bulb round-trips exactly on both saturation branches', () => {
@@ -201,6 +202,16 @@ describe('ASHRAE Fundamentals table checks (migrated from the v1 self-test)', ()
     expect(dewPoint(0)).toBeNull();
     expect(dewPoint(-1)).toBeNull();
     expect(rhFromWetBulb(25, 25, 101.325)).toBeCloseTo(100, 2);
+
+    // WMO psychrometer formula: an instrument reading run through the
+    // thermodynamic inverse reads systematically high — the psychrometric
+    // formula must sit 0.3–0.7 RH points below it at ordinary conditions.
+    const twb = wetBulb(24, 45, 101.325);
+    const offset = rhFromWetBulb(24, twb, 101.325) - rhFromPsychrometer(24, twb, 101.325);
+    expect(offset).toBeGreaterThan(0.3);
+    expect(offset).toBeLessThan(0.7);
+    expect(rhFromPsychrometer(25, 25, 101.325)).toBeCloseTo(100, 2);
+    expect(rhFromPsychrometer(25, 26, 101.325)).toBeNull(); // twb > tdb impossible
     expect(humidityRatio(25, 0, 101.325)).toBe(0);
     expect(degreeOfSaturation(25, 100, 101.325)).toBeCloseTo(1, 9);
     // rhFromW inverts humidityRatio
