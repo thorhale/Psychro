@@ -23,6 +23,7 @@ import {
   absHumidity,
   wetBulb,
   rhFromWetBulb,
+  rhFromPsychrometer,
 } from '../core/psychro.js';
 import { fToC, cToF, TEMP_UNITS, deltaFromF, deltaLabelFor } from '../core/units.js';
 import { ASHRAE_ENVELOPES, envelopePolygon, slaPolygon, ashraeZone } from '../core/envelopes.js';
@@ -282,9 +283,32 @@ function clampTargetF(f) {
   return Math.max(lo, Math.min(hi, f));
 }
 // Dew point ↔ RH at a fixed dry-bulb (bijective; DP is the moisture truth-teller:
-// constant DP = constant water, rising DP = adding water).
-const dpF_from   = (tempF, rh)  => { const pw = vaporPressure(fToC(tempF), rh); return pw > 0 ? cToF(dewPoint(pw)) : 0; };
+// constant DP = constant water, rising DP = adding water). dewPoint() is an
+// exact Newton inversion of the saturation curve and rh_from_dpF is the same
+// curve as a ratio, so the pair are exact inverses — the invariant the
+// temperature slider depends on.
+const dpF_from   = (tempF, rh)  => { const pw = vaporPressure(fToC(tempF), rh); return pw > 0 ? cToF(dewPoint(pw)) : -100; };
 const rh_from_dpF = (tempF, dpF) => clampRH(satPressure(fToC(dpF)) / satPressure(fToC(tempF)) * 100);
+// Dew point has its own slider bounds: it runs far below the 32°F dry-bulb
+// floor (68°F at 1% RH dews out near −26°F), so clampF would pin the thumb and
+// misreport dry air. Ceiling is the dry-bulb max — DP can never exceed it.
+const clampDpF = f => Math.max(-40, Math.min(130, f));
+
+// ── Temperature and dew point are the independent pair; RH is what they
+//    produce. Heating or cooling air doesn't add or remove water, so moving
+//    temperature holds the dew point and re-derives RH — the behaviour a
+//    psychrometric chart shows as sliding along a constant-W line. Moving dew
+//    point holds temperature and re-derives RH. Moving RH directly re-derives
+//    dew point instead (RH is what's stored, so that falls out for free). ──
+function setTempHoldingDp(key, newTempF) {
+  const tKey = key === 'a' ? 'aTemp' : 'bTemp';
+  const rKey = key === 'a' ? 'aRH'   : 'bRH';
+  const dpF = dpF_from(state[tKey], state[rKey]);   // water content before the move
+  state[tKey] = newTempF;
+  // If the new temp falls below the dew point, RH pins at 100 and the dew
+  // point follows the dry bulb down — you cannot hold water past saturation.
+  state[rKey] = rh_from_dpF(newTempF, dpF);
+}
 
 // Push state into the four sliders + input boxes. `skipInput` is the id of an
 // input box currently being typed in — it is left untouched so typing isn't
@@ -304,8 +328,8 @@ function syncAllControls(skipInput) {
   setControl('slider-a-rh',   'a-rh',   'slider-a-rh-val',   state.aRH,   'rh',   skipInput);
   setControl('slider-b-temp', 'b-temp', 'slider-b-temp-val', state.bTemp, 'temp', skipInput);
   setControl('slider-b-rh',   'b-rh',   'slider-b-rh-val',   state.bRH,   'rh',   skipInput);
-  setControl('slider-a-dp', 'a-dp', null, dpF_from(state.aTemp, state.aRH), 'temp', skipInput);
-  setControl('slider-b-dp', 'b-dp', null, dpF_from(state.bTemp, state.bRH), 'temp', skipInput);
+  setControl('slider-a-dp', 'a-dp', null, dpF_from(state.aTemp, state.aRH), 'dp', skipInput);
+  setControl('slider-b-dp', 'b-dp', null, dpF_from(state.bTemp, state.bRH), 'dp', skipInput);
   document.querySelectorAll('.tunit').forEach(el => el.textContent = tLabel());
 }
 function syncControlsexcept(skipInput) { syncAllControls(skipInput); }
@@ -315,8 +339,9 @@ function setControl(sliderId, inputId, valId, valF, kind, skipInput) {
   const input  = document.getElementById(inputId);
   const val    = document.getElementById(valId);
   // sliders are bounded; input boxes are free
-  const sliderClampF = (sliderId.includes('-b-')) ? clampTargetF : clampF;
-  if (kind === 'temp') {
+  const sliderClampF = kind === 'dp' ? clampDpF
+    : (sliderId.includes('-b-')) ? clampTargetF : clampF;
+  if (kind === 'temp' || kind === 'dp') {
     if (slider) slider.value = Math.round(sliderClampF(valF));   // slider clamped
     if (input && inputId !== skipInput)  input.value  = dispTs(valF);  // box: true value
     if (val)    val.textContent = dispTs(valF) + ' ' + tLabel();
@@ -336,7 +361,7 @@ function afterCurrentChange() {
   syncAllControls(); update();
 }
 document.getElementById('slider-a-temp').addEventListener('input', function() {
-  state.aTemp = clampF(parseFloat(this.value)); afterCurrentChange();
+  setTempHoldingDp('a', clampF(parseFloat(this.value))); afterCurrentChange();
 });
 document.getElementById('slider-a-rh').addEventListener('input', function() {
   state.aRH = clampRH(parseFloat(this.value)); afterCurrentChange();
@@ -347,7 +372,7 @@ document.getElementById('slider-a-rh').addEventListener('input', function() {
 // setting DP directly adjusts RH at the CURRENT target temp, same as typing
 // an RH value would; it does not touch temperature.)
 document.getElementById('slider-b-temp').addEventListener('input', function() {
-  state.bTemp = clampTargetF(parseFloat(this.value));
+  setTempHoldingDp('b', clampTargetF(parseFloat(this.value)));
   syncAllControls(); update();
 });
 document.getElementById('slider-b-rh').addEventListener('input', function() {
@@ -358,7 +383,7 @@ document.getElementById('slider-b-rh').addEventListener('input', function() {
 // ── Typed input boxes — independent, same as sliders. ──
 document.getElementById('a-temp').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
-  state.aTemp = tU().toF(v);
+  setTempHoldingDp('a', tU().toF(v));
   syncControlsexcept('a-temp'); update();
 });
 document.getElementById('a-rh').addEventListener('input', function() {
@@ -368,7 +393,7 @@ document.getElementById('a-rh').addEventListener('input', function() {
 });
 document.getElementById('b-temp').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
-  state.bTemp = clampTargetF(tU().toF(v));
+  setTempHoldingDp('b', clampTargetF(tU().toF(v)));
   syncControlsexcept('b-temp'); update();
 });
 document.getElementById('b-rh').addEventListener('input', function() {
@@ -416,7 +441,12 @@ document.querySelectorAll('#unit-toggle .unit-btn').forEach(btn => {
 //  them without drift; the math runs at the active site pressure, so an
 //  elevation change re-grades the sensor automatically.
 // ════════════════════════════════════════════════════════════
-const svState = { dbF: null, wbF: null, sensorRh: null };
+const svState = { dbF: null, wbF: null, sensorRh: null, method: 'psy' };
+// Which inverse to use — see rhFromPsychrometer() in the core. A real
+// instrument reads the psychrometric wet bulb; Eq. 35 is the thermodynamic
+// one. They differ by ~0.5 RH points, systematically.
+const svRh = (tc, twb, p) => svState.method === 'thermo'
+  ? rhFromWetBulb(tc, twb, p) : rhFromPsychrometer(tc, twb, p);
 let svLastUnit = state.tempUnit;
 
 // Display a stored °F reading in the active unit, one decimal, no trailing .0
@@ -451,7 +481,7 @@ function renderSensorValidation() {
   }
 
   const tc = fToC(svState.dbF), twbC = fToC(svState.wbF), p = state.pressure;
-  const rh = rhFromWetBulb(tc, twbC, p);
+  const rh = svRh(tc, twbC, p);
   if (rh == null) {
     res.innerHTML = '<span class="calc-warn">Wet bulb is above dry bulb — physically impossible. Check the wick is wet and the probes aren\'t swapped.</span>';
     if (btn) btn.disabled = true;
@@ -492,6 +522,10 @@ document.getElementById('sv-wb').addEventListener('input', function() {
   svState.wbF = isNaN(v) ? null : tU().toF(v);
   renderSensorValidation();
 });
+document.getElementById('sv-method').addEventListener('change', function() {
+  svState.method = this.value;
+  renderSensorValidation();
+});
 document.getElementById('sv-rh').addEventListener('input', function() {
   const v = parseFloat(this.value);
   svState.sensorRh = isNaN(v) ? null : Math.min(100, Math.max(0, v));
@@ -499,7 +533,7 @@ document.getElementById('sv-rh').addEventListener('input', function() {
 });
 document.getElementById('sv-to-current').addEventListener('click', function() {
   if (svState.dbF == null || svState.wbF == null) return;
-  const rh = rhFromWetBulb(fToC(svState.dbF), fToC(svState.wbF), state.pressure);
+  const rh = svRh(fToC(svState.dbF), fToC(svState.wbF), state.pressure);
   if (rh == null) return;
   state.aTemp = clampF(svState.dbF);
   state.aRH = clampRH(rh);
@@ -960,7 +994,7 @@ function buildTable() {
       ah: absHumidity(tc,pw),
       dp: dewPoint(pw),
       wb: wetBulb(tc,pt.rh,p),
-      h: enthalpy(tc,Wkg),
+      h: enthalpy(tc,Wkg,p),
       v: specificVolume(tc,Wkg,p),
       zone: ashraeZone(tc,pt.rh,p) };
   });
@@ -1047,7 +1081,7 @@ function updateControlReadout() {
       W: Wkg * 1000,
       dpF: dpC != null ? cToF(dpC) : null,
       wbF: cToF(wetBulb(tc, rh, p)),
-      h: enthalpy(tc, Wkg),
+      h: enthalpy(tc, Wkg, p),
     };
   }
   const A = props(state.aTemp, state.aRH);
@@ -2328,7 +2362,7 @@ function centerView() {
     } else {
       const dpC = dewPoint(pw);
       const wbC = wetBulb(tc, rh, p);
-      const h   = enthalpy(tc, Math.max(0, hr) / 1000);
+      const h   = enthalpy(tc, Math.max(0, hr) / 1000, p);
       const zone = ashraeZone(tc, rh, p);
       const chk = checkSLA(tF, rh, p);
       body = `<div class="tt-head">${dispTs(tF)}${tLabel()} · ${rh.toFixed(0)}% RH</div>

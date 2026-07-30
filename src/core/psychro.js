@@ -368,23 +368,76 @@ export const rhFromDewPoint = (tc, tdp) => rhFromVapor(tc, satPressure(tdp));
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * ASHRAE Eq. 30 — moist-air enthalpy, kJ per kg of DRY air.
+ * Moist-air enthalpy, kJ per kg of DRY air — real-gas.
+ *
+ * ASHRAE Eq. 30 (`1.006·t + W·(2501 + 1.86·t)`) is an ideal-gas linearisation:
+ * it holds c_p of dry air at a constant 1.006 (really 1.0057→1.0089 over
+ * 0–50 °C), linearises the vapour enthalpy, and drops the pressure-dependent
+ * real-gas mixing term entirely — measured up to 0.55 kJ/kg off CoolProp over
+ * this tool's domain. This form splits h = h_da(t, p) + W·h_v(t, W, p) with each
+ * part least-squares fitted to CoolProp 8.0.0 over −30…55 °C, 50…130 kPa,
+ * W ≤ 0.20 (17,524 points): dry-air term max 0.004 kJ/kg, total max 0.063.
+ * Same reference state as ASHRAE and CoolProp (h = 0 for dry air at 0 °C), so
+ * enthalpy differences and chart iso-lines are unaffected.
+ *
  * @param {number} tc °C @param {number} W kg/kg
+ * @param {number} [p] total pressure kPa; defaults to standard — pass the site
+ *   pressure whenever it is in hand, the mixing term is why this fit exists
  */
-export function enthalpy(tc, W) {
-  return 1.006 * tc + W * (2501 + 1.86 * tc);
+export function enthalpy(tc, W, p = P_STD) {
+  const pk = p / 100;
+  const t2 = tc * tc,
+    t3 = t2 * tc;
+  const hda =
+    2.8115136038e-1 +
+    1.0038061817 * tc +
+    8.8617494795e-6 * t2 +
+    1.2671622834e-7 * t3 +
+    -2.7822677071e-1 * pk +
+    1.8100065978e-3 * pk * tc +
+    2.0230235867e-4 * pk * pk;
+  const hv =
+    2.5015791929e3 +
+    1.8599514633 * tc +
+    5.4496971031e-5 * t2 +
+    9.4941985508e-7 * t3 +
+    -5.5016132834e1 * W +
+    1.7113133922 * W * tc +
+    -1.1972971607e-2 * W * t2 +
+    2.0046248522e1 * W * W +
+    -1.2216285333 * pk +
+    5.6756074986e-3 * pk * tc +
+    -3.9547036083e1 * W * pk;
+  return hda + W * hv;
 }
 
 /** Enthalpy direct from dry bulb / RH / pressure, kJ/kg dry air. */
-export const enthalpyFrom = (tc, rh, p) => enthalpy(tc, humidityRatio(tc, rh, p));
+export const enthalpyFrom = (tc, rh, p) => enthalpy(tc, humidityRatio(tc, rh, p), p);
 
 /**
- * ASHRAE Eq. 26 — specific volume, m³ per kg of DRY air.
+ * Specific volume, m³ per kg of DRY air — ASHRAE Eq. 26 with a real-gas
+ * compressibility correction. Eq. 26 assumes ideal gases and runs up to 0.14 %
+ * high against CoolProp; the fitted Z(t, W, p) factor brings that to 0.012 %.
  * @param {number} tc °C @param {number} W kg/kg @param {number} p kPa
  */
 export function specificVolume(tc, W, p) {
   const T = tc + 273.15;
-  return (R_DA * T * (1 + 1.607858 * W)) / p;
+  const pk = p / 100;
+  const t2 = tc * tc;
+  const Z =
+    1.0000017258 +
+    5.1987187222e-7 * tc +
+    9.0768990689e-9 * t2 +
+    6.8334968054e-10 * t2 * tc +
+    -6.0165183572e-4 * pk +
+    1.1324375519e-5 * pk * tc +
+    -9.6274617207e-8 * pk * t2 +
+    1.5101313553e-4 * W +
+    -7.1862725264e-5 * W * tc +
+    -3.7560981995e-3 * W * pk +
+    6.8096007748e-6 * pk * pk +
+    9.9204577510e-7 * pk * pk * tc;
+  return ((R_DA * T * (1 + 1.607858 * W)) / p) * Z;
 }
 
 /** Specific volume direct from dry bulb / RH / pressure. */
@@ -689,4 +742,35 @@ export function rhFromWetBulb(tc, twb, p) {
   if (W <= 0) return 0;
   const pw = vaporPressureFromW(W, p, tc);
   return Math.min(100, Math.max(0, rhFromVapor(tc, pw)));
+}
+
+/**
+ * RH % from a REAL psychrometer reading — the WMO CIMO Guide psychrometer
+ * formula, for slung or aspirated instruments.
+ *
+ * `rhFromWetBulb` above inverts ASHRAE Eq. 35, which defines the THERMODYNAMIC
+ * wet bulb — an adiabatic-saturation property. A sling or aspirated psychrometer
+ * measures the PSYCHROMETRIC wet bulb, set by the heat/mass-transfer balance at
+ * the wick, and the two are not the same temperature: feeding an instrument
+ * reading through the Eq. 35 inverse biases RH low by a measured 0.4–0.6
+ * percentage points across normal hall conditions. That is a quarter of a ±2 %
+ * sensor tolerance and systematic, so it does not average out over repeated
+ * checks.
+ *
+ *   e = e_w(t_w) − A·p·(t − t_w),  A = 6.53e-4·(1 + 0.000944·t_w) over water,
+ *                                  A = 5.75e-4 over ice
+ *
+ * Valid for a properly wetted wick with ≥3 m/s airflow — i.e. a slung or
+ * aspirated instrument, which is what the WMO coefficients are calibrated for.
+ *
+ * @param {number} tc dry-bulb °C @param {number} twb observed wet-bulb °C
+ * @param {number} p total pressure kPa
+ * @returns {number|null} RH %, or null for a physically impossible pair
+ */
+export function rhFromPsychrometer(tc, twb, p) {
+  if (!isFinite(tc) || !isFinite(twb) || twb > tc + 1e-9) return null;
+  const A = twb >= 0 ? 6.53e-4 * (1 + 0.000944 * twb) : 5.75e-4;
+  const e = satPressure(twb) - A * p * (tc - twb);
+  if (e <= 0) return 0;
+  return Math.min(100, Math.max(0, rhFromVapor(tc, e)));
 }

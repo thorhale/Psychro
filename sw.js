@@ -12,7 +12,7 @@
 // the fallback below every deploy would reuse one cache name and cache-first
 // clients would never see an update. Bump RAW_VERSION on every push to main.
 const BUILD = '__BUILD_VERSION__';
-const RAW_VERSION = 'raw-v2-big-icon';
+const RAW_VERSION = 'raw-v3-unified';
 const CACHE = 'sdc-psychro-' + (BUILD.charAt(0) === '_' ? RAW_VERSION : BUILD);
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
