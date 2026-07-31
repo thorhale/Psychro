@@ -15,8 +15,9 @@
  * if fingerprinting ever returns rather than silently failing to substitute.
  *
  * Run via `npm run shareable` (which builds first). Output goes to the repo
- * root so GitHub Pages serves it at /StreamHallPlanner.html as the app's
- * download link.
+ * root (the committed download, also used by the file:// E2E tests) and into
+ * dist/ (what deploy.yml publishes — the live app's download link points at
+ * ./StreamHallPlanner.html beside the deployed index).
  */
 import { readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -51,8 +52,18 @@ html = html.replace(
   '<!-- Single-file distributable build. Source of truth: this repo; rebuild with `npm run shareable`. -->\n<title>',
 );
 
-const out = join(root, 'StreamHallPlanner.html');
-writeFileSync(out, html);
 const leftovers = html.match(/(src|href)="(?!data:|https:|#)[^"]*\.(png|webmanifest|css|js)"/g);
 if (leftovers) throw new Error(`external refs remain: ${leftovers.join(', ')}`);
-console.log(`wrote ${out} (${(html.length / 1024).toFixed(0)} KB, no external refs)`);
+
+// Two copies, same bytes. The repo-root copy is the committed download that the
+// raw-served tree and the file:// E2E tests use. The dist/ copy is what the
+// DEPLOYED site links: deploy.yml publishes dist/ and the app's own download
+// anchor points at ./StreamHallPlanner.html — without this copy that link
+// 404'd in production while every test stayed green, because only the raw
+// project asserted the link and the raw tree had the root copy.
+// scripts/verify-bundle.mjs pins both presence and byte-equality.
+const outputs = [join(root, 'StreamHallPlanner.html'), join(root, 'dist', 'StreamHallPlanner.html')];
+for (const out of outputs) writeFileSync(out, html);
+console.log(
+  `wrote ${outputs.join(' and ')} (${(html.length / 1024).toFixed(0)} KB, no external refs)`,
+);

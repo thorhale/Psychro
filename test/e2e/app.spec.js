@@ -8,7 +8,7 @@
  * saved state.
  *
  * This file runs under BOTH Playwright projects (see playwright.config.js) —
- * `raw`, the module tree GitHub Pages serves, and `built`, the single inlined
+ * `raw`, the module tree served without a build, and `built`, the single inlined
  * `dist/index.html` — so every assertion below is made twice, once per artifact.
  * Nothing here may depend on the bundler: the one thing that legitimately
  * differs between the two is the version stamp, handled explicitly below.
@@ -343,6 +343,26 @@ test.describe('units', () => {
     await expect(page.locator('#a-temp')).toHaveValue('20'); // 68 °F = 20 °C
     await page.locator('#unit-toggle .unit-btn[data-unit="F"]').click();
     await expect(page.locator('#a-temp')).toHaveValue('68');
+  });
+});
+
+test.describe('download link', () => {
+  test('the app file the UI offers actually resolves', async ({ page }) => {
+    // artifacts.spec.js asserts the link's `download` attribute, but only
+    // against the raw tree — where the committed root copy always exists. The
+    // DEPLOYED site is dist/, and this exact link 404'd in production while
+    // every test was green, because nothing ever fetched the href under the
+    // built artifact. Running under both projects closes that hole for good.
+    const href = await page.goto('./').then(() => page.locator('#app-download').getAttribute('href'));
+    expect(href, 'the download anchor names a file').toBeTruthy();
+    const res = await page.evaluate(async (u) => {
+      const r = await fetch(new URL(u, location.href), { method: 'GET' });
+      const body = await r.blob();
+      return { status: r.status, size: body.size };
+    }, href);
+    expect(res.status, `${href} must be served, not 404`).toBe(200);
+    // A real single-file build is ~200 kB; a soft-404 error page is not.
+    expect(res.size, 'the served file is the actual app, not an error page').toBeGreaterThan(100_000);
   });
 });
 

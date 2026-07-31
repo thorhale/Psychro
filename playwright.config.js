@@ -3,9 +3,9 @@
  *
  * The app is handed to people in two forms and they have drifted apart before:
  *
- *   `raw`   — the repo root served as static files, which is exactly what
- *             GitHub Pages publishes: real ES modules, real manifest, real
- *             service worker, no bundler in the path.
+ *   `raw`   — the repo root served as static files: real ES modules, real
+ *             manifest, real service worker, no bundler in the path. This is
+ *             how local preview and any build-less static host run the app.
  *   `built` — `dist/index.html`, the single self-contained file produced by
  *             `npm run build`, where every module is inlined.
  *

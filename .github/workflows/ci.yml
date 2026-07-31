@@ -50,24 +50,29 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Build
-        run: npm run build
-
-      - name: Verify bundle
-        # Asserts the single-file promise, that no PWA asset got fingerprinted,
-        # and that every service-worker precache entry actually exists.
-        run: npm run verify:bundle
+      - name: Build (vite build + single-file download into dist/)
+        # `shareable`, not plain `build`: a deployable dist/ includes
+        # StreamHallPlanner.html — the app's own download link points at it —
+        # and only make-shareable produces that file. The committed copy is
+        # saved aside first so the freshness check below can compare.
+        run: |
+          cp StreamHallPlanner.html "$RUNNER_TEMP/committed.html"
+          npm run shareable
 
       - name: Committed shareable file is a build of the current source
         run: |
-          # StreamHallPlanner.html is committed (Pages serves the repo raw) and
-          # is what people download. This catches an edit to src/ that was never
-          # rebuilt into it. Byte equality can't be used: the bundle embeds the
-          # build's git SHA, so a file committed at one commit never matches a
-          # rebuild at a later one. The checker normalises that stamp only.
-          cp StreamHallPlanner.html "$RUNNER_TEMP/committed.html"
-          npm run shareable
+          # StreamHallPlanner.html is committed (it is the app's download and
+          # the file:// E2E artifact). This catches an edit to src/ that was
+          # never rebuilt into it. Byte equality can't be used: the bundle
+          # embeds the build's git SHA, so a file committed at one commit never
+          # matches a rebuild at a later one. The checker normalises that only.
           node scripts/check-shareable-fresh.mjs "$RUNNER_TEMP/committed.html" StreamHallPlanner.html
+
+      - name: Verify bundle
+        # Asserts the single-file promise, that no PWA asset got fingerprinted,
+        # that every service-worker precache entry exists, and that dist/
+        # carries the download the deployed app links to.
+        run: npm run verify:bundle
 
       - name: Upload bundle
         uses: actions/upload-artifact@v4

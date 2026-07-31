@@ -46,7 +46,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run analyze
-      - run: npm run build
+      # `shareable`, not plain `build`: the deployed dist/ must contain
+      # StreamHallPlanner.html — the app's own download link points at it, and
+      # it shipped 404ing once when dist/ was built without it.
+      - run: npm run shareable
       - run: npm run verify:bundle
 
       - name: Install Chromium

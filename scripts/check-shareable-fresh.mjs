@@ -2,7 +2,7 @@
  * Guard: the committed StreamHallPlanner.html must be a build of the CURRENT
  * source.
  *
- * That file is committed (Pages serves the repo raw, so it has to be) and is
+ * That file is committed (it is the app's download and a tested artifact) and is
  * what people download. If someone edits `src/` and forgets `npm run
  * shareable`, the downloaded app silently drifts from the hosted one — which
  * has already happened once and is the whole reason this check exists.

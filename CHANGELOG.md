@@ -13,6 +13,23 @@ what rolls an update out to installed apps.
 
 Nothing yet.
 
+## [2.1.1] — 2026-07-31
+
+### Fixed
+
+- **The live app's own download link 404'd.** The deployed site is the built
+  `dist/` (deploy.yml), but `StreamHallPlanner.html` was only ever written to
+  the repo root — so the "download this app" link and the install banner's
+  file fallback pointed at a file the deployment did not contain. Every test
+  stayed green because only the raw-served tree asserted the link, and the raw
+  tree has the root copy. Three-layer fix: `make-shareable` now writes the file
+  into `dist/` too (byte-identical), `verify-bundle` fails any dist/ missing it
+  or carrying different bytes, and a new E2E test fetches the link's href under
+  BOTH artifacts and requires a 200 with a real payload.
+- Comments across the tree claimed "GitHub Pages serves this repo raw" — true
+  before deploy.yml existed, false since. Corrected everywhere it steered
+  decisions; the repo root remains build-free servable and tested as such.
+
 ## [2.1.0] — 2026-07-31
 
 Everything since 2.0.0: the round-2 hardening and native projects, the merge
@@ -156,8 +173,10 @@ with `main`, the first-visit offline fix, and the shakedown below.
 `main` had evolved independently. Both deploy models are now supported rather
 than one replacing the other, and both test suites survive:
 
-- **The repo root stays directly servable.** GitHub Pages publishes this repo
-  raw, so `index.html` and its ES modules must work with no build step. The
+- **The repo root stays directly servable.** At the time of the merge GitHub
+  Pages published this repo raw, so `index.html` and its ES modules had to work
+  with no build step (they still do — local preview and the `raw` E2E project
+  depend on it; the live site now publishes the built `dist/` via deploy.yml). The
   Vite single-file build is now the *second* artifact, not the only one.
 - **E2E covers all three artifacts** under one static server: the raw module
   tree, the built `dist/`, and `StreamHallPlanner.html` over `file://`. The
