@@ -71,6 +71,21 @@ describe('PWA assets at the repo root', () => {
     }
   });
 
+  it('the hosted privacy policy and the in-app dialog make the same statements', async () => {
+    // Both stores require a privacy policy: a public URL (privacy.html on the
+    // deployed site) and, for Google Play, a copy reachable inside the app
+    // (src/app/privacy.js, shown from the footer). Two copies of a legal
+    // statement is a drift hazard, so this pins them: every statement the app
+    // shows must appear verbatim in the hosted page. Change one without the
+    // other and this fails until they agree again.
+    const { PRIVACY_STATEMENTS } = await import('../src/app/privacy.js');
+    expect(PRIVACY_STATEMENTS.length).toBeGreaterThanOrEqual(4);
+    const page = read('privacy.html');
+    for (const statement of PRIVACY_STATEMENTS) {
+      expect(page, `privacy.html is missing: "${statement}"`).toContain(statement);
+    }
+  });
+
   it('every icon the manifest declares exists and is precached', () => {
     // icon-512.png has no HTML referrer — it is named only in this JSON, which
     // vite does not parse — so it reaches dist/ only via the explicit copy in

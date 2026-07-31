@@ -65,6 +65,7 @@ import {
 } from '../platform/index.js';
 import { runSelfTest } from './selftest.js';
 import { VERSION_LABEL } from './version.js';
+import { PRIVACY_TITLE, PRIVACY_TEXT } from './privacy.js';
 import { registerServiceWorker, initInstallBanner } from './pwa.js';
 
 installGlobalHandlers();
@@ -2822,6 +2823,13 @@ boot().catch((err) => {
 (function initFooterDiagnostics() {
   const vEl = document.getElementById('app-version');
   if (vEl) vEl.textContent = VERSION_LABEL;
+
+  // Google Play requires the privacy policy to be reachable INSIDE the app,
+  // not only at the store-console URL. A dialog satisfies that offline, over
+  // file://, and in the native shells alike.
+  document.getElementById('privacy-link')?.addEventListener('click', () => {
+    confirmDialog({ title: PRIVACY_TITLE, message: PRIVACY_TEXT, confirmLabel: 'Close' });
+  });
 
   const badge = document.getElementById('errorlog-badge');
   if (!badge) return;
