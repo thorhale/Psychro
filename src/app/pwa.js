@@ -11,8 +11,42 @@
 import { toast } from '../ui/notify.js';
 import { storage } from '../platform/index.js';
 
+/**
+ * Tell the active worker which same-origin URLs this page actually loaded, so
+ * it can cache them.
+ *
+ * The worker cannot discover them itself: it does not control the page that
+ * registers it, so a first visit's module fetches never reach its fetch
+ * handler, and its precache list can only name the shell. Without this, an app
+ * that says it is installed and offline-ready holds none of its own code until
+ * the user happens to load it a second time while online.
+ *
+ * `performance.getEntriesByType('resource')` is the honest source: it is what
+ * the browser really fetched, so it cannot drift from the module graph the way
+ * a hand-maintained list does.
+ */
+function warmCache(worker) {
+  if (!worker) return;
+  const urls = [
+    location.href,
+    ...performance
+      .getEntriesByType('resource')
+      .map((r) => r.name)
+      .filter((u) => u.startsWith(location.origin)),
+  ];
+  worker.postMessage({ type: 'warm', urls: [...new Set(urls)] });
+}
+
 export function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
+
+  // Warm only once the page has finished loading, so late resources (icons,
+  // lazily-imported modules) are in the resource timeline before it is read.
+  navigator.serviceWorker.ready.then((reg) => {
+    const worker = reg.active;
+    if (document.readyState === 'complete') warmCache(worker);
+    else window.addEventListener('load', () => warmCache(worker), { once: true });
+  });
 
   navigator.serviceWorker
     .register('./sw.js')

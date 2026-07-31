@@ -347,12 +347,59 @@ test.describe('units', () => {
 });
 
 test.describe('offline', () => {
-  test('the app still boots with the network cut', async ({ page, context }) => {
-    // Proves the service worker precached everything the app references — the
+  test('the app still boots with the network cut', async ({ page, context }, testInfo) => {
+    // Proves the service worker cached everything the app references — the
     // exact guarantee the manifest-hashing bug silently broke.
     await page.goto('./');
     await expect(page.locator('#selftest-badge')).toContainText('passed');
     await page.evaluate(() => navigator.serviceWorker.ready);
+
+    // `serviceWorker.ready` means the worker is ACTIVE, not that the app's own
+    // code is cached — the worker does not control the load that registers it,
+    // so none of the module fetches reached its handler. `warmCache()` in
+    // src/app/pwa.js closes that gap, and this waits for it to finish.
+    //
+    // Not `page.waitForFunction`: it treats the Promise an async predicate
+    // returns as a truthy value and resolves immediately, so the barrier would
+    // silently do nothing. `expect.poll` awaits properly.
+    //
+    // Asserting the COUNT rather than just proceeding is deliberate. Without it
+    // this test passes on a machine whose HTTP cache happens to still hold the
+    // modules — which is exactly why it went green locally and red in CI.
+    const cacheState = async () =>
+      page.evaluate(async () => {
+        const urls = new Set([
+          location.href,
+          ...performance
+            .getEntriesByType('resource')
+            .map((r) => r.name)
+            .filter((u) => u.startsWith(location.origin)),
+        ]);
+        let cached = 0;
+        // caches.match() searches every cache, so the build-stamped name — which
+        // this test has no way to know — need not be hard-coded.
+        for (const url of urls) if (await caches.match(url)) cached++;
+        return { cached, total: urls.size };
+      });
+
+    await expect
+      .poll(async () => {
+        const { cached, total } = await cacheState();
+        return cached === total;
+      }, { message: 'service worker never cached the full module graph', timeout: 15000 })
+      .toBe(true);
+
+    // How much there IS to cache differs by artifact, and asserting the right
+    // amount per artifact is what makes "everything is cached" mean something.
+    // `raw` pulls its whole module graph over the wire, so a small count would
+    // mean the shell loaded and the modules did not. `built` inlines every
+    // module into one file, so 2–3 resources is complete, not truncated.
+    const { total } = await cacheState();
+    if (testInfo.project.name === 'raw') {
+      expect(total, 'the raw app loaded its module graph, not just a shell').toBeGreaterThan(5);
+    } else {
+      expect(total, 'the single-file build should pull almost nothing').toBeLessThanOrEqual(4);
+    }
 
     await context.setOffline(true);
     const errors = watchForErrors(page);

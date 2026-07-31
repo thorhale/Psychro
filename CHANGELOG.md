@@ -90,6 +90,29 @@ what rolls an update out to installed apps.
   phone — a worse consistency risk than the bytes. A size budget (220 kB raw /
   65 kB gzipped) now fails the build on accidental growth.
 
+### Fixed — offline on a first visit
+
+- **The app claimed to be offline-ready after one visit while holding none of
+  its own code.** A service worker does not control the page that registers it,
+  so on a first visit every module under `src/` was fetched before the worker
+  existed and never reached its fetch handler. The precache list names the shell
+  and cannot name ~40 modules without going stale on the next import. Measured
+  on the raw deploy: **3 of 19 resources cached** at `navigator.serviceWorker.ready`,
+  and full coverage only after a second *online* load. `src/app/pwa.js` now sends
+  the worker the same-origin URLs the page actually pulled (read from the
+  resource timeline, so it cannot drift from the real module graph) and the
+  worker caches them. First visit now reaches **19/19**.
+- The runtime cache fill used a fire-and-forget `cache.put`. `respondWith`
+  resolves as soon as the response is in hand and the browser may kill an idle
+  worker once its events settle, so the write could be dropped — invisibly, the
+  page having rendered fine from the network. Now tied to `e.waitUntil`.
+- The E2E offline test passed locally and failed in CI because it was relying on
+  the browser's HTTP cache rather than the service worker. It now waits for the
+  cache to actually cover what the page loaded, and asserts the expected
+  resource count per artifact, so "everything is cached" cannot be satisfied by
+  an empty set. (`page.waitForFunction` cannot express this: it treats the
+  Promise an async predicate returns as truthy and resolves immediately.)
+
 ### Merged with `main`
 
 `main` had evolved independently. Both deploy models are now supported rather
