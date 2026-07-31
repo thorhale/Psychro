@@ -41,13 +41,13 @@ npm run lint
 npm run typecheck
 npm run analyze        # per-property accuracy table vs CoolProp
 npm run build
-npm run verify:bundle  # 41 artifact-integrity checks
-npm run e2e            # 58 Playwright tests across all three artifacts
+npm run verify:bundle  # 43 artifact-integrity checks
+npm run e2e            # 60 Playwright tests across all three artifacts
 ```
 
 `npm run e2e` deliberately tests shipped artifacts, never the dev server. It
 runs two Playwright projects against one static server rooted at the repo:
-`raw` (the repo root, exactly what GitHub Pages publishes) and `built`
+`raw` (the repo root served without a build) and `built`
 (`dist/index.html`), plus `StreamHallPlanner.html` opened over `file://`. The
 behaviour suite runs under both projects, so the artifacts cannot drift apart
 without failing. Use `npm run test:e2e` to build the artifacts first, or
@@ -120,9 +120,9 @@ writes — export a save file when you see that warning.
 
 - **CI on every push**: lint, typecheck, 136 tests (CoolProp oracle, physical
   invariants over seeded-random states, cross-surface consistency, asset layout,
-  storage migration, platform adapters), the accuracy report, 41 bundle-integrity
-  checks, and 58 Playwright tests covering all three artifacts — the raw module
-  tree Pages serves, the built single-file `dist/`, and `StreamHallPlanner.html`
+  storage migration, platform adapters), the accuracy report, 43 bundle-integrity
+  checks, and 60 Playwright tests covering all three artifacts — the raw-served
+  module tree, the deployed single-file `dist/`, and `StreamHallPlanner.html`
   opened over `file://` — including an offline boot and five chart goldens.
 - **In-app**: the footer self-test badge re-runs a 30-case validation from the
   shipped code on every load — tap it for the full table. It runs the same core

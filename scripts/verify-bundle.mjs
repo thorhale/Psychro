@@ -131,8 +131,8 @@ if (files.includes('manifest.webmanifest')) {
 
 // ── 5. Service worker is version-stamped ────────────────────────────────────
 // The cache name is not a literal — sw.js picks between the Vite-stamped build
-// version and the RAW_VERSION namespace, because GitHub Pages serves this repo
-// unbuilt. So EVALUATE the shipped expression instead of pattern-matching
+// version and the RAW_VERSION namespace, because the same worker also serves
+// the tree when it is hosted unbuilt. So EVALUATE the shipped expression instead of pattern-matching
 // it: a regex would have to restate the rule, and would then agree with a
 // service worker whose rule had silently changed. This is what the browser gets.
 /**
@@ -148,6 +148,26 @@ function evaluateCacheName(source) {
     return String(new Function(`${source.slice(0, end)}\nreturn CACHE;`)());
   } catch {
     return null;
+  }
+}
+
+// ── 4b. The deployed site's own download works ──────────────────────────────
+// deploy.yml publishes dist/, and the app's download anchor points at
+// ./StreamHallPlanner.html — so the file must be IN dist/, not only at the
+// repo root. It 404'd in production once, with every test green, because only
+// the raw-served tree was asserted and only the root copy existed. Running
+// `npm run build` alone leaves dist/ without it by design: the sequence that
+// produces a deployable dist/ is `npm run shareable`, and this check is what
+// makes skipping it fail loudly instead of shipping a broken link.
+{
+  const inDist = join(dist, 'StreamHallPlanner.html');
+  const atRoot = join(root, 'StreamHallPlanner.html');
+  check('dist/StreamHallPlanner.html exists (the deployed download)', existsSync(inDist));
+  if (existsSync(inDist) && existsSync(atRoot)) {
+    check(
+      'dist/ download is byte-identical to the committed copy',
+      readFileSync(inDist).equals(readFileSync(atRoot)),
+    );
   }
 }
 

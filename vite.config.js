@@ -16,9 +16,10 @@
  * could fail to load it. That bug shipped once.
  *
  * The obvious fix is to move those files under `public/`, which Vite copies
- * verbatim. It cannot be used here: GitHub Pages serves this repo RAW, so
- * `index.html` is opened directly from the repo root and its `manifest.webmanifest`
- * and `icon-192.png` links must resolve as siblings THERE. A file cannot be at
+ * verbatim. It cannot be used here: the repo root must stay directly servable
+ * with no build step (local preview, any static host, and the `raw` E2E
+ * project that pins it), so `index.html`'s `manifest.webmanifest` and
+ * `icon-192.png` links must resolve as siblings AT the repo root. A file cannot be at
  * the root (for the raw deploy) and under `public/` (for the build) without
  * being duplicated — and the moment the root copy exists, Vite resolves it and
  * starts fingerprinting again, which is the original bug back.
@@ -95,8 +96,8 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(APP_VERSION),
     __BUILD_SHA__: JSON.stringify(BUILD_SHA),
   },
-  // No public/ directory: the PWA assets live at the repo root so the raw
-  // GitHub Pages deploy can serve them (see the header comment).
+  // No public/ directory: the PWA assets live at the repo root so the tree
+  // stays servable with no build step (see the header comment).
   publicDir: false,
   build: {
     target: 'es2020',

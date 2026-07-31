@@ -9,7 +9,7 @@
  *
  * Runs against BOTH artifacts, because they are the two things people are
  * handed and they have drifted apart before:
- *   1. the raw-served module tree, exactly as GitHub Pages serves it
+ *   1. the raw-served module tree (local preview / any build-less host)
  *   2. StreamHallPlanner.html, opened from disk over file://
  *
  * `npm run test:e2e` (build first — it needs StreamHallPlanner.html).

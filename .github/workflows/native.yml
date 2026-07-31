@@ -48,8 +48,8 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Build web assets
-        run: npm run build
+      - name: Build web assets (incl. the in-app download file)
+        run: npm run shareable
 
       - name: Verify bundle before it is packaged
         run: npm run verify:bundle
@@ -85,8 +85,8 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Build web assets
-        run: npm run build
+      - name: Build web assets (incl. the in-app download file)
+        run: npm run shareable
 
       - name: Sync into the iOS project
         run: npx cap sync ios

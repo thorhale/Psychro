@@ -4,11 +4,12 @@
 // returning visitor is at most one load behind the deployed code.
 //
 // Why not plain cache-first: the built artifact gets a fresh cache name every
-// build (Vite stamps __BUILD_VERSION__ below), but GitHub Pages serves this
-// repo RAW — no build runs, the placeholder survives verbatim, and the raw
-// fallback name only changes when a human remembers to bump it. Under
-// cache-first that forgotten bump means returning visitors run last month's
-// physics forever, silently — the one failure an accuracy tool cannot have.
+// build (Vite stamps __BUILD_VERSION__ below), but this worker also runs when
+// the tree is served RAW — local preview, or any static host that skips the
+// build — where the placeholder survives verbatim and the fallback name only
+// changes when a human remembers to bump it. Under cache-first that forgotten
+// bump means returning visitors run last month's physics forever, silently —
+// the one failure an accuracy tool cannot have.
 // Background revalidation makes freshness automatic instead of manual;
 // RAW_VERSION is now just a cache namespace, bumped only when the caching
 // strategy itself changes and old cache contents should be discarded.
