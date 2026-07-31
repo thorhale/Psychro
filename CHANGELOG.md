@@ -11,7 +11,17 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **CI now fits a free GitHub plan.** Every commit on a PR branch was running
+  the entire pipeline twice (`push: ['**']` and `pull_request` both matched),
+  and the iOS compile job — billed at macOS's 10× minute multiplier — ran on
+  every PR update regardless of what changed. Together they consumed a full
+  month's 2,000 free Actions minutes in one day. Push triggers now fire on
+  `main` only, PRs run once, superseded runs are auto-cancelled, and the iOS
+  job runs only for PRs that touch the native projects (or on demand). Nothing
+  was removed from the gate that guards merges — the web pipeline still runs
+  in full on every PR, and every merge to `main` still runs everything.
 
 ## [2.1.1] — 2026-07-31
 

@@ -9,9 +9,17 @@ name: Native shells
 # compile-only iOS build. See docs/store/signing.md for turning them into
 # release artifacts.
 
+# Trigger economics — this workflow is the expensive one. The iOS job runs on a
+# macOS runner, and GitHub bills macOS at a 10× minute multiplier: a 2-minute
+# compile charges ~20 minutes. Running it on every PR update burned most of a
+# month's free quota in a day. So:
+#   - push: main only (the post-merge record; catches a web change that broke
+#     the shells at the commit that caused it, incl. the APK artifact)
+#   - pull_request: only when the PR touches the native projects themselves
+#   - workflow_dispatch: always available for an on-demand check
 on:
   push:
-    branches: ['**']
+    branches: [main]
     paths:
       - 'src/**'
       - 'index.html'
@@ -26,7 +34,16 @@ on:
       - 'package.json'
       - '.github/workflows/native.yml'
   pull_request:
+    paths:
+      - 'android/**'
+      - 'ios/**'
+      - 'capacitor.config.json'
+      - '.github/workflows/native.yml'
   workflow_dispatch:
+
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   android:
