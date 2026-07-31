@@ -1,9 +1,21 @@
 name: CI
 
+# Trigger economics: `push: ['**']` PLUS `pull_request` ran the whole pipeline
+# TWICE for every commit on a branch with an open PR — half the month's free
+# Actions minutes went to duplicates. Push triggers only on main (the
+# post-merge record); PRs get the pull_request run. A branch without a PR runs
+# nothing, which is fine — nothing merges without a PR.
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# A superseded commit's run is dead weight — cancel it when a newer one arrives.
+# Runs on main are never cancelled: each merge's record stays complete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # ── Static analysis + unit/oracle/invariant suites ────────────────────────
