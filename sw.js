@@ -1,18 +1,19 @@
 // Stream Hall Environment Planner — offline cache.
-// Cache-first: after the first visit, the app works with no network at all.
+// Stale-while-revalidate: after the first visit the app works with no network
+// at all, and every ONLINE visit refreshes the cache in the background, so a
+// returning visitor is at most one load behind the deployed code.
 //
-// The cache name is stamped with the build version at build time (see
-// vite.config.js). Every published build therefore gets a fresh cache and the
-// activate handler below deletes the old one — no manual version bumps, no
-// stale installs. `__BUILD_VERSION__` survives verbatim in dev, which is fine:
-// dev serves from Vite, not from this worker.
-// Cache identity. Vite stamps __BUILD_VERSION__ at build time (vite.config.js)
-// so built releases version themselves. GitHub Pages currently serves this
-// repo RAW — no build runs, the placeholder survives verbatim, and without
-// the fallback below every deploy would reuse one cache name and cache-first
-// clients would never see an update. Bump RAW_VERSION on every push to main.
+// Why not plain cache-first: the built artifact gets a fresh cache name every
+// build (Vite stamps __BUILD_VERSION__ below), but GitHub Pages serves this
+// repo RAW — no build runs, the placeholder survives verbatim, and the raw
+// fallback name only changes when a human remembers to bump it. Under
+// cache-first that forgotten bump means returning visitors run last month's
+// physics forever, silently — the one failure an accuracy tool cannot have.
+// Background revalidation makes freshness automatic instead of manual;
+// RAW_VERSION is now just a cache namespace, bumped only when the caching
+// strategy itself changes and old cache contents should be discarded.
 const BUILD = '__BUILD_VERSION__';
-const RAW_VERSION = 'raw-v5-warm-cache';
+const RAW_VERSION = 'raw-v6-stale-while-revalidate';
 const CACHE = 'sdc-psychro-' + (BUILD.charAt(0) === '_' ? RAW_VERSION : BUILD);
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
@@ -72,29 +73,33 @@ self.addEventListener('message', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
-  // Cache-first, then network — and cache what the network returns. The
-  // precache list above can't name every module under src/, so without the
-  // runtime fill an installed app would load its shell offline and then fail
-  // fetching the modules the shell imports.
+  // Stale-while-revalidate. A cache hit is served immediately — that is the
+  // offline guarantee and the fast path — while the same request goes to the
+  // network in the background and overwrites the cached copy, so the next load
+  // runs the current deploy. On a miss the network response is the answer.
+  //
+  // The cache writes ride on `e.waitUntil`, never fire-and-forget: `respondWith`
+  // settles as soon as a response is in hand and the browser may kill an idle
+  // worker the moment its events do — an unawaited put can be dropped before it
+  // lands. That is invisible when it happens (the page renders fine from the
+  // network) and only fails LATER, offline, with a module the cache never
+  // actually received. It failed exactly that way in CI once.
   e.respondWith(
-    caches.match(e.request).then(
-      (hit) =>
-        hit ||
-        fetch(e.request).then((res) => {
-          if (res.ok && new URL(e.request.url).origin === location.origin) {
-            const copy = res.clone();
-            // waitUntil, not fire-and-forget. `respondWith` resolves as soon as
-            // the response is in hand, and the browser is free to kill an idle
-            // worker the moment its events settle — so an unawaited put can be
-            // dropped before it lands. That is invisible when it happens: the
-            // page renders fine from the network and only fails LATER, offline,
-            // with a module the cache never actually received. The raw deploy
-            // pulls ~40 separate modules, so this races on every cold load, and
-            // it failed exactly that way in CI.
-            e.waitUntil(caches.open(CACHE).then((c) => c.put(e.request, copy)));
-          }
-          return res;
-        }),
-    ),
+    caches.match(e.request).then((hit) => {
+      const refresh = fetch(e.request).then((res) => {
+        if (res.ok && new URL(e.request.url).origin === location.origin) {
+          const copy = res.clone();
+          e.waitUntil(caches.open(CACHE).then((c) => c.put(e.request, copy)));
+        }
+        return res;
+      });
+      if (hit) {
+        // Offline, the background refresh rejects — that must stay background:
+        // swallow it so a rejected revalidation can never surface anywhere.
+        e.waitUntil(refresh.then(() => undefined, () => undefined));
+        return hit;
+      }
+      return refresh;
+    }),
   );
 });

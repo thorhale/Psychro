@@ -7,7 +7,6 @@ export default [
     files: [
       'src/**/*.js',
       'test/**/*.js',
-      'test/**/*.mjs',
       'scripts/**/*.mjs',
       // Config and E2E files are Node-side; they need the Node globals too.
       '*.config.js',

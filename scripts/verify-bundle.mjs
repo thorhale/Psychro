@@ -53,7 +53,7 @@ check('index.html has no external script src', !/<script[^>]+\ssrc=/.test(html))
 // ── 3. PWA assets are NOT fingerprinted ─────────────────────────────────────
 // sw.js precaches by literal path. If Vite hashes the manifest or icons, the app
 // references a name the service worker never cached and a cold offline launch can
-// fail. See the `public/` note in vite.config.js.
+// fail. See the asset-placement note at the top of vite.config.js.
 const hashed = files.filter((f) => /^(manifest|icon-\d+)-[A-Za-z0-9_-]{6,}\./.test(f));
 check('no fingerprinted manifest/icon variants', hashed.length === 0, hashed.join(', '));
 check(
@@ -130,9 +130,9 @@ if (files.includes('manifest.webmanifest')) {
 }
 
 // ── 5. Service worker is version-stamped ────────────────────────────────────
-// The cache name is no longer a literal — sw.js picks between the Vite-stamped
-// build version and a hand-bumped RAW_VERSION, because GitHub Pages serves this
-// repo unbuilt. So EVALUATE the shipped expression instead of pattern-matching
+// The cache name is not a literal — sw.js picks between the Vite-stamped build
+// version and the RAW_VERSION namespace, because GitHub Pages serves this repo
+// unbuilt. So EVALUATE the shipped expression instead of pattern-matching
 // it: a regex would have to restate the rule, and would then agree with a
 // service worker whose rule had silently changed. This is what the browser gets.
 /**
@@ -160,9 +160,10 @@ check(
 );
 
 // The raw-served deploy takes the other branch of that same expression. Nothing
-// in dist/ exercises it, so check the source: an empty or unchanged fallback
-// would leave every Pages deploy sharing one cache, and cache-first clients
-// would never see an update — the exact failure the fallback exists to prevent.
+// in dist/ exercises it, so check the source: an empty fallback or one equal to
+// the built name would put two different artifacts in one cache namespace.
+// (Freshness itself no longer rides on this name — the worker revalidates in
+// the background — but namespace collisions would still cross-contaminate.)
 const swSource = readFileSync(join(root, 'sw.js'), 'utf8');
 const rawCacheName = evaluateCacheName(swSource);
 check(

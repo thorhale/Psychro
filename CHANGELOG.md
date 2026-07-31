@@ -11,6 +11,44 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [2.1.0] — 2026-07-31
+
+Everything since 2.0.0: the round-2 hardening and native projects, the merge
+with `main`, the first-visit offline fix, and the shakedown below.
+
+### Fixed — measurement, not physics
+
+- **The accuracy analyzer under-reported the core's enthalpy accuracy 14×.**
+  `scripts/analyze-accuracy.mjs` called `enthalpy(t, W)` without the pressure
+  argument, so the fit's real-gas mixing term defaulted to sea level while the
+  reference grid spans 60–108 kPa — every altitude point was graded against the
+  wrong answer. True agreement with CoolProp is **max 0.030 kJ/kg** (RMS 0.002),
+  not the 0.437 previously published; `docs/coolprop-comparison.md` §4 is
+  corrected. No shipped number was affected: the app's own call sites and the
+  oracle suite always passed pressure (the suite's tolerance comment already
+  read "measured max 0.031" — the two measurements disagreeing was the loose
+  thread). The analyzer is the number generator behind the published table, so
+  an error here is an accuracy bug even though no physics changed.
+
+### Changed — raw-deploy freshness no longer depends on a human
+
+- **Service worker is now stale-while-revalidate instead of cache-first.**
+  Cache-first froze the raw GitHub Pages deploy at whatever a visitor first
+  cached, to be invalidated only by a hand-bumped `RAW_VERSION` in `sw.js` — a
+  manual step destined to be forgotten, after which returning visitors would
+  run outdated physics silently and forever. Now every online visit serves from
+  cache instantly (the offline guarantee is unchanged) while refreshing the
+  cache in the background, so a returning visitor is at most one load behind
+  the deployed code with no bump required. `RAW_VERSION` remains only as a
+  cache namespace for strategy changes.
+
+### Removed
+
+- Stale `test/**/*.mjs` lint glob (no such files since the E2E unification) and
+  leftover merge-context comments.
+
 ### Added — native
 
 - **Capacitor projects for iOS and Android** (`android/`, `ios/`), wrapping the
@@ -137,7 +175,9 @@ than one replacing the other, and both test suites survive:
 against CoolProp 8.0.0. `docs/coolprop-comparison.md` §4 is updated to match:
 
 - **Enthalpy** is now a pressure-dependent polynomial fitted to RP-1485 instead
-  of Ch. 1 Eq. 30's constant specific heats: max 0.461 → 0.437 kJ/kg.
+  of Ch. 1 Eq. 30's constant specific heats: max 0.461 → 0.030 kJ/kg, 15×.
+  (This entry originally said "→ 0.437": the analyzer that produced that number
+  was itself dropping the pressure argument — see the 2.1.0 fix below.)
 - **Specific volume** carries a fitted compressibility factor Z(t, p, W) instead
   of assuming ideal mixing: max relative error 0.1125 % → 0.0114 %, a factor of
   ten. **Density** derives from it and improves identically.
