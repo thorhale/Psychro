@@ -52,7 +52,11 @@ const METRICS = [
   {
     key: 'enthalpy h',
     unit: 'kJ/kg',
-    ours: (t, rh, p) => enthalpy(t, humidityRatio(t, rh, p)),
+    // p must reach enthalpy: the fit's real-gas mixing term is pressure-
+    // dependent, and omitting it silently measures every altitude point
+    // against the sea-level value — this once inflated the reported max
+    // sevenfold (0.44 vs 0.06 kJ/kg) and the table was published that way.
+    ours: (t, rh, p) => enthalpy(t, humidityRatio(t, rh, p), p),
     theirs: (r) => r[col.h_kjkg],
     rel: false,
   },

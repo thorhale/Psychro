@@ -102,7 +102,7 @@ Over all 3,898 reference points inside the declared operating domain
 property             unit          max abs     RMS abs    max rel              worst point
 ------------------------------------------------------------------------------------------
 humidity ratio W     g/kg         6.861e-4    5.647e-5    0.0013%         55°C 95% 79.5kPa
-enthalpy h           kJ/kg        4.373e-1    6.221e-2          —          52.5°C 90% 65kPa
+enthalpy h           kJ/kg        3.005e-2    2.156e-3          —         55°C 100% 108kPa
 specific volume v    m³/kg        1.678e-4    1.973e-5    0.0114%          50°C 100% 65kPa
 density ρ            kg/m³        9.782e-5    1.470e-5    0.0114%         55°C 100% 95kPa
 dew point Tdp        °C           2.285e-2    6.269e-3          —          55°C 5% 79.5kPa
@@ -119,10 +119,13 @@ Reading notes:
   the max error is **0.011 °C** (the RMS of 0.019 reflects how rare the band is).
 - **Enthalpy** no longer uses Ch. 1 Eq. 30's constant specific heats
   (1.006 / 1.86 kJ·kg⁻¹·K⁻¹), whose difference from RP-1485's temperature-
-  dependent ones was the dominant error term. It is now a pressure-dependent
-  polynomial fitted to RP-1485 directly. Residual max 0.44 kJ/kg sits at the
-  hot-saturated corner no hall operates at; at 25 °C/50 % the gap is
-  < 0.01 kJ/kg.
+  dependent ones dominated the old 0.46 kJ/kg error. It is now h_da(t, p) +
+  W·h_v(t, W, p) with both parts fitted to RP-1485 directly, pressure term
+  included — max residual 0.030 kJ/kg, a 15× improvement. (An earlier revision
+  of this table reported 0.44 kJ/kg for the same code: the *analyzer* was
+  calling `enthalpy` without the pressure argument, measuring every altitude
+  point against its sea-level value. The oracle suite in `test/psychro.test.js`
+  always passed pressure and always knew the true figure.)
 - **Specific volume** carries a compressibility factor Z(t, p, W) fitted to
   RP-1485 rather than assuming Z = 1. Real moist air is ~0.06 % denser than an
   ideal mixture at 1 atm, and that was the entire former deviation: max relative
