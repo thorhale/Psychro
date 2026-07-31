@@ -12,8 +12,18 @@ storage and only leaves the device if the operator explicitly exports or shares 
 save file. There is no analytics SDK, no crash reporter, no ads, no accounts.
 
 That makes both stores' privacy questionnaires short, and it is worth not
-breaking: adding any telemetry would change every answer below and require a
-privacy-policy URL the app currently doesn't need.
+breaking: adding any telemetry would change every answer below, plus the
+policy itself in BOTH of its copies.
+
+**A privacy policy is required by both stores even for a zero-collection app**
+(an earlier revision of this file said otherwise — wrong). It exists in two
+places that `test/assets.test.js` keeps in sync:
+
+- Hosted, for the store consoles' mandatory URL field:
+  <https://thorhale.github.io/Psychro/privacy.html> (source: `privacy.html`
+  at the repo root, copied into `dist/` by the build)
+- In-app, because Google Play requires it inside the app: the footer's
+  "Privacy" button (`src/app/privacy.js`).
 
 ## Listing copy
 
@@ -67,7 +77,7 @@ wet bulb, TC 9.9, SLA, critical facilities
 | Bundle ID | `com.streamdatacenters.psychro` |
 | Data collection | None — see `ios/App/App/PrivacyInfo.xcprivacy` |
 | Tracking | No |
-| Privacy policy URL | Not required (nothing collected); supply one if the org mandates it |
+| Privacy policy URL | **Required.** `https://thorhale.github.io/Psychro/privacy.html` |
 | Encryption (ITSAppUsesNonExemptEncryption) | `false` — no encryption beyond OS-provided HTTPS, which the app doesn't even use |
 | Age rating | 4+ |
 | Sign in required | No |
@@ -97,11 +107,23 @@ Suggested set — see the checklist below.
 | Data safety: deletion request | N/A — no data leaves the device |
 | Government app | No |
 | Content rating questionnaire | All "no" — no violence, no user interaction, no data sharing |
+| Privacy policy URL | **Required.** `https://thorhale.github.io/Psychro/privacy.html` — also reachable in-app via the footer's Privacy button, which Play's User Data policy requires |
 
 **Data safety declaration:** select "No data collected" and "No data shared".
 The app has no `INTERNET` permission requirement beyond what the WebView shell
 declares; review `android/app/src/main/AndroidManifest.xml` before submission and
 remove anything not needed.
+
+**Two manifest settings that are deliberate — do not "fix" them:**
+
+- `android:allowBackup="true"` stays: saved halls/SLAs survive a device
+  migration via the OS backup, and nothing stored is sensitive. Turning it off
+  would silently delete operators' saved work on phone upgrades.
+- The Cordova-era `<access origin="*"/>` in `res/xml/config.xml` is inert —
+  this project uses no Cordova plugins, so nothing reads it. Tightening it buys
+  nothing; removing the file breaks `cap sync`'s expectations. The real network
+  policy is the CSP in `index.html` plus `allowMixedContent: false` and
+  `androidScheme: "https"` in `capacitor.config.json`.
 
 ## Screenshot checklist
 

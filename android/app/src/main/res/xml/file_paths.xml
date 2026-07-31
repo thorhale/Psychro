@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Deliberately narrow: the only files this app ever shares are the save-file
+     exports src/platform/index.js writes to the CACHE directory before handing
+     them to the share sheet. Nothing grants access to external storage, and
+     the app's own store answers ("collects nothing, accesses nothing") depend
+     on that staying true. -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
+    <cache-path name="shared_exports" path="." />
 </paths>

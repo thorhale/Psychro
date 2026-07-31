@@ -37,7 +37,16 @@ const html = readFileSync(join(dist, 'index.html'), 'utf8');
 const sw = existsSync(join(dist, 'sw.js')) ? readFileSync(join(dist, 'sw.js'), 'utf8') : '';
 
 // ── 1. Required files ───────────────────────────────────────────────────────
-for (const f of ['index.html', 'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png']) {
+// privacy.html is load-bearing for the app stores: both consoles point their
+// mandatory privacy-policy URL at the deployed /privacy.html.
+for (const f of [
+  'index.html',
+  'sw.js',
+  'manifest.webmanifest',
+  'icon-192.png',
+  'icon-512.png',
+  'privacy.html',
+]) {
   check(`dist/${f} exists`, files.includes(f));
 }
 

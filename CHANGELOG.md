@@ -11,6 +11,29 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — store-upload readiness
+
+- **Privacy policy**, required by both app stores even for a zero-collection
+  app (the store docs wrongly said otherwise): hosted at `/privacy.html` on the
+  deployed site for the consoles' mandatory URL field, and reachable in-app via
+  a footer "Privacy" dialog (Google Play requires the in-app copy). One source
+  of statements (`src/app/privacy.js`); `test/assets.test.js` pins the hosted
+  page to it so the two copies cannot drift.
+
+### Fixed — store-upload readiness
+
+- `UIRequiredDeviceCapabilities` said `armv7` (32-bit) while the project
+  targets iOS 15, which is 64-bit only — an upload-validation failure waiting
+  to happen. Now `arm64`.
+- `ITSAppUsesNonExemptEncryption = false` declared in Info.plist (no crypto
+  anywhere, verified by scan), so App Store Connect stops prompting per upload.
+- Native version numbers synced to package.json 2.1.1 (Android
+  `versionName`/`versionCode 20101`, iOS `MARKETING_VERSION`); they still said
+  1.0/1.
+- Android FileProvider scope tightened from the entire external storage root to
+  the cache directory — the only place `src/platform/index.js` ever writes a
+  shared file.
+
 ### Changed
 
 - **CI now fits a free GitHub plan.** Every commit on a PR branch was running

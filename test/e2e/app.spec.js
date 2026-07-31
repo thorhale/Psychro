@@ -366,6 +366,21 @@ test.describe('download link', () => {
   });
 });
 
+test.describe('privacy', () => {
+  test('the policy is reachable inside the app, offline-safe', async ({ page }) => {
+    // Google Play requires the privacy policy INSIDE the app, not only at the
+    // store-console URL. The footer button opens it as a dialog — inline text,
+    // no fetch — so this holds in every artifact including file:// and the
+    // native shells.
+    await page.goto('./');
+    await page.locator('#privacy-link').click();
+    const dialog = page.locator('.ntf-dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('does not collect');
+    await expect(dialog).toContainText('stays on your device');
+  });
+});
+
 test.describe('offline', () => {
   test('the app still boots with the network cut', async ({ page, context }, testInfo) => {
     // Proves the service worker cached everything the app references — the

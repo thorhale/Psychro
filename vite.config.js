@@ -64,10 +64,13 @@ const BUILD_SHA = gitSha();
  *     not parse. Without this copy an installed PWA has no high-res icon and
  *     sw.js's precache — which lists it — rejects, killing offline entirely.
  *   - `robots.txt` is fetched by crawlers, never by the app.
+ *   - `privacy.html` is the privacy-policy URL both app-store consoles point
+ *     at; nothing in the app links it (the in-app copy is a dialog), so only
+ *     this copy puts it on the deployed site.
  *   - `sw.js` is stamped rather than copied: its cache key must change every
  *     build, and it has to stay a top-level file so its scope covers the app.
  */
-const UNREFERENCED_ASSETS = ['icon-512.png', 'robots.txt'];
+const UNREFERENCED_ASSETS = ['icon-512.png', 'robots.txt', 'privacy.html'];
 
 function staticCompanions() {
   return {
