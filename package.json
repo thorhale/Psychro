@@ -17,6 +17,7 @@
     "fit:enhancement": "node scripts/fit-enhancement.mjs",
     "fit:secondary": "node scripts/fit-secondary.mjs",
     "verify:bundle": "node scripts/verify-bundle.mjs",
+    "screenshots": "node scripts/store-screenshots.mjs",
     "shareable": "vite build && node scripts/make-shareable.mjs",
     "e2e": "playwright test",
     "e2e:update": "playwright test --update-snapshots",

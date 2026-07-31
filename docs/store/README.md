@@ -1,8 +1,14 @@
 # Store submission collateral
 
 Everything needed to put this app in the App Store and Play Store, except the
-credentials. The projects in `android/` and `ios/` are committed and build; see
-[`signing.md`](signing.md) for the steps once you have developer accounts.
+credentials. The projects in `android/` and `ios/` are committed and build.
+
+**Start with [`LAUNCH-GUIDE.md`](LAUNCH-GUIDE.md)** — the plain-language,
+step-by-step walkthrough for a first-time publisher. This file is the
+reference collateral it copy-pastes from; [`signing.md`](signing.md) is the
+key-creation detail it links into; `screenshots/` holds every store-required
+image at exact sizes (regenerate with `npm run screenshots`); the
+`Release builds` GitHub Actions workflow signs and uploads once secrets exist.
 
 ## The privacy answer, which is unusually simple
 

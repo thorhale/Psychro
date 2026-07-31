@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Play feature graphic — 1024×500</title>
+<!-- Google Play's required "feature graphic". Rendered to PNG at exactly
+     1024×500 by scripts/store-screenshots.mjs — open that script, not this
+     file, when regenerating. Self-contained on purpose: no fonts, no images,
+     same no-external-assets rule as the app itself. -->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1024px; height: 500px; overflow: hidden;
+    background: linear-gradient(135deg, #0d1b2a 0%, #13263a 60%, #1a3a5c 100%);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #e6edf3; display: flex; align-items: center;
+  }
+  main { padding: 0 72px; position: relative; z-index: 1; }
+  h1 {
+    font-size: 54px; font-weight: 800; letter-spacing: .02em; line-height: 1.15;
+    color: #ffffff;
+  }
+  h1 .accent { color: #00a9ce; }
+  p.tag {
+    margin-top: 18px; font-size: 26px; color: #9db8d0; max-width: 640px;
+    line-height: 1.4;
+  }
+  p.sub {
+    margin-top: 14px; font-size: 19px; color: #6f8aa3;
+    font-family: 'Courier New', monospace;
+  }
+  /* Stylised psychrometric curves, echoing the app's chart. */
+  svg { position: absolute; right: -40px; top: 0; height: 500px; opacity: .55; }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 420 500" width="420" height="500" aria-hidden="true">
+  <!-- saturation-style sweeping curves -->
+  <path d="M 20 480 Q 200 430 400 40"  fill="none" stroke="#00a9ce" stroke-width="3"/>
+  <path d="M 60 480 Q 240 450 410 140" fill="none" stroke="#00a9ce" stroke-width="2" opacity=".6"/>
+  <path d="M 110 480 Q 280 462 415 240" fill="none" stroke="#00a9ce" stroke-width="1.5" opacity=".35"/>
+  <!-- envelope polygon -->
+  <polygon points="150,430 205,300 330,255 355,330 250,435" fill="#00a9ce" opacity=".12"
+    stroke="#00a9ce" stroke-width="2"/>
+  <!-- A -> B move -->
+  <circle cx="205" cy="395" r="9" fill="#f0a500"/>
+  <circle cx="305" cy="300" r="9" fill="#3fb950"/>
+  <line x1="205" y1="395" x2="305" y2="300" stroke="#e6edf3" stroke-width="2.5" stroke-dasharray="7 6"/>
+</svg>
+<main>
+  <h1>Hall Environment<br><span class="accent">Planner</span></h1>
+  <p class="tag">Plan data center temperature &amp; humidity moves — without leaving the SLA envelope.</p>
+  <p class="sub">ASHRAE TC 9.9 · validated vs CoolProp · works fully offline</p>
+</main>
+</body>
+</html>

@@ -616,8 +616,9 @@
     </table>
   </div>
   <div class="formula-note">
-    <code>p_ws</code>: ASHRAE Eq. 5/6 (Hyland-Wexler). <code>W = 0.621945·p_w/(p − p_w)</code> Eq. 20.
-    <code>h = 1.006·t + W·(2501 + 1.86·t)</code> Eq. 30. <code>v</code>: Eq. 26. All evaluated at site pressure <span id="fn-pressure">—</span>.
+    <code>p_ws</code>: ASHRAE Eq. 5/6 (Hyland-Wexler). <code>W</code>: Eq. 20 with fitted enhancement factor <code>f·p_w</code>.
+    <code>h</code>, <code>v</code>: real-gas fits to CoolProp (ASHRAE RP-1485) — max 0.030 kJ/kg and 0.012% vs the reference; see <code>docs/coolprop-comparison.md</code>.
+    All evaluated at site pressure <span id="fn-pressure">—</span>.
   </div>
 </div>
 </details>
