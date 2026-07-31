@@ -11,6 +11,30 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — store submission kit
+
+- `docs/store/LAUNCH-GUIDE.md` — a plain-language, first-timer walkthrough of
+  both store submissions: accounts, keys, the one branding decision, Play's
+  12-tester/14-day rule, listing copy-paste map, rejection playbook, and a
+  complete pre-flight checklist of every store requirement with its status.
+- `npm run screenshots` (`scripts/store-screenshots.mjs`) — renders the six
+  checklist shots at every store-required size (iPhone 6.9", iPad 13", Play
+  phone/tablet) plus the Play feature graphic, dimension-asserted from the PNG
+  headers; committed under `docs/store/screenshots/`. Not in CI by design.
+- `Release builds (store upload)` workflow — dispatch-only. Android: signed
+  `.aab` artifact. iOS: archive + upload straight to TestFlight via the App
+  Store Connect API key, so no Mac is ever needed. Each job checks its secrets
+  first and ends green with a plain-English notice when they aren't configured.
+- Conditional release `signingConfigs` in `android/app/build.gradle`, inert
+  unless the workflow provides a keystore — debug builds unaffected.
+
+### Fixed
+
+- The data-table footnote still described enthalpy as Eq. 30 and specific
+  volume as plain Eq. 26 — superseded when both became real-gas fits. The
+  footnote now states what the table actually computes; the chart's iso-line
+  guides (which do use the closed forms, deliberately) got a comment saying so.
+
 ### Added — store-upload readiness
 
 - **Privacy policy**, required by both app stores even for a zero-collection

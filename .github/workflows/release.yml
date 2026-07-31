@@ -1,0 +1,204 @@
+name: Release builds (store upload)
+
+# Produces the SIGNED artifacts the stores accept, once the signing secrets
+# exist — docs/store/signing.md defines every secret, docs/store/LAUNCH-GUIDE.md
+# walks through creating them in plain language.
+#
+# workflow_dispatch ONLY, never on push: the iOS job runs on macOS, which
+# GitHub bills at a 10× minute multiplier, and a release is a deliberate act.
+# Each job checks its secrets FIRST and ends green with a friendly notice when
+# they are not configured yet, so running this early is informative, not scary.
+#
+#   Android → signed .aab artifact, downloaded and dragged into the Play
+#             Console (Play requires the first upload through its web UI).
+#   iOS     → archive, sign, and upload STRAIGHT to TestFlight via the
+#             App Store Connect API key — no Mac required, ever.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Which platform to build'
+        type: choice
+        options: [both, android, ios]
+        default: both
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  android:
+    name: Android signed bundle (.aab)
+    if: inputs.platform == 'both' || inputs.platform == 'android'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Are the Android signing secrets configured?
+        id: gate
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KS" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Android signing not set up yet::No ANDROID_KEYSTORE_BASE64 secret found. Follow docs/store/LAUNCH-GUIDE.md (Google Play, step 3) to create the keystore and paste the four secrets — then run this workflow again. Nothing failed; there was just nothing to sign with."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.configured == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build the verified web artifact
+        if: steps.gate.outputs.configured == 'true'
+        run: |
+          npm ci
+          npm run shareable
+          npm run verify:bundle
+
+      - name: Sync into the Android project
+        if: steps.gate.outputs.configured == 'true'
+        run: npx cap sync android
+
+      - name: Decode the upload keystore
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KS" | base64 -d > "$RUNNER_TEMP/upload-keystore.jks"
+
+      - name: Build the signed release bundle
+        if: steps.gate.outputs.configured == 'true'
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/upload-keystore.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew bundleRelease --no-daemon
+
+      - name: Upload the .aab (download this, then drag into the Play Console)
+        if: steps.gate.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: psychro-release-aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          retention-days: 30
+
+  ios:
+    name: iOS build + TestFlight upload
+    if: inputs.platform == 'both' || inputs.platform == 'ios'
+    runs-on: macos-latest
+    steps:
+      - name: Are the iOS signing secrets configured?
+        id: gate
+        env:
+          CERT: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          if [ -z "$CERT" ] || [ -z "$KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=iOS signing not set up yet::Missing IOS_CERTIFICATE_BASE64 and/or APP_STORE_CONNECT_PRIVATE_KEY. Follow docs/store/LAUNCH-GUIDE.md (Apple, steps 2-3) to create the certificate and API key and paste the secrets — then run this workflow again. Nothing failed; there was just nothing to sign with."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.configured == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build the verified web artifact
+        if: steps.gate.outputs.configured == 'true'
+        run: |
+          npm ci
+          npm run shareable
+          npm run verify:bundle
+
+      - name: Sync into the iOS project
+        if: steps.gate.outputs.configured == 'true'
+        run: npx cap sync ios
+
+      - name: Import the signing certificate and provisioning profile
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          CERT_B64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          CERT_PW: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          PROFILE_B64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          # A throwaway keychain, created for this run and deleted with the VM.
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PW="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security set-keychain-settings -lut 1800 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          echo "$CERT_B64" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PW" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PW" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$PROFILE_B64" | base64 -d \
+            > ~/Library/MobileDevice/Provisioning\ Profiles/psychro.mobileprovision
+
+      - name: Stage the App Store Connect API key
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          ASC_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s' "$ASC_KEY" > "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Archive, export, and upload to TestFlight
+        if: steps.gate.outputs.configured == 'true'
+        working-directory: ios/App
+        env:
+          TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          xcodebuild archive \
+            -project App.xcodeproj \
+            -scheme App \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+          # destination=upload sends the build straight to App Store Connect /
+          # TestFlight — this is the step that removes the need to own a Mac.
+          cat > "$RUNNER_TEMP/export.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>manageAppVersionAndBuildNumber</key><true/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"

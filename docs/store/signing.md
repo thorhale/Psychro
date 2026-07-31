@@ -1,5 +1,9 @@
 # Signing and release builds
 
+> The `Release builds (store upload)` workflow (`.github/workflows/release.yml`)
+> implements everything below — create the secrets, push the button. This file
+> is the reference for WHAT each secret is and how to create it.
+
 The `android/` and `ios/` projects are committed and compile today. What is
 missing is only credentials. Nothing below requires new engineering — it is
 configuration plus repository secrets.

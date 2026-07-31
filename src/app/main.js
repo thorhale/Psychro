@@ -802,7 +802,11 @@ function drawChart() {
     }
   }
 
-  // Constant-enthalpy iso-lines (kJ/kg dry air) — ASHRAE Eq. 30 solved for W at
+  // Constant-enthalpy iso-lines (kJ/kg dry air) — chart GUIDES only, drawn from
+  // ASHRAE Eq. 30's closed-form inverse. Displayed/tabulated h uses the RP-1485
+  // fit in the core; the two differ by <0.5 kJ/kg, invisible at chart scale,
+  // and the closed form is invertible per-pixel where the fit is not.
+  // Eq. 30 solved for W at
   // fixed h:  W = (h − 1.006·t) / (2501 + 1.86·t).  Nearly parallel to the
   // wet-bulb lines (that's the psychrometrics), so OFF by default; legend-toggle.
   if (state.visible.enthalpy) {
