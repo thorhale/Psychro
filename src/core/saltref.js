@@ -89,18 +89,55 @@ export const SALT_T_MIN_C = 0;
 export const SALT_T_MAX_C = 50;
 
 /**
- * Equilibrium RH over a saturated salt at a chamber temperature.
+ * Temperature sensitivity of a salt's equilibrium RH, %RH per °C — the
+ * analytic derivative of the Greenspan polynomial.
+ *
+ * This is what separates the salts in practice. A saturated-salt jar is an
+ * ABSOLUTE reference (physical chemistry, nothing to drift or expire); its
+ * realized accuracy is set almost entirely by how well the chamber
+ * temperature is known. NaCl's curve is nearly flat (≈−0.04 %RH/°C — the
+ * gold-standard workhorse for exactly this reason), while Mg(NO₃)₂ moves
+ * −0.30 %RH/°C and punishes sloppy temperature control sevenfold.
  *
  * @param {string} saltId one of SALTS[].id
  * @param {number} tc chamber temperature °C
- * @returns {{rh: number, u: number, salt: SaltDef}|null} expected %RH with the
- *   conservative reference uncertainty, or null when the salt is unknown or
- *   the temperature is outside the fits' validity window.
+ * @returns {number|null} d(RH)/dT in %RH/°C
  */
-export function saltRh(saltId, tc) {
+export function saltRhSlope(saltId, tc) {
+  const salt = SALTS.find((s) => s.id === saltId);
+  if (!salt || !isFinite(tc) || tc < SALT_T_MIN_C || tc > SALT_T_MAX_C) return null;
+  let slope = 0;
+  for (let i = salt.poly.length - 1; i >= 1; i--) slope = slope * tc + i * salt.poly[i];
+  return slope;
+}
+
+/**
+ * Equilibrium RH over a saturated salt at a chamber temperature, with an
+ * uncertainty that is COMPUTED, not guessed:
+ *
+ *   u = √( u_table² + (dRH/dT · u_T)² )
+ *
+ * where u_table is the conservative bound on Greenspan's tabulated
+ * uncertainty and u_T is how well the chamber temperature is known. The two
+ * contributions are returned separately so the UI can show an operator WHERE
+ * their uncertainty comes from — for NaCl the temperature term is negligible
+ * (that is what "gold standard" means in practice); for Mg(NO₃)₂ it
+ * dominates unless the chamber is well controlled.
+ *
+ * @param {string} saltId one of SALTS[].id
+ * @param {number} tc chamber temperature °C
+ * @param {number} [uTc] chamber-temperature uncertainty ±°C (default 0.5 —
+ *   a sensor sitting in a room-stable jar; pass what you actually know)
+ * @returns {{rh: number, u: number, uTable: number, uTemp: number,
+ *            slope: number, salt: SaltDef}|null}
+ */
+export function saltRh(saltId, tc, uTc = 0.5) {
   const salt = SALTS.find((s) => s.id === saltId);
   if (!salt || !isFinite(tc) || tc < SALT_T_MIN_C || tc > SALT_T_MAX_C) return null;
   let rh = 0;
   for (let i = salt.poly.length - 1; i >= 0; i--) rh = rh * tc + salt.poly[i];
-  return { rh, u: salt.u, salt };
+  const slope = saltRhSlope(saltId, tc);
+  const uTemp = Math.abs(slope) * Math.max(0, uTc);
+  const u = Math.hypot(salt.u, uTemp);
+  return { rh, u, uTable: salt.u, uTemp, slope, salt };
 }

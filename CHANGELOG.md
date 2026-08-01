@@ -27,7 +27,13 @@ what rolls an update out to installed apps.
   UI states the ±0.5 °C practical limit of a field boil), and
   **reference-instrument comparison** with certificate uncertainty. The
   psychrometer method is unchanged. Verdict bands are named constants now,
-  not magic numbers. `docs/sensor-validation.md` documents every method,
+  not magic numbers. **Salt-chamber uncertainty is computed, not lumped**:
+  u = √(u_table² + (dRH/dT·u_T)²), with the salt's own curve slope and a
+  user-entered chamber-temperature confidence — the breakdown shown with the
+  verdict. This makes the gold-standard nature of NaCl visible (−0.04 %RH/°C:
+  nearly immune to chamber-temperature error) and the cost of using
+  Mg(NO₃)₂ with sloppy temperature control equally visible (−0.30 %RH/°C);
+  both slopes are pinned in tests. `docs/sensor-validation.md` documents every method,
   reference, and uncertainty; the in-app self-test gained four cases pinning
   the new reference data (35 → 39).
 

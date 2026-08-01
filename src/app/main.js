@@ -24,7 +24,7 @@ import {
   rhFromPsychrometer,
   rhFromDewPoint,
 } from '../core/psychro.js';
-import { SALTS, saltRh, SALT_T_MIN_C, SALT_T_MAX_C } from '../core/saltref.js';
+import { SALTS, saltRh, saltRhSlope, SALT_T_MIN_C, SALT_T_MAX_C } from '../core/saltref.js';
 import { boilingPointC, U_PRACTICAL_C } from '../core/boilref.js';
 import { fToC, cToF, TEMP_UNITS, deltaFromF, deltaLabelFor } from '../core/units.js';
 import {
@@ -498,8 +498,8 @@ const svState = {
   dbF: null, wbF: null, sensorRh: null, method: 'psy',
   // dew-point instrument
   dpDbF: null, dpDpF: null, dpRh: null,
-  // salt chamber
-  saltId: 'nacl', saltTF: null, saltSensorRh: null,
+  // salt chamber (saltUTc = how well the chamber temp is known, ±°C)
+  saltId: 'nacl', saltTF: null, saltSensorRh: null, saltUTc: 0.5,
   // ice / boiling temperature checks
   iceTF: null, boilTF: null,
   // reference instrument comparison
@@ -573,16 +573,22 @@ const SV_METHODS = {
     if (svState.saltTF == null)
       return { html: 'Pick a salt and enter the chamber temperature.', summary: 'salt chamber' };
     const tc = fToC(svState.saltTF);
-    const r = saltRh(svState.saltId, tc);
+    const r = saltRh(svState.saltId, tc, svState.saltUTc);
     if (!r)
       return {
         html: `<span class="calc-warn">Outside the Greenspan tables' validity (${SALT_T_MIN_C}–${SALT_T_MAX_C} °C chamber temperature). Bring the chamber into range rather than extrapolating a calibration reference.</span>`,
         summary: 'out of range',
       };
+    // The uncertainty is COMPUTED, and the breakdown is shown: a salt jar is
+    // an absolute reference whose realized accuracy is set by temperature
+    // knowledge — for NaCl that term is negligible (the gold standard for a
+    // reason); for Mg(NO₃)₂ it dominates. Operators should see which regime
+    // they are in, not a lumped number.
+    const uTF = Math.round(dispDeltaT(svState.saltUTc * 1.8) * 10) / 10;
     return {
       html:
         `Equilibrium RH over ${r.salt.name}: <span class="sv-big">${r.rh.toFixed(1)}%</span>` +
-        ` <span class="cap-hint">± ${r.u.toFixed(1)} (Greenspan 1977)</span>` +
+        ` <span class="cap-hint">± ${r.u.toFixed(2)} — table ±${r.uTable.toFixed(2)} (Greenspan 1977) ⊕ temp ±${r.uTemp.toFixed(2)} (${r.slope.toFixed(2)} %RH/°C × ±${uTF}${deltaLabel()} chamber)</span>` +
         svRhVerdictHtml(svState.saltSensorRh, r.rh, r.u),
       summary: `${r.salt.name.split(' ')[0]} → ${r.rh.toFixed(1)}% RH`,
     };
@@ -709,11 +715,26 @@ for (const tab of SV_TABS) {
     svState.saltId = sel.value;
     const note = document.getElementById('sv-salt-note');
     const salt = SALTS.find((s) => s.id === sel.value);
-    if (note && salt)
-      note.textContent = `${salt.note} Sealed jar, saturated slurry, sensor above the slurry; allow hours to equilibrate. Reference: Greenspan (1977), NBS.`;
+    if (note && salt) {
+      const slope = saltRhSlope(sel.value, 25);
+      note.textContent =
+        `${salt.note} Temperature sensitivity ${slope.toFixed(2)} %RH/°C at 25 °C — ` +
+        (Math.abs(slope) < 0.1
+          ? 'nearly immune to chamber-temperature error; this is gold-standard territory.'
+          : 'control and measure the chamber temperature; the uncertainty readout shows the cost.') +
+        ' Sealed jar, slurry with visible solids, sensor above the slurry; hours to equilibrate. Reference: Greenspan (1977), NBS.';
+    }
     renderSensorValidation();
   });
 }
+
+// Chamber-temp uncertainty: entered as a temperature DELTA in the active
+// display unit, stored canonically in ±°C.
+document.getElementById('sv-salt-ut').addEventListener('input', function () {
+  const v = parseFloat(this.value);
+  svState.saltUTc = isNaN(v) || v < 0 ? 0.5 : v / dispDeltaT(1) / 1.8;
+  renderSensorValidation();
+});
 
 /** Wire a temperature input (active display unit → canonical °F). */
 function svTempWire(id, key) {

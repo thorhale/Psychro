@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { SALTS, saltRh, SALT_T_MIN_C, SALT_T_MAX_C } from '../src/core/saltref.js';
+import { SALTS, saltRh, saltRhSlope, SALT_T_MIN_C, SALT_T_MAX_C } from '../src/core/saltref.js';
 
 /** Greenspan (1977), Table 2 — %RH at 0 / 25 / 50 °C per salt. */
 const ORACLE = {
@@ -63,6 +63,46 @@ describe('Greenspan saturated-salt fixed points', () => {
           .toBeGreaterThan(values[i - 1]);
       }
     }
+  });
+
+  it('temperature sensitivity is the true derivative of each fit', () => {
+    // saltRhSlope must be the analytic derivative — pinned against a central
+    // finite difference so a coefficient-indexing slip cannot hide.
+    for (const s of SALTS) {
+      for (const t of [5, 25, 45]) {
+        const fd = (saltRh(s.id, t + 0.01, 0).rh - saltRh(s.id, t - 0.01, 0).rh) / 0.02;
+        expect(Math.abs(saltRhSlope(s.id, t) - fd), `${s.id} @ ${t}°C`).toBeLessThan(1e-6);
+      }
+    }
+  });
+
+  it('NaCl is the gold-standard workhorse: nearly flat with temperature', () => {
+    // The practical reason NaCl is THE calibration salt: its equilibrium RH
+    // barely moves with chamber temperature, so temperature error costs
+    // almost nothing. Pinned so nobody swaps coefficients and loses this.
+    for (let t = SALT_T_MIN_C; t <= SALT_T_MAX_C; t += 1) {
+      expect(Math.abs(saltRhSlope('nacl', t)), `NaCl slope @ ${t}°C`).toBeLessThan(0.06);
+    }
+    // Mg(NO₃)₂ is the cautionary opposite: ~7× more temperature-sensitive.
+    expect(Math.abs(saltRhSlope('mgno32', 25))).toBeGreaterThan(0.25);
+  });
+
+  it('uncertainty is computed from temperature knowledge, not lumped', () => {
+    // u = √(u_table² + (slope·u_T)²), returned with its breakdown.
+    const exact = saltRh('mgno32', 25, 0);
+    expect(exact.uTemp).toBe(0);
+    expect(exact.u).toBeCloseTo(exact.uTable, 12);
+
+    const sloppy = saltRh('mgno32', 25, 2); // chamber known only to ±2 °C
+    expect(sloppy.uTemp).toBeCloseTo(Math.abs(sloppy.slope) * 2, 12);
+    expect(sloppy.u).toBeCloseTo(Math.hypot(sloppy.uTable, sloppy.uTemp), 12);
+    // RSS combination: √(0.7² + 0.6²) ≈ 0.92 — a real +0.22 cost. (Not
+    // +0.6: orthogonal uncertainties add in quadrature, not linearly.)
+    expect(sloppy.u).toBeGreaterThan(exact.u + 0.2);
+
+    // NaCl with the same sloppy chamber barely notices — the gold standard.
+    const nacl = saltRh('nacl', 25, 2);
+    expect(nacl.u - nacl.uTable).toBeLessThan(0.02);
   });
 
   it('refuses to extrapolate outside 0–50 °C and rejects unknown salts', () => {

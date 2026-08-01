@@ -34,28 +34,50 @@ reference-grade option.
 
 ## 3. Saturated-salt chamber — RH
 
-**Reference:** the equilibrium humidity above a saturated salt slurry in a
-sealed container — the classic NIST calibration method. Cheap, absolute, slow.
+**The gold standard of practical RH calibration — and it's worth being clear
+about why.** A saturated-salt jar is an *absolute* reference: the equilibrium
+humidity over the slurry is set by physical chemistry, not by a factory
+calibration. It cannot drift, cannot expire, and cannot lose its paperwork.
+Greenspan's uncertainty for NaCl at 25 °C is **±0.12 %RH** — on paper better
+than a working chilled mirror. National metrology labs only surpass salts
+with gravimetric hygrometers and two-pressure generators.
+
 **Physics:** Greenspan, *Humidity Fixed Points of Binary Saturated Aqueous
 Solutions*, J. Res. NBS 81A(1), 89–96 (1977). The app carries the paper's own
-polynomial fits for six salts, valid 0–50 °C, verified in `test/saltref.test.js`
-against the paper's tabulated values at 0/25/50 °C:
+polynomial fits for six salts, valid 0–50 °C, verified in
+`test/saltref.test.js` against the paper's tabulated values at 0/25/50 °C.
 
-| Salt | RH @ 25 °C | App's uncertainty (conservative) |
-|---|---|---|
-| Lithium chloride | 11.3 % | ±0.6 |
-| Magnesium chloride | 32.8 % | ±0.4 |
-| Magnesium nitrate | 52.9 % | ±0.7 |
-| Sodium chloride | 75.3 % | ±0.4 |
-| Potassium chloride | 84.3 % | ±0.6 |
-| Potassium sulfate | 97.3 % | ±1.1 |
+**What limits a real jar is temperature knowledge, and it differs sharply by
+salt** — so the app *computes* the uncertainty instead of guessing one:
 
-The uncertainty applied is at or above Greenspan's largest tabulated value for
-the salt anywhere in 0–50 °C — conservative on purpose (it can only make a
-PASS harder). Technique: slurry with visible solids ("wet sand"), sensor
-suspended above it, jar sealed, hours to equilibrate (longer above 80 %RH).
-**Use when:** you want an absolute check with no second instrument — table
-salt gives you a 75.3 % point for pennies.
+```
+u = √( u_table² + (dRH/dT · u_T)² )
+```
+
+where `u_table` is a conservative bound on Greenspan's tabulated uncertainty,
+`dRH/dT` is the slope of the salt's own curve, and `u_T` is how well you know
+the chamber temperature (you enter it; default ±0.5 °C). The breakdown is
+shown with every verdict.
+
+| Salt | RH @ 25 °C | u_table | dRH/dT @ 25 °C | u with chamber ±2 °C |
+|---|---|---|---|---|
+| Lithium chloride | 11.3 % | ±0.6 | −0.02 | ±0.60 |
+| Magnesium chloride | 32.8 % | ±0.4 | −0.06 | ±0.42 |
+| Magnesium nitrate | 52.9 % | ±0.7 | **−0.30** | ±0.92 |
+| Sodium chloride | 75.3 % | ±0.4 | **−0.04** | ±0.41 |
+| Potassium chloride | 84.3 % | ±0.6 | −0.15 | ±0.67 |
+| Potassium sulfate | 97.3 % | ±1.1 | −0.06 | ±1.11 |
+
+Read the last column: NaCl barely notices a sloppy chamber — that flatness is
+*why* it is the workhorse — while magnesium nitrate pays heavily for the same
+sloppiness. `test/saltref.test.js` pins the slopes (against finite
+differences) and NaCl's flatness specifically.
+
+Technique: slurry with visible solids ("wet sand"), sensor suspended above
+it, jar sealed, hours to equilibrate (longer above 80 %RH), and the jar at a
+stable, known temperature.
+**Use when:** you want the most trustworthy check available without a
+metrology lab. Table salt gives you an absolute 75.3 % point for pennies.
 
 ## 4. Ice point — temperature
 
@@ -97,8 +119,9 @@ the reference's paperwork.
 ## Choosing
 
 - Fast spot check: **6** (reference instrument) or **1** (psychrometer).
-- Absolute RH, no second instrument: **3** (salt jars — NaCl first).
-- Best-available RH: **2** (dew-point meter).
+- Most trustworthy RH, no lab required: **3** (salt jars — NaCl first; at a
+  stable known temperature this is the gold standard).
+- Continuous/process-grade RH instrument on site: **2** (dew-point meter).
 - Temperature offset: **4** (ice). Temperature slope: add **5** (boiling).
 
 Cross-validate: a sensor that passes NaCl at 75 % and LiCl at 11 % has proven

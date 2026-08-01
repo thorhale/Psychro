@@ -681,8 +681,9 @@
         </div>
         <div class="sla-field"><label>Chamber temp <span class="tunit">°F</span></label><input type="number" id="sv-salt-t" step="0.1" placeholder="e.g. 72"></div>
         <div class="sla-field"><label>Sensor RH % <span class="cap-hint">reading under test</span></label><input type="number" id="sv-salt-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+        <div class="sla-field"><label>Chamber temp known to ± <span class="cap-hint">drives the uncertainty</span></label><input type="number" id="sv-salt-ut" step="0.1" min="0" placeholder="0.9"></div>
       </div>
-      <div class="sv-hint" id="sv-salt-note">Sealed jar, saturated slurry (wet sand texture, solids visible), sensor suspended above the slurry. Allow hours to equilibrate. Reference: Greenspan (1977), NBS.</div>
+      <div class="sv-hint" id="sv-salt-note">A saturated-salt jar is an <em>absolute</em> reference — physical chemistry, nothing to drift or expire — and its realized accuracy is set by how well you know the chamber temperature. NaCl barely cares (−0.04 %RH/°C); Mg(NO₃)₂ moves −0.30 %RH/°C. Sealed jar, slurry with visible solids, sensor above the slurry, hours to equilibrate. Reference: Greenspan (1977), NBS.</div>
     </div>
 
     <!-- 4 · Ice point (temperature) -->
