@@ -11,6 +11,39 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — sensor-validation suite (six external reference methods)
+
+- The Sensor Validation card grew from one method to six, each producing a
+  reference value **with its uncertainty**, and every verdict band widens by
+  that uncertainty — a check can never claim more confidence than its
+  reference has. New: **dew-point instrument** (chilled-mirror class, via the
+  existing tested inverse), **saturated-salt chambers** (`src/core/saltref.js`
+  — Greenspan 1977 NBS polynomial fits for six salts, 0–50 °C, transcribed
+  from the paper's full text and pinned in `test/saltref.test.js` to its
+  tabulated values at 0/25/50 °C; conservative per-salt uncertainties),
+  **ice-point** and **altitude-corrected boiling-point** temperature checks
+  (`src/core/boilref.js` — Newton inversion of the Hyland–Wexler curve,
+  oracle-tested against IF-97 steam-table points, agreement ≤0.023 °C; the
+  UI states the ±0.5 °C practical limit of a field boil), and
+  **reference-instrument comparison** with certificate uncertainty. The
+  psychrometer method is unchanged. Verdict bands are named constants now,
+  not magic numbers. **Salt-chamber uncertainty is computed, not lumped**:
+  u = √(u_table² + (dRH/dT·u_T)²), with the salt's own curve slope and a
+  user-entered chamber-temperature confidence — the breakdown shown with the
+  verdict. This makes the gold-standard nature of NaCl visible (−0.04 %RH/°C:
+  nearly immune to chamber-temperature error) and the cost of using
+  Mg(NO₃)₂ with sloppy temperature control equally visible (−0.30 %RH/°C);
+  both slopes are pinned in tests. `docs/sensor-validation.md` documents every method,
+  reference, and uncertainty; the in-app self-test gained four cases pinning
+  the new reference data (35 → 39).
+
+### Fixed
+
+- A calibrated plant efficiency above 100 % survived only until reload:
+  `normalizeHall` clamped `effPct` to 1–100 while the UI and calibration flow
+  allow 1–150, so a measured 120 % silently degraded to 100 %. Schema ceiling
+  now matches the UI; pinned in `test/schema.test.js`.
+
 ### Added — store submission kit
 
 - `docs/store/LAUNCH-GUIDE.md` — a plain-language, first-timer walkthrough of

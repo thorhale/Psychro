@@ -22,7 +22,10 @@ import {
   wetBulb,
   rhFromWetBulb,
   rhFromPsychrometer,
+  rhFromDewPoint,
 } from '../core/psychro.js';
+import { SALTS, saltRh, saltRhSlope, SALT_T_MIN_C, SALT_T_MAX_C } from '../core/saltref.js';
+import { boilingPointC, U_PRACTICAL_C } from '../core/boilref.js';
 import { fToC, cToF, TEMP_UNITS, deltaFromF, deltaLabelFor } from '../core/units.js';
 import {
   ASHRAE_ENVELOPES,
@@ -439,12 +442,69 @@ document.querySelectorAll('#unit-toggle .unit-btn').forEach(btn => {
 });
 
 // ════════════════════════════════════════════════════════════
-//  SENSOR VALIDATION — RH from dry-bulb + wet-bulb (psychrometer check)
+//  SENSOR VALIDATION SUITE — six external reference methods.
 //  Readings are stored in °F (canonical) so the unit toggle re-displays
-//  them without drift; the math runs at the active site pressure, so an
-//  elevation change re-grades the sensor automatically.
+//  them without drift; pressure-dependent methods run at the active site
+//  pressure, so an elevation change re-grades the sensor automatically.
+//
+//  Every method produces "true value ± reference uncertainty" and the
+//  verdict band WIDENS by that uncertainty — a check can never claim more
+//  confidence than its reference has. Bands are named constants, not
+//  magic numbers scattered through render code.
 // ════════════════════════════════════════════════════════════
-const svState = { dbF: null, wbF: null, sensorRh: null, method: 'psy' };
+const SV_TOL = {
+  rhPass: 2, //     %RH — typical capacitive-sensor spec
+  rhMarginal: 5, // %RH — beyond this: recalibrate
+  tPassF: 0.9, //   °F (0.5 °C) — typical RTD/thermistor spec
+  tMarginalF: 1.8, // °F (1.0 °C)
+};
+
+/**
+ * Uncertainty-aware verdict. |err| is graded against pass/marginal bands
+ * widened by the reference's own uncertainty, and the band actually used is
+ * reported so the operator sees WHY a verdict was reached.
+ * @returns {{cls:string, word:string, band:number}|null} null when no reading
+ */
+function svVerdict(err, pass, marginal, uRef = 0) {
+  if (err == null || !isFinite(err)) return null;
+  const passBand = pass + uRef;
+  const marginalBand = marginal + uRef;
+  const a = Math.abs(err);
+  if (a <= passBand) return { cls: 'sv-pass', word: 'PASS', band: passBand };
+  if (a <= marginalBand) return { cls: 'sv-marginal', word: 'MARGINAL', band: marginalBand };
+  return { cls: 'sv-fail', word: 'FAIL', band: marginalBand };
+}
+
+/** One line of verdict HTML for an RH check. */
+function svRhVerdictHtml(sensorRh, trueRh, uRef) {
+  if (sensorRh == null) return '';
+  const err = sensorRh - trueRh;
+  const v = svVerdict(err, SV_TOL.rhPass, SV_TOL.rhMarginal, uRef);
+  return `<br>Sensor reads ${sensorRh.toFixed(1)}% → error <span class="${v.cls}">${err >= 0 ? '+' : ''}${err.toFixed(1)}% RH · ${v.word}</span> <span class="cap-hint">(±${v.band.toFixed(1)} band incl. reference ±${uRef.toFixed(1)})</span>`;
+}
+
+/** One line of verdict HTML for a temperature check (all math in °F). */
+function svTempVerdictHtml(sensorF, trueF, uRefF) {
+  if (sensorF == null) return '';
+  const errF = sensorF - trueF;
+  const v = svVerdict(errF, SV_TOL.tPassF, SV_TOL.tMarginalF, uRefF);
+  const disp = Math.round(dispDeltaT(errF) * 100) / 100;
+  return `<br>Sensor error <span class="${v.cls}">${errF >= 0 ? '+' : ''}${disp}${deltaLabel()} · ${v.word}</span> <span class="cap-hint">(±${(Math.round(dispDeltaT(v.band) * 100) / 100)}${deltaLabel()} band incl. reference)</span>`;
+}
+
+const svState = {
+  tab: 'psy',
+  // psychrometer
+  dbF: null, wbF: null, sensorRh: null, method: 'psy',
+  // dew-point instrument
+  dpDbF: null, dpDpF: null, dpRh: null,
+  // salt chamber (saltUTc = how well the chamber temp is known, ±°C)
+  saltId: 'nacl', saltTF: null, saltSensorRh: null, saltUTc: 0.5,
+  // ice / boiling temperature checks
+  iceTF: null, boilTF: null,
+  // reference instrument comparison
+  refQty: 'rh', refVal: null, refU: null, refReading: null,
+};
 // Which inverse to use — see rhFromPsychrometer() in the core. A real
 // instrument reads the psychrometric wet bulb; Eq. 35 is the thermodynamic
 // one. They differ by ~0.5 RH points, systematically.
@@ -455,91 +515,275 @@ let svLastUnit = state.tempUnit;
 // Display a stored °F reading in the active unit, one decimal, no trailing .0
 const svFmtT = f => (Math.round(tU().fromF(f) * 10) / 10).toString();
 
+/** Per-method renderers return {html, summary, canSetCurrent} for #sv-res. */
+const SV_METHODS = {
+  psy() {
+    if (svState.dbF == null || svState.wbF == null)
+      return { html: 'Enter dry-bulb and wet-bulb readings to compute RH.', summary: 'psychrometer' };
+    const tc = fToC(svState.dbF), twbC = fToC(svState.wbF), p = state.pressure;
+    const rh = svRh(tc, twbC, p);
+    if (rh == null)
+      return {
+        html: '<span class="calc-warn">Wet bulb is above dry bulb — physically impossible. Check the wick is wet and the probes aren\'t swapped.</span>',
+        summary: 'invalid reading',
+      };
+    const pw = vaporPressure(tc, rh);
+    const W = humidityRatioGPw(pw, p, tc);
+    const dpC = dewPoint(pw);
+    const depF = svState.dbF - svState.wbF;
+    // The instrument formulas are the reference here; their systematic spread
+    // (~0.5 %RH between the two wet-bulb definitions) is the honest floor.
+    const uRef = 0.5;
+    return {
+      html:
+        `True RH <span class="sv-big">${rh.toFixed(1)}%</span>` +
+        ` · dew point <strong>${dpC != null ? svFmtT(cToF(dpC)) + ' ' + tLabel() : '—'}</strong>` +
+        ` · W <strong>${W.toFixed(2)} g/kg</strong>` +
+        ` · depression ${(Math.round(dispDeltaT(depF) * 10) / 10)}${deltaLabel()}` +
+        svRhVerdictHtml(svState.sensorRh, rh, uRef),
+      summary: `${svFmtT(svState.dbF)}/${svFmtT(svState.wbF)}${tLabel()} → ${rh.toFixed(1)}% RH`,
+      canSetCurrent: { tempF: svState.dbF, rh },
+    };
+  },
+
+  dp() {
+    if (svState.dpDbF == null || svState.dpDpF == null)
+      return { html: 'Enter dry-bulb and the instrument\'s dew-point reading.', summary: 'dew-point meter' };
+    if (svState.dpDpF > svState.dpDbF + 1e-9)
+      return {
+        html: '<span class="calc-warn">Dew point above dry bulb is impossible — that air would already be condensing.</span>',
+        summary: 'invalid reading',
+      };
+    const tc = fToC(svState.dpDbF), tdpC = fToC(svState.dpDpF);
+    const rh = Math.min(100, Math.max(0, rhFromDewPoint(tc, tdpC)));
+    // A maintained chilled mirror is reference-grade: ±0.2 °C dew point ≈
+    // ±1 %RH at hall conditions; stated, not hidden.
+    const uRef = 1.0;
+    return {
+      html:
+        `True RH <span class="sv-big">${rh.toFixed(1)}%</span> from T<sub>dp</sub>` +
+        ` <strong>${svFmtT(svState.dpDpF)}${tLabel()}</strong> at T<sub>db</sub> <strong>${svFmtT(svState.dpDbF)}${tLabel()}</strong>` +
+        svRhVerdictHtml(svState.dpRh, rh, uRef),
+      summary: `dew point → ${rh.toFixed(1)}% RH`,
+      canSetCurrent: { tempF: svState.dpDbF, rh },
+    };
+  },
+
+  salt() {
+    if (svState.saltTF == null)
+      return { html: 'Pick a salt and enter the chamber temperature.', summary: 'salt chamber' };
+    const tc = fToC(svState.saltTF);
+    const r = saltRh(svState.saltId, tc, svState.saltUTc);
+    if (!r)
+      return {
+        html: `<span class="calc-warn">Outside the Greenspan tables' validity (${SALT_T_MIN_C}–${SALT_T_MAX_C} °C chamber temperature). Bring the chamber into range rather than extrapolating a calibration reference.</span>`,
+        summary: 'out of range',
+      };
+    // The uncertainty is COMPUTED, and the breakdown is shown: a salt jar is
+    // an absolute reference whose realized accuracy is set by temperature
+    // knowledge — for NaCl that term is negligible (the gold standard for a
+    // reason); for Mg(NO₃)₂ it dominates. Operators should see which regime
+    // they are in, not a lumped number.
+    const uTF = Math.round(dispDeltaT(svState.saltUTc * 1.8) * 10) / 10;
+    return {
+      html:
+        `Equilibrium RH over ${r.salt.name}: <span class="sv-big">${r.rh.toFixed(1)}%</span>` +
+        ` <span class="cap-hint">± ${r.u.toFixed(2)} — table ±${r.uTable.toFixed(2)} (Greenspan 1977) ⊕ temp ±${r.uTemp.toFixed(2)} (${r.slope.toFixed(2)} %RH/°C × ±${uTF}${deltaLabel()} chamber)</span>` +
+        svRhVerdictHtml(svState.saltSensorRh, r.rh, r.u),
+      summary: `${r.salt.name.split(' ')[0]} → ${r.rh.toFixed(1)}% RH`,
+    };
+  },
+
+  ice() {
+    if (svState.iceTF == null)
+      return { html: 'Enter the sensor\'s reading in the ice bath. Reference: 32.0 °F / 0.00 °C.', summary: 'ice point' };
+    // A properly made slurry holds 0 °C to better than ±0.05 °C — call it ±0.1 °F.
+    return {
+      html:
+        `Reference <span class="sv-big">${svFmtT(32)}${tLabel()}</span> <span class="cap-hint">(ice point, ±0.1 °F for a proper slurry)</span>` +
+        svTempVerdictHtml(svState.iceTF, 32, 0.1),
+      summary: 'ice-point temp check',
+    };
+  },
+
+  boil() {
+    const tBoilC = boilingPointC(state.pressure);
+    const note = document.getElementById('sv-boil-note');
+    if (tBoilC == null)
+      return { html: '<span class="calc-warn">Site pressure is outside the boiling-reference window.</span>', summary: 'out of range' };
+    const tBoilF = cToF(tBoilC);
+    const uF = U_PRACTICAL_C * 1.8;
+    if (note)
+      note.textContent = `Rolling boil, probe mid-water off the pot. At this site's ${state.pressure.toFixed(2)} kPa, pure water boils at ${svFmtT(tBoilF)} ${tLabel()} — not ${svFmtT(cToF(100))} ${tLabel()}. Impurities and superheat limit a field check to about ±${(Math.round(dispDeltaT(uF) * 10) / 10)}${deltaLabel()}.`;
+    if (svState.boilTF == null)
+      return {
+        html: `Boiling point at this site: <span class="sv-big">${svFmtT(tBoilF)}${tLabel()}</span> <span class="cap-hint">(${state.pressure.toFixed(2)} kPa · Hyland–Wexler, steam-table checked)</span>. Enter the sensor's reading.`,
+        summary: `boils at ${svFmtT(tBoilF)}${tLabel()} here`,
+      };
+    return {
+      html:
+        `Reference <span class="sv-big">${svFmtT(tBoilF)}${tLabel()}</span> <span class="cap-hint">(boiling at ${state.pressure.toFixed(2)} kPa)</span>` +
+        svTempVerdictHtml(svState.boilTF, tBoilF, uF),
+      summary: 'boiling-point temp check',
+    };
+  },
+
+  ref() {
+    const isRh = svState.refQty === 'rh';
+    if (svState.refVal == null || svState.refReading == null)
+      return { html: 'Enter the reference instrument\'s reading and the sensor\'s.', summary: 'reference compare' };
+    const uRef = svState.refU ?? 1.0;
+    if (isRh) {
+      return {
+        html:
+          `Reference RH <span class="sv-big">${svState.refVal.toFixed(1)}%</span> <span class="cap-hint">± ${uRef.toFixed(1)} (certificate)</span>` +
+          svRhVerdictHtml(svState.refReading, svState.refVal, uRef),
+        summary: 'reference compare (RH)',
+      };
+    }
+    // Temperature: inputs arrive in the ACTIVE unit; store/compare in °F.
+    const refF = tU().toF(svState.refVal);
+    const readF = tU().toF(svState.refReading);
+    // The certificate states its uncertainty in the DISPLAY unit; convert that
+    // delta to °F, where all verdict math lives.
+    const uRefF = uRef / dispDeltaT(1);
+    return {
+      html:
+        `Reference <span class="sv-big">${svFmtT(refF)}${tLabel()}</span> <span class="cap-hint">± ${uRef.toFixed(1)}${deltaLabel()} (certificate)</span>` +
+        svTempVerdictHtml(readF, refF, uRefF),
+      summary: 'reference compare (temp)',
+    };
+  },
+};
+
 function renderSensorValidation() {
   const res = document.getElementById('sv-res');
   if (!res) return;
   const pEl = document.getElementById('sv-pressure');
   if (pEl) pEl.textContent = `${state.pressure.toFixed(2)} kPa`;
 
-  // Re-display the temp boxes only when the unit actually changed — never
-  // rewrite a box mid-typing (values are exact in °F underneath regardless).
+  // Re-display temp boxes only when the unit actually changed — never rewrite
+  // a box mid-typing (values are exact in °F underneath regardless).
   if (state.tempUnit !== svLastUnit) {
     svLastUnit = state.tempUnit;
-    [['sv-db','dbF'], ['sv-wb','wbF']].forEach(([id, key]) => {
+    [['sv-db', 'dbF'], ['sv-wb', 'wbF'], ['sv-dp-db', 'dpDbF'], ['sv-dp-dp', 'dpDpF'],
+     ['sv-salt-t', 'saltTF'], ['sv-ice-t', 'iceTF'], ['sv-boil-t', 'boilTF']].forEach(([id, key]) => {
       const el = document.getElementById(id);
       if (el && el !== document.activeElement)
         el.value = svState[key] != null ? svFmtT(svState[key]) : '';
     });
   }
 
+  const out = SV_METHODS[svState.tab]();
+  res.innerHTML = out.html;
   const btn = document.getElementById('sv-to-current');
+  if (btn) {
+    btn.disabled = !out.canSetCurrent;
+    btn.style.display = svState.tab === 'psy' || svState.tab === 'dp' ? '' : 'none';
+  }
   const summary = document.getElementById('sv-summary');
-  const U = tLabel();
+  if (summary) summary.textContent = out.summary;
+  svSetCurrent = out.canSetCurrent || null;
+}
+let svSetCurrent = null;
 
-  if (svState.dbF == null || svState.wbF == null) {
-    res.innerHTML = 'Enter dry-bulb and wet-bulb readings to compute RH.';
-    if (btn) btn.disabled = true;
-    if (summary) summary.textContent = 'RH from dry-bulb + wet-bulb';
-    return;
-  }
-
-  const tc = fToC(svState.dbF), twbC = fToC(svState.wbF), p = state.pressure;
-  const rh = svRh(tc, twbC, p);
-  if (rh == null) {
-    res.innerHTML = '<span class="calc-warn">Wet bulb is above dry bulb — physically impossible. Check the wick is wet and the probes aren\'t swapped.</span>';
-    if (btn) btn.disabled = true;
-    if (summary) summary.textContent = 'invalid reading';
-    return;
-  }
-
-  const pw = vaporPressure(tc, rh);
-  const W = humidityRatioGPw(pw, p, tc);
-  const dpC = dewPoint(pw);
-  const depF = svState.dbF - svState.wbF;
-
-  let verdict = '';
-  if (svState.sensorRh != null) {
-    const err = svState.sensorRh - rh;
-    const cls = Math.abs(err) <= 2 ? 'sv-pass' : Math.abs(err) <= 5 ? 'sv-marginal' : 'sv-fail';
-    const word = Math.abs(err) <= 2 ? 'PASS' : Math.abs(err) <= 5 ? 'MARGINAL' : 'FAIL';
-    verdict = `<br>Sensor reads ${svState.sensorRh.toFixed(1)}% → error <span class="${cls}">${err >= 0 ? '+' : ''}${err.toFixed(1)}% RH · ${word}</span>`;
-  }
-
-  res.innerHTML =
-    `True RH <span class="sv-big">${rh.toFixed(1)}%</span>` +
-    ` · dew point <strong>${dpC != null ? svFmtT(cToF(dpC)) + ' ' + U : '—'}</strong>` +
-    ` · W <strong>${W.toFixed(2)} g/kg</strong>` +
-    ` · depression ${(Math.round(dispDeltaT(depF) * 10) / 10)}${deltaLabel()}` +
-    verdict;
-  if (btn) btn.disabled = false;
-  if (summary) summary.textContent = `${svFmtT(svState.dbF)}/${svFmtT(svState.wbF)}${U} → ${rh.toFixed(1)}% RH`;
+// ── Suite wiring: tabs, per-method inputs, shared actions ──────────────────
+const SV_TABS = ['psy', 'dp', 'salt', 'ice', 'boil', 'ref'];
+for (const tab of SV_TABS) {
+  document.getElementById(`sv-tab-${tab}`).addEventListener('click', () => {
+    svState.tab = tab;
+    for (const t of SV_TABS) {
+      document.getElementById(`sv-tab-${t}`).setAttribute('aria-selected', String(t === tab));
+      document.getElementById(`sv-pane-${t}`).classList.toggle('active', t === tab);
+    }
+    renderSensorValidation();
+  });
 }
 
-document.getElementById('sv-db').addEventListener('input', function() {
+// The salt list comes from the reference module — the UI cannot drift from
+// the data it grades against.
+{
+  const sel = document.getElementById('sv-salt-sel');
+  for (const s of SALTS) {
+    const o = document.createElement('option');
+    o.value = s.id;
+    o.textContent = s.name;
+    sel.appendChild(o);
+  }
+  sel.value = svState.saltId;
+  sel.addEventListener('change', () => {
+    svState.saltId = sel.value;
+    const note = document.getElementById('sv-salt-note');
+    const salt = SALTS.find((s) => s.id === sel.value);
+    if (note && salt) {
+      const slope = saltRhSlope(sel.value, 25);
+      note.textContent =
+        `${salt.note} Temperature sensitivity ${slope.toFixed(2)} %RH/°C at 25 °C — ` +
+        (Math.abs(slope) < 0.1
+          ? 'nearly immune to chamber-temperature error; this is gold-standard territory.'
+          : 'control and measure the chamber temperature; the uncertainty readout shows the cost.') +
+        ' Sealed jar, slurry with visible solids, sensor above the slurry; hours to equilibrate. Reference: Greenspan (1977), NBS.';
+    }
+    renderSensorValidation();
+  });
+}
+
+// Chamber-temp uncertainty: entered as a temperature DELTA in the active
+// display unit, stored canonically in ±°C.
+document.getElementById('sv-salt-ut').addEventListener('input', function () {
   const v = parseFloat(this.value);
-  svState.dbF = isNaN(v) ? null : tU().toF(v);
+  svState.saltUTc = isNaN(v) || v < 0 ? 0.5 : v / dispDeltaT(1) / 1.8;
   renderSensorValidation();
 });
-document.getElementById('sv-wb').addEventListener('input', function() {
-  const v = parseFloat(this.value);
-  svState.wbF = isNaN(v) ? null : tU().toF(v);
-  renderSensorValidation();
-});
-document.getElementById('sv-method').addEventListener('change', function() {
+
+/** Wire a temperature input (active display unit → canonical °F). */
+function svTempWire(id, key) {
+  document.getElementById(id).addEventListener('input', function () {
+    const v = parseFloat(this.value);
+    svState[key] = isNaN(v) ? null : tU().toF(v);
+    renderSensorValidation();
+  });
+}
+/** Wire a plain numeric input (RH %, uncertainties). */
+function svNumWire(id, key, lo = -Infinity, hi = Infinity) {
+  document.getElementById(id).addEventListener('input', function () {
+    const v = parseFloat(this.value);
+    svState[key] = isNaN(v) ? null : Math.min(hi, Math.max(lo, v));
+    renderSensorValidation();
+  });
+}
+
+svTempWire('sv-db', 'dbF');
+svTempWire('sv-wb', 'wbF');
+svNumWire('sv-rh', 'sensorRh', 0, 100);
+svTempWire('sv-dp-db', 'dpDbF');
+svTempWire('sv-dp-dp', 'dpDpF');
+svNumWire('sv-dp-rh', 'dpRh', 0, 100);
+svTempWire('sv-salt-t', 'saltTF');
+svNumWire('sv-salt-rh', 'saltSensorRh', 0, 100);
+svTempWire('sv-ice-t', 'iceTF');
+svTempWire('sv-boil-t', 'boilTF');
+svNumWire('sv-ref-val', 'refVal');
+svNumWire('sv-ref-u', 'refU', 0, 50);
+svNumWire('sv-ref-reading', 'refReading');
+
+document.getElementById('sv-method').addEventListener('change', function () {
   svState.method = this.value;
   renderSensorValidation();
 });
-document.getElementById('sv-rh').addEventListener('input', function() {
-  const v = parseFloat(this.value);
-  svState.sensorRh = isNaN(v) ? null : Math.min(100, Math.max(0, v));
+document.getElementById('sv-ref-qty').addEventListener('change', function () {
+  svState.refQty = this.value;
+  const isRh = this.value === 'rh';
+  document.getElementById('sv-ref-val-label').textContent = isRh
+    ? 'Reference reads (RH %)' : 'Reference reads (temp)';
+  document.getElementById('sv-ref-reading-label').textContent = isRh
+    ? 'Sensor under test reads (RH %)' : 'Sensor under test reads (temp)';
   renderSensorValidation();
 });
-document.getElementById('sv-to-current').addEventListener('click', function() {
-  if (svState.dbF == null || svState.wbF == null) return;
-  const rh = svRh(fToC(svState.dbF), fToC(svState.wbF), state.pressure);
-  if (rh == null) return;
-  state.aTemp = clampF(svState.dbF);
-  state.aRH = clampRH(rh);
+document.getElementById('sv-to-current').addEventListener('click', function () {
+  if (!svSetCurrent) return;
+  state.aTemp = clampF(svSetCurrent.tempF);
+  state.aRH = clampRH(svSetCurrent.rh);
   syncAllControls();
   update();
 });

@@ -264,6 +264,53 @@ test.describe('sensor validation', () => {
   });
 });
 
+test.describe('sensor validation suite', () => {
+  test('salt-chamber method grades a sensor against Greenspan NaCl', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#sv-tab-salt').click();
+    await page.locator('#sv-salt-sel').selectOption('nacl');
+    await page.fill('#sv-salt-t', '77'); // 25 °C — the canonical anchor
+    await page.dispatchEvent('#sv-salt-t', 'input');
+    // Greenspan 1977: NaCl at 25 °C = 75.29 ± 0.12 (app applies conservative ±0.4)
+    await expect(page.locator('#sv-res')).toContainText('75.3%');
+    await expect(page.locator('#sv-res')).toContainText('Greenspan');
+
+    await page.fill('#sv-salt-rh', '74'); // −1.3 → inside 2 + 0.4 band
+    await page.dispatchEvent('#sv-salt-rh', 'input');
+    await expect(page.locator('#sv-res')).toContainText('PASS');
+
+    await page.fill('#sv-salt-rh', '82'); // +6.7 → beyond 5 + 0.4
+    await page.dispatchEvent('#sv-salt-rh', 'input');
+    await expect(page.locator('#sv-res')).toContainText('FAIL');
+  });
+
+  test('boiling-point reference is altitude-corrected, not 212°F', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#sv-tab-boil').click();
+    // Default site (1,066 ft → 97.48 kPa): pure water boils near 210.9 °F,
+    // visibly below 212 — the whole point of the correction.
+    const res = await page.locator('#sv-res').textContent();
+    const m = res.match(/Boiling point at this site:\s*([\d.]+)/);
+    expect(m, `res shows a boiling temp (got: ${res})`).not.toBeNull();
+    expect(Number(m[1])).toBeGreaterThan(209);
+    expect(Number(m[1])).toBeLessThan(211.5);
+  });
+
+  test('ice-point method grades a temperature sensor', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#sv-tab-ice').click();
+    await page.fill('#sv-ice-t', '32.4'); // +0.4 °F → inside ±0.9+0.1
+    await page.dispatchEvent('#sv-ice-t', 'input');
+    await expect(page.locator('#sv-res')).toContainText('PASS');
+    await page.fill('#sv-ice-t', '34.5'); // +2.5 °F → beyond ±1.8+0.1
+    await page.dispatchEvent('#sv-ice-t', 'input');
+    await expect(page.locator('#sv-res')).toContainText('FAIL');
+  });
+});
+
 test.describe('persistence', () => {
   test('a saved scenario survives a reload', async ({ page }) => {
     await page.goto('./');

@@ -234,6 +234,15 @@
   .sv-marginal { color:var(--warn); font-weight:700; }
   .sv-fail { color:var(--danger); font-weight:700; }
   .sv-actions { margin-top:10px; }
+  /* Method tabs: one strip, six external-validation methods */
+  .sv-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .sv-tab { background:var(--bg); border:1px solid var(--border); color:var(--muted);
+    border-radius:6px; padding:5px 10px; font:600 .68rem var(--sans); cursor:pointer; }
+  .sv-tab[aria-selected="true"] { color:var(--stream-teal); border-color:var(--stream-teal);
+    background:rgba(0,169,206,.08); }
+  .sv-pane { display:none; }
+  .sv-pane.active { display:block; }
+  .sv-hint { color:var(--muted); font-size:.7rem; margin-top:6px; line-height:1.5; }
   .scn-btn:disabled { opacity:.35; cursor:not-allowed; }
   .calc-typesel { width:100%; margin-bottom:8px; }
   .dh-pane { margin-bottom:2px; }
@@ -624,26 +633,96 @@
 </details>
 
 <details class="card sect">
-  <summary><span class="sect-title">Sensor Validation</span><span class="sect-sub" id="sv-summary">RH from dry-bulb + wet-bulb</span><span class="sect-chev">▸</span></summary>
+  <summary><span class="sect-title">Sensor Validation</span><span class="sect-sub" id="sv-summary">6 external reference methods</span><span class="sect-chev">▸</span></summary>
   <div class="sect-body">
-    <div class="calc-intro">Field-check an RH sensor against a sling / aspirated psychrometer: enter the dry-bulb and wet-bulb readings and the true RH is computed at site pressure. Add the sensor's displayed RH to see its deviation.</div>
-    <div class="sv-grid">
-      <div class="sla-field"><label>Dry bulb <span class="tunit">°F</span></label><input type="number" id="sv-db" step="0.1" placeholder="e.g. 75"></div>
-      <div class="sla-field"><label>Wet bulb <span class="tunit">°F</span></label><input type="number" id="sv-wb" step="0.1" placeholder="e.g. 62"></div>
-      <div class="sla-field"><label>Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" id="sv-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+    <div class="calc-intro">Field-check temperature and RH sensors against an independent physical reference. Six methods, each showing the true value <em>and its uncertainty</em> — a verdict is only as good as the reference behind it. See <code>docs/sensor-validation.md</code> for when to use which.</div>
+
+    <div class="sv-tabs" role="tablist" aria-label="Validation method">
+      <button class="sv-tab" id="sv-tab-psy" role="tab" aria-selected="true">Psychrometer</button>
+      <button class="sv-tab" id="sv-tab-dp" role="tab" aria-selected="false">Dew-point meter</button>
+      <button class="sv-tab" id="sv-tab-salt" role="tab" aria-selected="false">Salt chamber</button>
+      <button class="sv-tab" id="sv-tab-ice" role="tab" aria-selected="false">Ice point</button>
+      <button class="sv-tab" id="sv-tab-boil" role="tab" aria-selected="false">Boiling point</button>
+      <button class="sv-tab" id="sv-tab-ref" role="tab" aria-selected="false">Reference instrument</button>
     </div>
-    <div class="sla-field" style="margin-top:10px">
-      <label>How was the wet bulb measured?</label>
-      <select id="sv-method" class="sla-select">
-        <option value="psy" selected>Sling / aspirated psychrometer — WMO (what an instrument reads)</option>
-        <option value="thermo">Thermodynamic wet bulb — ASHRAE Eq. 35 (a chart property)</option>
-      </select>
+
+    <!-- 1 · Psychrometer (wet bulb) -->
+    <div class="sv-pane active" id="sv-pane-psy" role="tabpanel">
+      <div class="sv-grid">
+        <div class="sla-field"><label>Dry bulb <span class="tunit">°F</span></label><input type="number" id="sv-db" step="0.1" placeholder="e.g. 75"></div>
+        <div class="sla-field"><label>Wet bulb <span class="tunit">°F</span></label><input type="number" id="sv-wb" step="0.1" placeholder="e.g. 62"></div>
+        <div class="sla-field"><label>Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" id="sv-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+      </div>
+      <div class="sla-field" style="margin-top:10px">
+        <label>How was the wet bulb measured?</label>
+        <select id="sv-method" class="sla-select">
+          <option value="psy" selected>Sling / aspirated psychrometer — WMO (what an instrument reads)</option>
+          <option value="thermo">Thermodynamic wet bulb — ASHRAE Eq. 35 (a chart property)</option>
+        </select>
+      </div>
+      <div class="sv-hint">Wetted wick, ≥3 m/s airflow. The instrument reads the <em>psychrometric</em> wet bulb; Eq. 35's thermodynamic one differs by ~0.5 %RH, systematically.</div>
     </div>
-    <div class="calc-res" id="sv-res">Enter dry-bulb and wet-bulb readings to compute RH.</div>
+
+    <!-- 2 · Dew-point instrument -->
+    <div class="sv-pane" id="sv-pane-dp" role="tabpanel">
+      <div class="sv-grid">
+        <div class="sla-field"><label>Dry bulb <span class="tunit">°F</span></label><input type="number" id="sv-dp-db" step="0.1" placeholder="e.g. 75"></div>
+        <div class="sla-field"><label>Dew point (instrument) <span class="tunit">°F</span></label><input type="number" id="sv-dp-dp" step="0.1" placeholder="e.g. 54"></div>
+        <div class="sla-field"><label>Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" id="sv-dp-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+      </div>
+      <div class="sv-hint">For sites with a chilled-mirror or other dew-point meter — reference-grade when the mirror is clean. RH follows from T<sub>db</sub> and T<sub>dp</sub> alone (pressure-independent).</div>
+    </div>
+
+    <!-- 3 · Saturated-salt chamber -->
+    <div class="sv-pane" id="sv-pane-salt" role="tabpanel">
+      <div class="sv-grid">
+        <div class="sla-field"><label>Salt</label>
+          <select id="sv-salt-sel" class="sla-select"></select>
+        </div>
+        <div class="sla-field"><label>Chamber temp <span class="tunit">°F</span></label><input type="number" id="sv-salt-t" step="0.1" placeholder="e.g. 72"></div>
+        <div class="sla-field"><label>Sensor RH % <span class="cap-hint">reading under test</span></label><input type="number" id="sv-salt-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+        <div class="sla-field"><label>Chamber temp known to ± <span class="cap-hint">drives the uncertainty</span></label><input type="number" id="sv-salt-ut" step="0.1" min="0" placeholder="0.9"></div>
+      </div>
+      <div class="sv-hint" id="sv-salt-note">A saturated-salt jar is an <em>absolute</em> reference — physical chemistry, nothing to drift or expire — and its realized accuracy is set by how well you know the chamber temperature. NaCl barely cares (−0.04 %RH/°C); Mg(NO₃)₂ moves −0.30 %RH/°C. Sealed jar, slurry with visible solids, sensor above the slurry, hours to equilibrate. Reference: Greenspan (1977), NBS.</div>
+    </div>
+
+    <!-- 4 · Ice point (temperature) -->
+    <div class="sv-pane" id="sv-pane-ice" role="tabpanel">
+      <div class="sv-grid">
+        <div class="sla-field"><label>Sensor temp in ice bath <span class="tunit">°F</span></label><input type="number" id="sv-ice-t" step="0.1" placeholder="e.g. 32.4"></div>
+      </div>
+      <div class="sv-hint">Crushed ice + a little distilled water — slush, not floating cubes. Stir, wait 2 min, keep the probe mid-bath off the walls. Reference: 32.0 °F / 0.00 °C by definition.</div>
+    </div>
+
+    <!-- 5 · Boiling point (temperature, altitude-corrected) -->
+    <div class="sv-pane" id="sv-pane-boil" role="tabpanel">
+      <div class="sv-grid">
+        <div class="sla-field"><label>Sensor temp in boiling water <span class="tunit">°F</span></label><input type="number" id="sv-boil-t" step="0.1" placeholder="—"></div>
+      </div>
+      <div class="sv-hint" id="sv-boil-note">Rolling boil, probe mid-water off the pot. The reference is computed from this site's pressure — water does not boil at 212 °F at altitude. Impurities and superheat limit a field check to about ±0.9 °F.</div>
+    </div>
+
+    <!-- 6 · Reference instrument comparison -->
+    <div class="sv-pane" id="sv-pane-ref" role="tabpanel">
+      <div class="sv-grid">
+        <div class="sla-field"><label>Quantity</label>
+          <select id="sv-ref-qty" class="sla-select">
+            <option value="rh" selected>Relative humidity (%)</option>
+            <option value="temp">Temperature</option>
+          </select>
+        </div>
+        <div class="sla-field"><label id="sv-ref-val-label">Reference reads</label><input type="number" id="sv-ref-val" step="0.1" placeholder="—"></div>
+        <div class="sla-field"><label>Reference uncertainty ± <span class="cap-hint">from its cal certificate</span></label><input type="number" id="sv-ref-u" step="0.1" min="0" placeholder="e.g. 1.0"></div>
+        <div class="sla-field"><label id="sv-ref-reading-label">Sensor under test reads</label><input type="number" id="sv-ref-reading" step="0.1" placeholder="—"></div>
+      </div>
+      <div class="sv-hint">Side-by-side with a recently calibrated instrument at the same spot, both settled. The verdict band widens by the reference's own uncertainty — a comparison can never be better than the reference.</div>
+    </div>
+
+    <div class="calc-res" id="sv-res">Enter readings to compute the reference value.</div>
     <div class="sv-actions">
       <button class="scn-btn" id="sv-to-current" disabled>→ Set as Current point</button>
     </div>
-    <div class="formula-note">Inverse psychrometrics at site pressure <span id="sv-pressure">—</span>. A slung or aspirated instrument reads the <em>psychrometric</em> wet bulb (WMO CIMO formula, needs ≥3 m/s over a wet wick); ASHRAE Eq. 35 gives the <em>thermodynamic</em> wet bulb, a chart property. Reading one as the other biases RH low by ~0.5 points — systematic, so it will not average out. Wet bulb can never exceed dry bulb. Pass bands: ±2% RH typical capacitive-sensor spec, ±5% marginal — recalibrate beyond that.</div>
+    <div class="formula-note">All methods run at site pressure <span id="sv-pressure">—</span> where pressure matters. Verdict bands: RH ±2% PASS / ±5% MARGINAL (typical capacitive spec); temperature ±0.9 °F PASS / ±1.8 °F MARGINAL — each widened by the reference's stated uncertainty, shown with every verdict. Methods and references: <code>docs/sensor-validation.md</code>.</div>
   </div>
 </details>
 
