@@ -50,7 +50,10 @@ import {
   parseStoredState,
   buildStoredState,
 } from '../state/persistence.js';
-import { toast, confirmDialog } from '../ui/notify.js';
+import { toast, confirmDialog, copyText, imageDialog } from '../ui/notify.js';
+import { encodeStateHash, parseStateHash } from '../state/urlstate.js';
+import { drawQr } from '../lib/qr.js';
+import { buildBriefing } from './briefing.js';
 import {
   logError,
   installGlobalHandlers,
@@ -1176,6 +1179,16 @@ function drawChart() {
         ctx.fillStyle='rgba(255,150,245,0.9)'; ctx.font=`bold ${fs(0.0105)}px sans-serif`;
         ctx.fillText(`≈ ${fmtHrs(totalH)}`, mx+ox, my+oy);
       }
+    }
+
+    // ── Ramp-playback marker: the hall "now", scrubbed or animated ──
+    // Same pixel-space interpolation as the pacing ticks above, so the marker
+    // rides exactly the line the ticks sit on.
+    if (playback.f > 0) {
+      const px = axp + (bxp - axp) * playback.f, py = ayp + (byp - ayp) * playback.f;
+      ctx.beginPath(); ctx.arc(px, py, 8, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
+      ctx.strokeStyle = 'rgba(255,110,240,1)'; ctx.lineWidth = 3; ctx.stroke();
     }
   }
 
@@ -2976,6 +2989,161 @@ function exportPdfJpeg(canvas) {
 // anything reads it, and that restore is async. On web `hydrateFromNative()`
 // resolves immediately without touching anything, so the boot path is unchanged
 // — which is what the E2E boot test on the web build verifies.
+// ════════════════════════════════════════════════════════════
+//  SHARE: deep links, QR codes, one-tap briefing
+// ════════════════════════════════════════════════════════════
+
+/** The current A→B setup as a shareable absolute URL. */
+function currentShareUrl() {
+  const hash = encodeStateHash({
+    aTemp: state.aTemp, aRH: state.aRH, bTemp: state.bTemp, bRH: state.bRH,
+    tempUnit: state.tempUnit,
+    hallName: state.hall?.name || '',
+    slaName: state.slaProfiles[state.activeSla]?.name || '',
+    elevFt: state.hall?.elevFt,
+  });
+  // file:// (the shared single file) has no meaningful base URL to send —
+  // point recipients at the hosted app instead; the hash is what matters.
+  const base = location.protocol.startsWith('http')
+    ? location.href.split('#')[0]
+    : 'https://thorhale.github.io/Psychro/';
+  return base + hash;
+}
+
+/** Apply a deep link's state at boot. Returns true when one was applied. */
+function applyStateFromUrl() {
+  const s = parseStateHash(location.hash);
+  if (!s) return false;
+  applyScenario({
+    aTemp: s.aTemp, aRH: s.aRH, bTemp: s.bTemp, bRH: s.bRH,
+    hallName: s.hallName || '', slaName: s.slaName || '',
+    tempUnit: s.tempUnit || state.tempUnit,
+  });
+  // Pressure honesty: if the named hall isn't on this device, the link's
+  // elevation tells us what pressure the SENDER planned at. Never silently
+  // edit the local hall — say what happened instead.
+  if (s.hallName && state.hall?.name !== s.hallName) {
+    const drift =
+      s.elevFt != null && Math.abs((state.hall?.elevFt ?? 0) - s.elevFt) > 100
+        ? ` They planned at ${Math.round(s.elevFt).toLocaleString()} ft; your active hall is at ${Math.round(state.hall?.elevFt ?? 0).toLocaleString()} ft — pressure-dependent numbers will differ.`
+        : '';
+    toast(`Opened a shared scenario. Hall "${s.hallName}" isn't on this device — using your active hall.${drift}`, {
+      kind: drift ? 'warn' : 'info',
+      duration: 9000,
+    });
+  } else {
+    toast('Opened a shared scenario from the link.', { kind: 'ok' });
+  }
+  return true;
+}
+
+document.getElementById('share-link')?.addEventListener('click', () => {
+  copyText(currentShareUrl(), 'Link');
+});
+document.getElementById('share-qr')?.addEventListener('click', () => {
+  const url = currentShareUrl();
+  imageDialog({
+    title: 'Scan to open this exact setup',
+    note: 'Print it on the door placard or tape it to the CRAC — any phone camera opens the plan.',
+    render: (canvas) => drawQr(canvas, url, 6),
+  });
+});
+document.getElementById('copy-briefing')?.addEventListener('click', () => {
+  const p = state.pressure;
+  const a = deriveStateF(state.aTemp, state.aRH, p);
+  const b = deriveStateF(state.bTemp, state.bRH, p);
+  const chkA = checkSLA(state.aTemp, state.aRH);
+  const chkB = checkSLA(state.bTemp, state.bRH);
+  const text = buildBriefing({
+    a, b,
+    plan: planMove(),
+    hall: state.hall,
+    sla: state.slaProfiles[state.activeSla] || null,
+    verdicts: { aOk: chkA.ok, bOk: chkB.ok, aDetail: chkA.reason, bDetail: chkB.reason },
+    fmtT: (f) => `${dispTs(f)} ${tLabel()}`,
+    fmtDT: (fd) => `${Math.round(dispDeltaT(fd) * 10) / 10}${deltaLabel()}`,
+    fmtHrs,
+  });
+  copyText(text, 'Briefing');
+});
+
+// ════════════════════════════════════════════════════════════
+//  RAMP PLAYBACK — animate/scrub the hall's state along the plan
+// ════════════════════════════════════════════════════════════
+const playback = { f: 0, playing: false, raf: 0 };
+
+function playbackReadout() {
+  const info = document.getElementById('playback-info');
+  if (!info) return;
+  const totalH = planMove().hours;
+  if (playback.f <= 0 || totalH <= 0) {
+    info.textContent = totalH > 0 ? `plan: ${fmtHrs(totalH)}` : '—';
+    return;
+  }
+  // The plan line is straight in (T, W): interpolate those, then express the
+  // point as RH so the readout matches what the hover inspector would say.
+  const p = state.pressure;
+  const tcA = fToC(state.aTemp), tcB = fToC(state.bTemp);
+  const wA = humidityRatioG(tcA, state.aRH, p) / 1000;
+  const wB = humidityRatioG(tcB, state.bRH, p) / 1000;
+  const tc = tcA + (tcB - tcA) * playback.f;
+  const w = wA + (wB - wA) * playback.f;
+  const rh = Math.min(100, Math.max(0, rhFromW(tc, w, p)));
+  info.textContent = `t+${fmtHrs(totalH * playback.f)} · ${dispTs(cToF(tc))}${tLabel()} · ${rh.toFixed(0)}%`;
+}
+
+function playbackSet(f, fromScrub = false) {
+  playback.f = Math.min(1, Math.max(0, f));
+  if (!fromScrub) {
+    const scrub = document.getElementById('playback-scrub');
+    if (scrub) scrub.value = String(Math.round(playback.f * 1000));
+  }
+  playbackReadout();
+  drawChart(); // chart only — update() would persist state every frame
+}
+
+function playbackStop() {
+  playback.playing = false;
+  cancelAnimationFrame(playback.raf);
+  const btn = document.getElementById('playback-toggle');
+  if (btn) btn.textContent = '▶';
+}
+
+document.getElementById('playback-scrub')?.addEventListener('input', function () {
+  playbackStop();
+  playbackSet(Number(this.value) / 1000, true);
+});
+document.getElementById('playback-toggle')?.addEventListener('click', function () {
+  if (playback.playing) {
+    playbackStop();
+    return;
+  }
+  if (planMove().hours <= 0) {
+    toast('Nothing to play — Current and Target are the same point.', { kind: 'info' });
+    return;
+  }
+  playback.playing = true;
+  this.textContent = '⏸';
+  const DURATION_MS = 6000;
+  const startF = playback.f >= 1 ? 0 : playback.f;
+  const t0 = performance.now();
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const tick = (now) => {
+    if (!playback.playing) return;
+    let f = startF + (now - t0) / DURATION_MS;
+    // Reduced motion: same timeline, but the marker steps hour by hour
+    // instead of gliding — no continuous animation.
+    if (reduced) {
+      const totalH = planMove().hours;
+      f = totalH > 0 ? Math.floor(f * totalH) / totalH : f;
+    }
+    playbackSet(f);
+    if (playback.f >= 1) playbackStop();
+    else playback.raf = requestAnimationFrame(tick);
+  };
+  playback.raf = requestAnimationFrame(tick);
+});
+
 async function boot() {
   const { restored, platform } = await hydrateFromNative();
   if (restored.length) {
@@ -3004,6 +3172,8 @@ syncLegend();
 update();
 loadScenarios();
 renderScenarios();
+// A deep link wins over stored state — the person clicked it on purpose.
+if (applyStateFromUrl()) update();
 
 // Run validation on load; render results into a collapsible in-page panel
 (function(){
@@ -3096,12 +3266,7 @@ boot().catch((err) => {
       confirmLabel: 'Copy log',
     });
     if (copy) {
-      try {
-        await navigator.clipboard.writeText(text);
-        toast('Error log copied to clipboard.', { kind: 'ok' });
-      } catch {
-        toast('Could not access the clipboard on this device.', { kind: 'warn' });
-      }
+      await copyText(text, 'Error log');
       clearErrorLog();
     }
   });

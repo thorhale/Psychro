@@ -11,6 +11,37 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — share everywhere (deep links, QR, briefing, playback)
+
+- **Scenario deep links** (`src/state/urlstate.js`): the whole A→B setup in
+  the URL hash — paste it in a change ticket, text it to the on-call phone.
+  Versioned, hostile-input-hardened, property-tested round-trip; carries the
+  site elevation so a device without the named hall still lands at the right
+  pressure (and says so instead of silently substituting).
+- **QR codes** (`src/lib/qr.js`): a self-contained encoder (byte mode, EC-M,
+  versions 1–10, Reed–Solomon, mask selection) keeping the zero-runtime-
+  dependency rule. Proven like the physics: `test/qr.test.js` round-trips
+  every version and 25 fuzzed payloads through an independent decoder (jsqr,
+  devDependency only) — which caught a real spec bug during development
+  (alignment patterns on the timing column must be drawn, not skipped).
+- **One-tap briefing** (`src/app/briefing.js`): the planned move as plain
+  English — deltas, duration, binding constraint, SLA verdicts, site basis —
+  built from the same derived states every display surface uses, so the prose
+  cannot contradict the table beside it. Copy-to-clipboard via a new shared
+  `copyText` helper.
+- **Ramp playback**: play/scrub the move along the chart's A→B line, marker
+  riding exactly the pacing-tick interpolation, readout expressing the
+  scrubbed point through the same core the hover inspector uses. Honors
+  `prefers-reduced-motion` (steps hour-by-hour instead of gliding). The
+  animation loop redraws the chart only — never the persistence path.
+
+### Changed
+
+- Bundle size budget raised 220/65 → 280/85 kB (raw/gzipped) — deliberate
+  growth: the sensor suite, QR encoder, deep links, briefing and playback add
+  ~9 kB gzipped, with headroom for the logbook/CSV/training milestones. The
+  budget still fails instantly on a vendored library or an inlined asset.
+
 ### Added — sensor-validation suite (six external reference methods)
 
 - The Sensor Validation card grew from one method to six, each producing a

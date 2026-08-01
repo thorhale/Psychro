@@ -217,8 +217,14 @@ check('blockworld/ copied through', existsSync(join(dist, 'blockworld', 'index.h
 // different artifact from the one running on a phone, which is a worse
 // consistency risk than a few kB. The budget exists to catch ACCIDENTAL growth
 // — raise it only with a note in CHANGELOG.md saying what was added and why.
-const RAW_BUDGET_KB = 220;
-const GZIP_BUDGET_KB = 65;
+//
+// Raised 220/65 → 280/85 for the feature round: the six-method sensor suite,
+// the self-contained QR encoder, deep links, the briefing generator and ramp
+// playback (~9 kB gzipped so far, headroom for the logbook/CSV/training
+// milestones). Still small enough that a vendored library or an accidental
+// asset inline blows the budget immediately.
+const RAW_BUDGET_KB = 280;
+const GZIP_BUDGET_KB = 85;
 const rawKb = statSync(join(dist, 'index.html')).size / 1024;
 const gzipKb = gzipSync(readFileSync(join(dist, 'index.html'))).length / 1024;
 check(
