@@ -234,6 +234,10 @@
   .sv-marginal { color:var(--warn); font-weight:700; }
   .sv-fail { color:var(--danger); font-weight:700; }
   .sv-actions { margin-top:10px; }
+  /* Ladder mode: readable from the floor with the psychrometer still in hand */
+  .sv-ladder-on { font-size:1.4rem; line-height:1.55; }
+  .sv-ladder-on .sv-big { font-size:1.7rem; }
+  .sv-ladder-on .cap-hint { font-size:0.95rem; }
   /* Method tabs: one strip, six external-validation methods */
   .sv-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
   .sv-tab { background:var(--bg); border:1px solid var(--border); color:var(--muted);
@@ -562,6 +566,7 @@
     <button class="scn-btn scn-btn-primary" id="share-link">🔗 Copy link</button>
     <button class="scn-btn" id="share-qr">▦ QR code</button>
     <button class="scn-btn" id="copy-briefing">📋 Copy briefing</button>
+    <button class="scn-btn" id="share-nfc" style="display:none">📳 Write NFC tag</button>
   </div>
   <div class="scn-divider"></div>
   <div class="scn-export-label">Share your whole setup — every hall, building, SLA, custom site, and scenario — as one save file. Loading a colleague's file adds their data to yours (same names update, new ones append; nothing of yours is deleted):</div>
@@ -745,9 +750,36 @@
       <button class="scn-btn" id="sv-to-current" disabled>→ Set as Current point</button>
       <input type="text" id="sv-sensor-label" class="scn-input" style="flex:1; min-width:150px;" placeholder="Sensor label (e.g. CRAH-3 supply)">
       <button class="scn-btn" id="sv-log" disabled>＋ Log check</button>
+      <button class="scn-btn" id="sv-ladder" style="display:none" aria-pressed="false" title="Big type + spoken verdicts, for when both hands hold a psychrometer">🔊 Ladder mode</button>
     </div>
     <div id="sv-logbook"></div>
     <div class="formula-note">All methods run at site pressure <span id="sv-pressure">—</span> where pressure matters. Verdict bands: RH ±2% PASS / ±5% MARGINAL (typical capacitive spec); temperature ±0.9 °F PASS / ±1.8 °F MARGINAL — each widened by the reference's stated uncertainty, shown with every verdict. Methods and references: <code>docs/sensor-validation.md</code>.</div>
+  </div>
+</details>
+
+<!-- TRAINING — ENVELOPE ESCAPE ROOM -->
+<details class="card sect">
+  <summary><span class="sect-title">Training — Envelope Escape Room</span><span class="sect-sub" id="tr-summary">drill the recovery instinct</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+    <div class="calc-intro">A plant fault hits a standard training hall (200,000 ft³ · cool 6 / warm 4 °F/hr · dehum 100 / hum 80 lb/hr · the Base SLA). Commit a recovery target; the physics referee plays out four hours minute-by-minute and scores the SLA time you kept. Same core equations as the planner — simplified plant dynamics, honestly simplified. Deterministic per seed: share a challenge code and compete on identical faults.</div>
+    <div class="sv-grid">
+      <div class="sla-field"><label>Scenario</label><select id="tr-scenario" class="sla-select"></select></div>
+      <div class="sla-field"><label>Seed <span class="cap-hint">same seed = same fault</span></label><input type="number" id="tr-seed" step="1" min="0" value="42"></div>
+      <div class="sla-field" style="align-self:end"><button class="scn-btn" id="tr-reroll">🎲 New seed</button></div>
+    </div>
+    <div class="calc-res" id="tr-brief">—</div>
+    <div class="sv-grid" style="margin-top:10px">
+      <div class="sla-field"><label>Your target temp <span class="tunit">°F</span></label><input type="number" id="tr-temp" step="0.5" placeholder="—"></div>
+      <div class="sla-field"><label>Your target RH %</label><input type="number" id="tr-rh" step="1" min="1" max="99" placeholder="—"></div>
+      <div class="sla-field" style="align-self:end; display:flex; gap:8px;">
+        <button class="scn-btn scn-btn-primary" id="tr-commit">Commit recovery</button>
+        <button class="scn-btn" id="tr-idle" title="See what hesitation costs">Hesitate…</button>
+      </div>
+    </div>
+    <div class="calc-res" id="tr-result" style="display:none"></div>
+    <canvas id="tr-spark" style="width:100%; height:70px; display:none; margin-top:8px;"></canvas>
+    <div class="sv-actions"><button class="scn-btn" id="tr-share" style="display:none">🔗 Copy challenge code</button></div>
+    <div class="formula-note">The referee is <code>src/core/trainer.js</code>: explicit 1-minute Euler steps of the moisture/temperature balance, plant rates capped, verdicts from the same SLA check the badge uses. A drill, not a simulator — the real hall has thermal mass and control loops this deliberately ignores.</div>
   </div>
 </details>
 

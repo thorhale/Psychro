@@ -11,6 +11,32 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — training mode, NFC tags, hands-free voice
+
+- **Envelope Escape Room** (`src/core/trainer.js`): a training card where a
+  plant fault hits a fixed training hall — stuck humidifier, chiller down,
+  economizer cold snap, dehumidifier tagged out during a wash-down — and the
+  trainee commits a recovery target. A physics referee (same core equations
+  as the planner, explicit 1-minute steps, plant rates capped) plays out four
+  hours and scores the SLA minutes kept plus a stabilization bonus. Faults
+  are jittered deterministically per seed, so a **challenge code**
+  (`#train=<scenario>.<seed>`) reproduces the identical run on any device —
+  the training hall is fixed at standard pressure for exactly that reason.
+  The "Hesitate…" button runs the fault with no plant response: the cost of
+  not committing is the game's core lesson. Unit-tested for determinism,
+  physicality, and — because a drill must be beatable — winnability of every
+  scenario at both test and standard pressure.
+- **NFC hall tags**: on browsers with Web NFC (Chrome on Android), a "Write
+  NFC tag" button writes the current scenario deep-link to a physical tag —
+  stick it on the hall door, tap it with any phone. Feature-detected: the
+  button simply does not exist elsewhere, and QR remains the universal
+  fallback.
+- **Ladder mode**: a hands-free toggle on the sensor-validation card — big
+  type readable from the floor, and each new verdict spoken aloud through
+  the device's own speech synthesis (local voices only, off by default,
+  feature-detected). For when both hands are holding a psychrometer up a
+  ladder.
+
 ### Added — operator companion (logbook, plan-vs-actual, placard)
 
 - **Sensor drift logbook**: any validation check (any of the six methods) can

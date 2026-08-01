@@ -431,6 +431,91 @@ test.describe('operator companion', () => {
   });
 });
 
+test.describe('training mode', () => {
+  test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
+
+  test('a committed recovery gets refereed and scored', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#tr-scenario').selectOption('stuck-humidifier');
+    await page.fill('#tr-temp', '72');
+    await page.fill('#tr-rh', '38');
+    await page.locator('#tr-commit').click();
+    // The known-good answer from the unit suite survives the whole run.
+    await expect(page.locator('#tr-result')).toContainText('SURVIVED');
+    await expect(page.locator('#tr-result')).toContainText('Score');
+    await expect(page.locator('#tr-spark')).toBeVisible();
+  });
+
+  test('hesitating against the stuck humidifier breaches the dew-point cap', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#tr-scenario').selectOption('stuck-humidifier');
+    await page.locator('#tr-idle').click();
+    await expect(page.locator('#tr-result')).toContainText('BREACHED');
+    await expect(page.locator('#tr-result')).toContainText('dew point');
+    await expect(page.locator('#tr-result')).toContainText('hesitation');
+  });
+
+  test('a challenge code round-trips: copy, open, same scenario and seed', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#tr-scenario').selectOption('cold-snap');
+    await page.fill('#tr-seed', '777');
+    await page.dispatchEvent('#tr-seed', 'input');
+    await page.locator('#tr-share').click();
+    await expect(page.locator('.ntf-toast')).toContainText('Challenge code copied');
+    const url = await page.evaluate(() => navigator.clipboard.readText());
+    expect(url).toContain('#train=cold-snap.777');
+
+    // Opening the code lands preloaded on the identical fault. Leave the page
+    // first — a hash-only goto is a same-document navigation and never reboots.
+    await page.goto('about:blank');
+    await page.goto('./#train=cold-snap.777');
+    await expect(page.locator('.ntf-toast')).toContainText('Challenge accepted');
+    await expect(page.locator('#tr-scenario')).toHaveValue('cold-snap');
+    await expect(page.locator('#tr-seed')).toHaveValue('777');
+    await expect(page.locator('#tr-brief')).toContainText('fault seed 777');
+  });
+});
+
+test.describe('feature-detected extras', () => {
+  test('the NFC button stays hidden where Web NFC does not exist', async ({ page }) => {
+    // Desktop Chromium has no NDEFReader — the button must not tease.
+    await page.goto('./');
+    await expandAll(page);
+    expect(await page.evaluate(() => 'NDEFReader' in window)).toBe(false);
+    await expect(page.locator('#share-nfc')).toBeHidden();
+  });
+
+  test('ladder mode speaks the verdict on screen', async ({ page }) => {
+    // Stub the speech engine BEFORE the app boots and capture what it is
+    // asked to say — the assertion is on the spoken text, not on audio.
+    await page.addInitScript(() => {
+      window.__spoken = [];
+      window.speechSynthesis.speak = (u) => window.__spoken.push(u.text);
+    });
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#sv-ladder').click();
+    await expect(page.locator('#sv-ladder')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#sv-res')).toHaveClass(/sv-ladder-on/);
+
+    // An ice-point check: sensor reads 32.4 °F against the 32.000 reference.
+    await page.locator('#sv-tab-ice').click();
+    await page.fill('#sv-ice-t', '32.4');
+    await page.dispatchEvent('#sv-ice-t', 'input');
+    await expect(page.locator('#sv-res')).toContainText('PASS');
+    await expect
+      .poll(async () => page.evaluate(() => window.__spoken.join(' ')))
+      .toContain('PASS');
+
+    // Toggling off restores quiet and normal type.
+    await page.locator('#sv-ladder').click();
+    await expect(page.locator('#sv-res')).not.toHaveClass(/sv-ladder-on/);
+  });
+});
+
 test.describe('persistence', () => {
   test('a saved scenario survives a reload', async ({ page }) => {
     await page.goto('./');
