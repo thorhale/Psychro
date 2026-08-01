@@ -36,11 +36,21 @@ describe('normalizeHall', () => {
       results: 'nope',
     });
     expect(h.elevFt).toBe(0);
-    expect(h.effPct).toBe(100);
+    expect(h.effPct).toBe(150);
     expect(h.derateCoolPct).toBe(0);
     expect(h.canHumidify).toBe(false);
     expect(h.rateCoolF).toBeNull();
     expect(h.results).toEqual([]);
+  });
+
+  it('a calibrated efficiency above 100% survives normalization', () => {
+    // The plant-vs-actual calibration flow legitimately produces >100 %
+    // (staged equipment beating nameplate). The schema once clamped to 100,
+    // so a calibrated 120 silently degraded on every reload — this pins the
+    // fix: the schema ceiling (150) matches the UI's.
+    expect(normalizeHall({ effPct: 120 }).effPct).toBe(120);
+    expect(normalizeHall({ effPct: 150 }).effPct).toBe(150);
+    expect(normalizeHall({ effPct: 151 }).effPct).toBe(150);
   });
 
   it('derives the name from the site when present', () => {

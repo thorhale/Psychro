@@ -28,6 +28,8 @@ import {
   rhFromWetBulb,
   rhFromPsychrometer,
 } from '../core/psychro.js';
+import { saltRh } from '../core/saltref.js';
+import { boilingPointC } from '../core/boilref.js';
 
 export function runSelfTest() {
   const cases = [];
@@ -105,6 +107,13 @@ export function runSelfTest() {
     unit: '',
     pass: amb.ambiguous === true,
   });
+
+  // 11. External calibration references (sensor-validation suite) —
+  // Greenspan (1977) salt fixed points and IF-97 steam-table boiling points.
+  T('salt NaCl @25°C', saltRh('nacl', 25).rh, 75.29, 0.05, '%RH');
+  T('salt MgCl₂ @25°C', saltRh('mgcl2', 25).rh, 32.78, 0.05, '%RH');
+  T('boil @101.325 kPa', boilingPointC(101.325), 99.97, 0.05, '°C');
+  T('boil @80 kPa', boilingPointC(80), 93.5, 0.06, '°C');
 
   const passed = cases.filter((c) => c.pass).length;
   const failed = cases.length - passed;

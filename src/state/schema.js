@@ -46,7 +46,11 @@ export function normalizeHall(h) {
   if (h.calc == null || typeof h.calc !== 'object') h.calc = {};
   if (!h.name || typeof h.name !== 'string')
     h.name = h.siteName ? `${h.siteName} · Hall` : 'Hall 1';
-  h.effPct = isNum(h.effPct) ? clamp(h.effPct, 1, 100) : 85;
+  // 1–150, matching the UI: a plant genuinely can beat nameplate (staged
+  // equipment, favorable conditions), and the calibration flow produces
+  // >100 values. This was 1–100 once — a calibrated 120 % silently became
+  // 100 % on every reload. test/schema.test.js pins the survival.
+  h.effPct = isNum(h.effPct) ? clamp(h.effPct, 1, 150) : 85;
   for (const k of ['derateCoolPct', 'derateWarmPct', 'derateDehumPct', 'derateHumPct'])
     h[k] = isNum(h[k]) ? clamp(h[k], 0, 100) : 100;
   if (!Array.isArray(h.results)) h.results = [];
