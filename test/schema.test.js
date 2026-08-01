@@ -12,6 +12,9 @@ import {
   isValidScenario,
   isValidSite,
   HALL_KEYS,
+  isValidLogEntry,
+  normalizeSensorLog,
+  SENSOR_LOG_MAX,
 } from '../src/state/schema.js';
 
 describe('normalizeHall', () => {
@@ -158,6 +161,38 @@ describe('validateSaveFile', () => {
     expect(v.slas.map((s) => s.name)).toEqual(['OK SLA']);
     expect(v.sites).toHaveLength(1);
     expect(v.scenarios).toHaveLength(1);
+  });
+});
+
+describe('sensor log schema', () => {
+  const good = {
+    sensor: 'CRAH-1 supply', method: 'salt', quantity: 'rh',
+    ref: 75.3, u: 0.4, reading: 74.1, err: -1.2, date: '2026-08-01T00:00:00.000Z',
+  };
+
+  it('accepts a complete entry and rejects every mutilation of it', () => {
+    expect(isValidLogEntry(good)).toBe(true);
+    for (const kill of [
+      { sensor: '' }, { sensor: 3 }, { method: null }, { quantity: 'pressure' },
+      { ref: 'high' }, { u: -1 }, { reading: NaN }, { err: Infinity }, { date: 'yesterday' },
+    ]) {
+      expect(isValidLogEntry({ ...good, ...kill }), JSON.stringify(kill)).toBe(false);
+    }
+    expect(isValidLogEntry(null)).toBe(false);
+  });
+
+  it('normalizes: drops invalid, sorts by date, caps at the maximum', () => {
+    const day = (n) => ({ ...good, date: new Date(Date.UTC(2026, 0, 1) + n * 86400000).toISOString() });
+    const raw = [day(3), { junk: true }, day(1), day(2)];
+    const out = normalizeSensorLog(raw);
+    expect(out).toHaveLength(3);
+    expect(out.map((e) => e.date)).toEqual([day(1).date, day(2).date, day(3).date]);
+
+    const many = Array.from({ length: SENSOR_LOG_MAX + 50 }, (_, i) => day(i));
+    const capped = normalizeSensorLog(many);
+    expect(capped).toHaveLength(SENSOR_LOG_MAX);
+    // Newest survive the cap — history serves the trend, and trends live at the end.
+    expect(capped[capped.length - 1].date).toBe(day(SENSOR_LOG_MAX + 49).date);
   });
 });
 

@@ -141,6 +141,44 @@ export function isValidSite(c) {
  *   The returned arrays contain only entries that passed validation, already
  *   normalized — the caller can merge them without further checks.
  */
+/** Cap on stored sensor-log entries — bounds storage; oldest are dropped. */
+export const SENSOR_LOG_MAX = 500;
+
+/**
+ * One logged sensor-validation check. `quantity` scopes the error's unit
+ * ('rh' → %RH, 'temp' → °F); mixing them in one trend would be meaningless,
+ * so it is part of the record, not an afterthought.
+ */
+export function isValidLogEntry(e) {
+  return (
+    e != null &&
+    typeof e === 'object' &&
+    typeof e.sensor === 'string' &&
+    e.sensor.trim().length > 0 &&
+    typeof e.method === 'string' &&
+    (e.quantity === 'rh' || e.quantity === 'temp') &&
+    isNum(e.ref) &&
+    isNum(e.u) &&
+    e.u >= 0 &&
+    isNum(e.reading) &&
+    isNum(e.err) &&
+    typeof e.date === 'string' &&
+    isFinite(new Date(e.date).getTime())
+  );
+}
+
+/**
+ * Normalize a stored sensor log: keep only valid entries, oldest-first,
+ * capped at SENSOR_LOG_MAX (newest win — history is for trends, and a trend
+ * that needs >500 points has a different problem).
+ */
+export function normalizeSensorLog(raw) {
+  const list = (Array.isArray(raw) ? raw : [])
+    .filter(isValidLogEntry)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  return list.slice(-SENSOR_LOG_MAX);
+}
+
 export function validateSaveFile(data) {
   if (data == null || typeof data !== 'object' || Array.isArray(data)) {
     return { ok: false, error: 'Not a save file', halls: [], slas: [], sites: [], scenarios: [] };
@@ -169,6 +207,7 @@ export function validateSaveFile(data) {
     .map((s) => normalizeSla({ ...s }));
   const sites = (Array.isArray(data.customSites) ? data.customSites : []).filter(isValidSite);
   const scenarios = (Array.isArray(data.scenarios) ? data.scenarios : []).filter(isValidScenario);
+  const sensorLog = normalizeSensorLog(data.sensorLog);
 
-  return { ok: true, halls, slas, sites, scenarios };
+  return { ok: true, halls, slas, sites, scenarios, sensorLog };
 }

@@ -247,6 +247,10 @@
   .playback-row { display:flex; align-items:center; gap:10px; margin:6px 0 2px; }
   .playback-row input[type=range] { flex:1; accent-color:var(--stream-teal); }
   .playback-info { font:600 .7rem var(--mono); color:var(--muted); white-space:nowrap; min-width:120px; text-align:right; }
+  /* Sensor drift logbook table */
+  .svlog-table { width:100%; border-collapse:collapse; font:.68rem var(--mono); margin-top:4px; }
+  .svlog-table th { color:var(--muted); text-align:left; font-weight:600; padding:3px 8px 3px 0; border-bottom:1px solid var(--border); }
+  .svlog-table td { padding:3px 8px 3px 0; border-bottom:1px solid rgba(31,58,82,.5); }
   .scn-btn:disabled { opacity:.35; cursor:not-allowed; }
   .calc-typesel { width:100%; margin-bottom:8px; }
   .dh-pane { margin-bottom:2px; }
@@ -578,6 +582,7 @@
   <div class="scn-actions">
     <button class="scn-btn scn-btn-img" id="export-png">🖼 Export PNG</button>
     <button class="scn-btn scn-btn-img" id="export-pdf">📄 Export PDF</button>
+    <button class="scn-btn scn-btn-img" id="export-placard">🚪 Door placard PDF</button>
   </div>
 </div>
 </details>
@@ -614,6 +619,7 @@
     <button class="leg-item" data-vis="SLA"><span class="leg-line" style="background:rgba(255,255,255,.7);border-top:2px dashed rgba(255,255,255,.7)"></span>SLA</button>
     <button class="leg-item" data-vis="plan"><span class="leg-line" style="background:#ff6ef0"></span>A→B</button>
     <button class="leg-item" data-vis="timepts"><span class="leg-dot" style="background:#ff6ef0;border:1.5px solid #000"></span>Time pts</button>
+    <button class="leg-item" data-vis="actual"><span class="leg-line" style="background:#39d2c0"></span>Actual</button>
     <button class="leg-item" data-vis="specvol"><span class="leg-line" style="background:rgba(210,180,120,.9)"></span>v m³/kg</button>
     <button class="leg-item" data-vis="enthalpy"><span class="leg-line" style="background:rgba(170,140,230,.9)"></span>h kJ/kg</button>
   </div>
@@ -735,9 +741,12 @@
     </div>
 
     <div class="calc-res" id="sv-res">Enter readings to compute the reference value.</div>
-    <div class="sv-actions">
+    <div class="sv-actions" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
       <button class="scn-btn" id="sv-to-current" disabled>→ Set as Current point</button>
+      <input type="text" id="sv-sensor-label" class="scn-input" style="flex:1; min-width:150px;" placeholder="Sensor label (e.g. CRAH-3 supply)">
+      <button class="scn-btn" id="sv-log" disabled>＋ Log check</button>
     </div>
+    <div id="sv-logbook"></div>
     <div class="formula-note">All methods run at site pressure <span id="sv-pressure">—</span> where pressure matters. Verdict bands: RH ±2% PASS / ±5% MARGINAL (typical capacitive spec); temperature ±0.9 °F PASS / ±1.8 °F MARGINAL — each widened by the reference's stated uncertainty, shown with every verdict. Methods and references: <code>docs/sensor-validation.md</code>.</div>
   </div>
 </details>

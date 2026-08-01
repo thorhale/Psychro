@@ -51,6 +51,7 @@ export const OWNED_KEYS = [
   'sdc_psychro_slaProfiles_v1',
   'sdc_psychro_scenarios_v1',
   'sdc_psychro_custom_sites_v1',
+  'sdc_psychro_sensorlog_v1',
   'sdc_psychro_install_dismissed_v1',
 ];
 

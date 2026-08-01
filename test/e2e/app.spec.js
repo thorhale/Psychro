@@ -373,6 +373,64 @@ test.describe('sensor validation suite', () => {
   });
 });
 
+test.describe('operator companion', () => {
+  test('a logged check lands in the drift logbook and survives reload', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#sv-tab-salt').click();
+    await page.locator('#sv-salt-sel').selectOption('nacl');
+    await page.fill('#sv-salt-t', '77');
+    await page.dispatchEvent('#sv-salt-t', 'input');
+    await page.fill('#sv-salt-rh', '74');
+    await page.dispatchEvent('#sv-salt-rh', 'input');
+    await page.fill('#sv-sensor-label', 'CRAH-1 supply');
+    await page.locator('#sv-log').click();
+    await expect(page.locator('.ntf-toast')).toContainText('Logged');
+    await expect(page.locator('#sv-logbook')).toContainText('CRAH-1 supply');
+    await expect(page.locator('.svlog-table tbody tr')).toHaveCount(1);
+
+    await page.reload();
+    await expandAll(page);
+    await expect(page.locator('#sv-logbook')).toContainText('CRAH-1 supply');
+  });
+
+  test('a BMS trend CSV imports, reports honestly, and overlays the chart', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    const snapshot = () =>
+      page.evaluate(() => document.getElementById('psychCanvas').toDataURL().length);
+    const before = await snapshot();
+
+    const csv =
+      'Timestamp,Temp (°F),RH (%)\n' +
+      Array.from({ length: 12 }, (_, i) => {
+        const t = new Date(Date.UTC(2026, 6, 1, i)).toISOString();
+        return `${t},${(68 + i * 0.6).toFixed(1)},${(45 - i * 0.8).toFixed(1)}`;
+      }).join('\n');
+    await page.setInputFiles('#trend-file', {
+      name: 'trend.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(csv),
+    });
+
+    await expect(page.locator('#trend-res')).toContainText('12 points');
+    await expect(page.locator('#trend-res')).toContainText('°F from the header');
+    await expect(page.locator('#trend-res')).toContainText('Achieved');
+    // The Actual legend layer switched itself on and the chart changed.
+    await expect(page.locator('.leg-item[data-vis="actual"]')).not.toHaveClass(/leg-off/);
+    expect(await snapshot()).not.toBe(before);
+  });
+
+  test('the door placard downloads as a PDF', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('#export-placard').click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe('sdc_psychrometric.pdf');
+  });
+});
+
 test.describe('persistence', () => {
   test('a saved scenario survives a reload', async ({ page }) => {
     await page.goto('./');
