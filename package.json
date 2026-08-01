@@ -43,6 +43,7 @@
     "eslint": "^10.8.0",
     "globals": "^17.8.0",
     "http-server": "^14.1.1",
+    "jsqr": "^1.4.0",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vite-plugin-singlefile": "^2.3.3",

@@ -264,6 +264,68 @@ test.describe('sensor validation', () => {
   });
 });
 
+test.describe('share and playback', () => {
+  test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
+
+  test('a deep link lands on its exact numbers', async ({ page }) => {
+    await page.goto('./#v=1&a=80,30&b=70,50');
+    await expect(page.locator('#selftest-badge')).toContainText('passed');
+    await expect(page.locator('#a-temp')).toHaveValue('80');
+    await expect(page.locator('#a-rh')).toHaveValue('30');
+    await expect(page.locator('#b-temp')).toHaveValue('70');
+    await expect(page.locator('.ntf-toast')).toContainText('shared scenario');
+  });
+
+  test('copy link produces a URL that parses back to the current state', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#share-link').click();
+    await expect(page.locator('.ntf-toast')).toContainText('Link copied');
+    const url = await page.evaluate(() => navigator.clipboard.readText());
+    expect(url).toContain('#v=1');
+    // URLSearchParams percent-encodes the comma; compare decoded.
+    expect(decodeURIComponent(url)).toMatch(/a=68,4[45]/); // default Current: 68 °F / ~45 %
+  });
+
+  test('the QR dialog renders a real code', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#share-qr').click();
+    const dialog = page.locator('.ntf-dialog');
+    await expect(dialog).toBeVisible();
+    const px = await dialog.locator('canvas').evaluate((c) => {
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let dark = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] < 128) dark++;
+      return { w: c.width, dark };
+    });
+    expect(px.w).toBeGreaterThan(100); // modules × scale + quiet zone
+    expect(px.dark).toBeGreaterThan(300); // an actual pattern, not a blank
+  });
+
+  test('the briefing narrates the same numbers the app shows', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#copy-briefing').click();
+    await expect(page.locator('.ntf-toast')).toContainText('Briefing copied');
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    expect(text).toContain('68 °F / 45% RH');
+    expect(text).toContain('verify against site instrumentation');
+  });
+
+  test('scrubbing the playback moves the marker and the readout', async ({ page }) => {
+    await page.goto('./');
+    const snapshot = () =>
+      page.evaluate(() => document.getElementById('psychCanvas').toDataURL().length);
+    const before = await snapshot();
+    await page.locator('#playback-scrub').fill('500');
+    await page.dispatchEvent('#playback-scrub', 'input');
+    await page.waitForTimeout(150);
+    expect(await snapshot()).not.toBe(before);
+    await expect(page.locator('#playback-info')).toContainText('t+');
+  });
+});
+
 test.describe('sensor validation suite', () => {
   test('salt-chamber method grades a sensor against Greenspan NaCl', async ({ page }) => {
     await page.goto('./');

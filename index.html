@@ -243,6 +243,10 @@
   .sv-pane { display:none; }
   .sv-pane.active { display:block; }
   .sv-hint { color:var(--muted); font-size:.7rem; margin-top:6px; line-height:1.5; }
+  /* Ramp playback strip under the chart */
+  .playback-row { display:flex; align-items:center; gap:10px; margin:6px 0 2px; }
+  .playback-row input[type=range] { flex:1; accent-color:var(--stream-teal); }
+  .playback-info { font:600 .7rem var(--mono); color:var(--muted); white-space:nowrap; min-width:120px; text-align:right; }
   .scn-btn:disabled { opacity:.35; cursor:not-allowed; }
   .calc-typesel { width:100%; margin-bottom:8px; }
   .dh-pane { margin-bottom:2px; }
@@ -549,6 +553,13 @@
     <input type="file" id="scn-file" accept="application/json,.json" style="display:none">
   </div>
   <div class="scn-divider"></div>
+  <div class="scn-export-label">Share exactly this A→B setup as a link or a scannable code — the recipient lands on the same numbers, same site pressure:</div>
+  <div class="scn-actions">
+    <button class="scn-btn scn-btn-primary" id="share-link">🔗 Copy link</button>
+    <button class="scn-btn" id="share-qr">▦ QR code</button>
+    <button class="scn-btn" id="copy-briefing">📋 Copy briefing</button>
+  </div>
+  <div class="scn-divider"></div>
   <div class="scn-export-label">Share your whole setup — every hall, building, SLA, custom site, and scenario — as one save file. Loading a colleague's file adds their data to yours (same names update, new ones append; nothing of yours is deleted):</div>
   <div class="scn-actions">
     <button class="scn-btn scn-btn-primary" id="save-share">📤 Share save file</button>
@@ -588,6 +599,11 @@
     </div>
   </div>
   <div class="zoom-hint">Scroll / pinch to zoom · drag to pan · double-click to reset · hover to inspect any point · <strong>Shift-click sets Target</strong> · <strong>Alt-click sets Current</strong>.</div>
+  <div class="playback-row" id="playback-row">
+    <button class="zoom-btn" id="playback-toggle" title="Play the move hour by hour">▶</button>
+    <input type="range" id="playback-scrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the planned move">
+    <span id="playback-info" class="playback-info">—</span>
+  </div>
   <div class="psych-wrap"><canvas id="psychCanvas" role="img" aria-label="Psychrometric chart. The state points and derived properties are listed in the properties table below." tabindex="0"></canvas><div class="ch-line" id="ch-vline"></div><div class="ch-line" id="ch-hline"></div><div id="chart-tip"></div></div>
   <div class="legend" id="legend">
     <button class="leg-item" data-vis="Rec"><span class="leg-line" style="background:rgba(255,255,255,.4);border-top:2px dashed rgba(255,255,255,.4)"></span>Rec.</button>

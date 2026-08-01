@@ -82,6 +82,76 @@ export function toast(message, opts = {}) {
 }
 
 /**
+ * Modal that shows a rendered canvas (QR codes) with a title and note.
+ * Same look/roles as confirmDialog; resolves when dismissed.
+ * @param {{title:string, note?:string, render:(canvas:HTMLCanvasElement)=>void}} opts
+ * @returns {Promise<void>}
+ */
+export function imageDialog(opts) {
+  ensureHost();
+  return new Promise((resolve) => {
+    const scrim = document.createElement('div');
+    scrim.className = 'ntf-scrim';
+    const dlg = document.createElement('div');
+    dlg.className = 'ntf-dialog';
+    dlg.setAttribute('role', 'dialog');
+    dlg.setAttribute('aria-modal', 'true');
+
+    const h3 = document.createElement('h3');
+    h3.textContent = opts.title;
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'display:block;margin:12px auto;image-rendering:pixelated;max-width:100%;';
+    opts.render(canvas);
+    const p = document.createElement('p');
+    if (opts.note) p.textContent = opts.note;
+    const actions = document.createElement('div');
+    actions.className = 'ntf-actions';
+    const ok = document.createElement('button');
+    ok.textContent = 'Close';
+    ok.className = 'ntf-primary';
+
+    const close = () => {
+      scrim.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve();
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('keydown', onKey);
+    ok.addEventListener('click', close);
+    scrim.addEventListener('click', (e) => {
+      if (e.target === scrim) close();
+    });
+
+    actions.appendChild(ok);
+    dlg.append(h3, canvas, ...(opts.note ? [p] : []), actions);
+    scrim.appendChild(dlg);
+    document.body.appendChild(scrim);
+    ok.focus();
+  });
+}
+
+/**
+ * Copy text to the clipboard with user feedback — the one shared path for
+ * every copy action, so the toast wording and the no-clipboard fallback
+ * cannot drift between features.
+ * @param {string} text
+ * @param {string} [what] label for the toast, e.g. 'Link'
+ * @returns {Promise<boolean>} whether the copy succeeded
+ */
+export async function copyText(text, what = 'Text') {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(`${what} copied to clipboard.`, { kind: 'ok' });
+    return true;
+  } catch {
+    toast('Could not access the clipboard on this device.', { kind: 'warn' });
+    return false;
+  }
+}
+
+/**
  * Promise-based confirm dialog — non-blocking replacement for `confirm()`.
  * @param {{title: string, message: string, confirmLabel?: string,
  *          danger?: boolean}} opts
