@@ -42,7 +42,10 @@ import {
   migrateLegacyProfiles,
   validateSaveFile,
   isValidScenario,
+  normalizeSensorLog,
 } from '../state/schema.js';
+import { driftFit } from '../core/driftfit.js';
+import { parseTrendCsv } from '../lib/trendcsv.js';
 import {
   LS_KEY_V1,
   LS_KEY_V3,
@@ -132,7 +135,7 @@ const state = {
   bTemp: 87, bRH: 28,
   showEnvelopes: true,
   // Per-boundary visibility — each can be toggled independently from the legend.
-  visible: { Rec:true, A1:true, A2:true, A3:true, A4:true, SLA:true, plan:true, timepts:true, specvol:true, enthalpy:false },
+  visible: { Rec:true, A1:true, A2:true, A3:true, A4:true, SLA:true, plan:true, timepts:true, specvol:true, enthalpy:false, actual:false },
 
   tempUnit: 'F',   // 'F' | 'C' | 'K' — display only; default Fahrenheit
 
@@ -546,6 +549,9 @@ const SV_METHODS = {
         svRhVerdictHtml(svState.sensorRh, rh, uRef),
       summary: `${svFmtT(svState.dbF)}/${svFmtT(svState.wbF)}${tLabel()} → ${rh.toFixed(1)}% RH`,
       canSetCurrent: { tempF: svState.dbF, rh },
+      loggable: svState.sensorRh != null
+        ? { quantity: 'rh', ref: rh, u: uRef, reading: svState.sensorRh, err: svState.sensorRh - rh }
+        : null,
     };
   },
 
@@ -569,6 +575,9 @@ const SV_METHODS = {
         svRhVerdictHtml(svState.dpRh, rh, uRef),
       summary: `dew point → ${rh.toFixed(1)}% RH`,
       canSetCurrent: { tempF: svState.dpDbF, rh },
+      loggable: svState.dpRh != null
+        ? { quantity: 'rh', ref: rh, u: uRef, reading: svState.dpRh, err: svState.dpRh - rh }
+        : null,
     };
   },
 
@@ -594,6 +603,9 @@ const SV_METHODS = {
         ` <span class="cap-hint">± ${r.u.toFixed(2)} — table ±${r.uTable.toFixed(2)} (Greenspan 1977) ⊕ temp ±${r.uTemp.toFixed(2)} (${r.slope.toFixed(2)} %RH/°C × ±${uTF}${deltaLabel()} chamber)</span>` +
         svRhVerdictHtml(svState.saltSensorRh, r.rh, r.u),
       summary: `${r.salt.name.split(' ')[0]} → ${r.rh.toFixed(1)}% RH`,
+      loggable: svState.saltSensorRh != null
+        ? { quantity: 'rh', ref: r.rh, u: r.u, reading: svState.saltSensorRh, err: svState.saltSensorRh - r.rh }
+        : null,
     };
   },
 
@@ -606,6 +618,7 @@ const SV_METHODS = {
         `Reference <span class="sv-big">${svFmtT(32)}${tLabel()}</span> <span class="cap-hint">(ice point, ±0.1 °F for a proper slurry)</span>` +
         svTempVerdictHtml(svState.iceTF, 32, 0.1),
       summary: 'ice-point temp check',
+      loggable: { quantity: 'temp', ref: 32, u: 0.1, reading: svState.iceTF, err: svState.iceTF - 32 },
     };
   },
 
@@ -628,6 +641,7 @@ const SV_METHODS = {
         `Reference <span class="sv-big">${svFmtT(tBoilF)}${tLabel()}</span> <span class="cap-hint">(boiling at ${state.pressure.toFixed(2)} kPa)</span>` +
         svTempVerdictHtml(svState.boilTF, tBoilF, uF),
       summary: 'boiling-point temp check',
+      loggable: { quantity: 'temp', ref: tBoilF, u: uF, reading: svState.boilTF, err: svState.boilTF - tBoilF },
     };
   },
 
@@ -642,6 +656,7 @@ const SV_METHODS = {
           `Reference RH <span class="sv-big">${svState.refVal.toFixed(1)}%</span> <span class="cap-hint">± ${uRef.toFixed(1)} (certificate)</span>` +
           svRhVerdictHtml(svState.refReading, svState.refVal, uRef),
         summary: 'reference compare (RH)',
+        loggable: { quantity: 'rh', ref: svState.refVal, u: uRef, reading: svState.refReading, err: svState.refReading - svState.refVal },
       };
     }
     // Temperature: inputs arrive in the ACTIVE unit; store/compare in °F.
@@ -655,6 +670,7 @@ const SV_METHODS = {
         `Reference <span class="sv-big">${svFmtT(refF)}${tLabel()}</span> <span class="cap-hint">± ${uRef.toFixed(1)}${deltaLabel()} (certificate)</span>` +
         svTempVerdictHtml(readF, refF, uRefF),
       summary: 'reference compare (temp)',
+      loggable: { quantity: 'temp', ref: refF, u: uRefF, reading: readF, err: readF - refF },
     };
   },
 };
@@ -687,8 +703,113 @@ function renderSensorValidation() {
   const summary = document.getElementById('sv-summary');
   if (summary) summary.textContent = out.summary;
   svSetCurrent = out.canSetCurrent || null;
+  svLoggable = out.loggable || null;
+  const logBtn = document.getElementById('sv-log');
+  if (logBtn) logBtn.disabled = !svLoggable;
 }
 let svSetCurrent = null;
+let svLoggable = null;
+
+// ── Drift logbook: every check, remembered per sensor ──────────────────────
+const SENSOR_LOG_KEY = 'sdc_psychro_sensorlog_v1';
+let sensorLog = [];
+
+function loadSensorLog() {
+  try {
+    sensorLog = normalizeSensorLog(JSON.parse(storage.get(SENSOR_LOG_KEY) || '[]'));
+  } catch {
+    sensorLog = [];
+  }
+}
+function persistSensorLog() {
+  sensorLog = normalizeSensorLog(sensorLog);
+  storage.set(SENSOR_LOG_KEY, JSON.stringify(sensorLog));
+}
+
+function renderSensorLogbook() {
+  const host = document.getElementById('sv-logbook');
+  if (!host) return;
+  const sensors = [...new Set(sensorLog.map((e) => e.sensor))].sort();
+  if (!sensors.length) {
+    host.innerHTML =
+      '<div class="sv-hint">No checks logged yet. Run any method with a sensor reading, name the sensor, and press “＋ Log check” — history turns single verdicts into a drift trend.</div>';
+    return;
+  }
+  const sel = document.getElementById('svlog-sel');
+  const selected = sensors.includes(sel?.value) ? sel.value : sensors[0];
+  const entries = sensorLog.filter((e) => e.sensor === selected);
+  const qty = entries[entries.length - 1].quantity;
+  const scoped = entries.filter((e) => e.quantity === qty);
+  const unit = qty === 'rh' ? '%RH' : '°F';
+  const band = qty === 'rh' ? SV_TOL.rhMarginal : SV_TOL.tMarginalF;
+
+  const rows = scoped
+    .slice(-8)
+    .map(
+      (e) =>
+        `<tr><td>${new Date(e.date).toLocaleDateString()}</td><td>${e.method}</td>` +
+        `<td>${e.ref.toFixed(1)} ± ${e.u.toFixed(1)}</td><td>${e.reading.toFixed(1)}</td>` +
+        `<td style="color:${Math.abs(e.err) <= band ? 'var(--ok)' : 'var(--danger)'}">${e.err >= 0 ? '+' : ''}${e.err.toFixed(2)}</td></tr>`,
+    )
+    .join('');
+
+  const fit = driftFit(scoped, band);
+  let driftLine = `<span class="cap-hint">${scoped.length} check${scoped.length === 1 ? '' : 's'} — two or more spread over time unlock the drift trend.</span>`;
+  if (fit) {
+    const drift = `${fit.perMonth >= 0 ? '+' : ''}${fit.perMonth.toFixed(2)} ${unit}/month`;
+    const eta =
+      fit.daysToBand === 0
+        ? `<span class="sv-fail">outside the ±${band} band NOW — recalibrate</span>`
+        : fit.daysToBand != null
+          ? `~${Math.round(fit.daysToBand)} days to the ±${band} band`
+          : `not heading for the ±${band} band on this trend`;
+    driftLine = `Drift <strong>${drift}</strong> · ${eta} <span class="cap-hint">(linear extrapolation over ${fit.n} checks / ${Math.round(fit.spanDays)} days — a forecast, not a promise)</span>`;
+  }
+
+  host.innerHTML =
+    `<div class="sla-field" style="margin:10px 0 6px"><label>Logbook — sensor</label>` +
+    `<select id="svlog-sel" class="sla-select">${sensors.map((n) => `<option${n === selected ? ' selected' : ''}>${n.replace(/</g, '&lt;')}</option>`).join('')}</select></div>` +
+    `<table class="svlog-table"><thead><tr><th>date</th><th>method</th><th>reference</th><th>read</th><th>err ${unit}</th></tr></thead><tbody>${rows}</tbody></table>` +
+    `<div class="sv-hint">${driftLine}</div>` +
+    `<div class="sv-actions"><button class="scn-btn" id="svlog-del">🗑 Delete this sensor's history</button></div>`;
+
+  document.getElementById('svlog-sel').addEventListener('change', renderSensorLogbook);
+  document.getElementById('svlog-del').addEventListener('click', async () => {
+    const ok = await confirmDialog({
+      title: 'Delete history',
+      message: `Delete all ${entries.length} logged check(s) for "${selected}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    sensorLog = sensorLog.filter((e) => e.sensor !== selected);
+    persistSensorLog();
+    renderSensorLogbook();
+  });
+}
+
+document.getElementById('sv-log')?.addEventListener('click', () => {
+  if (!svLoggable) return;
+  const label = document.getElementById('sv-sensor-label')?.value.trim();
+  if (!label) {
+    toast('Name the sensor first (e.g. "CRAH-3 supply") so its history has a home.', { kind: 'warn' });
+    document.getElementById('sv-sensor-label')?.focus();
+    return;
+  }
+  sensorLog.push({
+    sensor: label,
+    method: svState.tab,
+    quantity: svLoggable.quantity,
+    ref: svLoggable.ref,
+    u: svLoggable.u,
+    reading: svLoggable.reading,
+    err: svLoggable.err,
+    date: new Date().toISOString(),
+  });
+  persistSensorLog();
+  renderSensorLogbook();
+  toast(`Logged for "${label}".`, { kind: 'ok' });
+});
 
 // ── Suite wiring: tabs, per-method inputs, shared actions ──────────────────
 const SV_TABS = ['psy', 'dp', 'salt', 'ice', 'boil', 'ref'];
@@ -1137,6 +1258,29 @@ function drawChart() {
 
   // Points
   const tcA=fToC(state.aTemp), hrA=humidityRatioG(tcA,state.aRH,p);
+  // ── Actual trajectory from an imported BMS trend (legend-toggleable) ──
+  // Drawn beneath the plan line and the points: reality is context, the plan
+  // is the argument.
+  if (state.visible.actual && actualTrail && actualTrail.rows.length > 1) {
+    ctx.strokeStyle = 'rgba(57,210,192,0.9)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    actualTrail.rows.forEach((r, i) => {
+      const tcR = fToC(r.tempF);
+      const [px, py] = xy(tcR, humidityRatioG(tcR, r.rh, p));
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    });
+    ctx.stroke();
+    const end = actualTrail.rows[actualTrail.rows.length - 1];
+    const tcE = fToC(end.tempF);
+    const [ex, ey] = xy(tcE, humidityRatioG(tcE, end.rh, p));
+    ctx.beginPath(); ctx.arc(ex, ey, 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#39d2c0'; ctx.fill();
+    ctx.strokeStyle = '#0d1117'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
   const[axp,ayp]=xy(tcA,hrA);
   const tcB=fToC(state.bTemp), hrB=humidityRatioG(tcB,state.bRH,p);
   const[bxp,byp]=xy(tcB,hrB);
@@ -1733,6 +1877,9 @@ function renderHallEditor() {
       </div>
       <div class="addcity-actions" style="margin-top:8px"><button type="button" class="scn-btn scn-btn-primary" id="pva-log">Log this move's result</button></div>
       <div id="pva-list" style="margin-top:10px"></div>
+      <div class="cap-explain" style="margin-top:12px"><strong>Or import the trend export.</strong> Drop the BMS/BAS CSV of the move (time, temp, RH columns) — the actual trajectory overlays the chart next to the plan, and the measured duration feeds the same calibration with no stopwatch honesty required.</div>
+      <div class="addcity-actions"><button type="button" class="scn-btn" id="trend-import">⤒ Import trend CSV</button><input type="file" id="trend-file" accept=".csv,text/csv" style="display:none"></div>
+      <div class="calc-res" id="trend-res" style="display:none"></div>
     </div>
   `;
   // Capability checkboxes are always active (a site characteristic, like elevation).
@@ -1867,6 +2014,78 @@ function renderHallEditor() {
     renderPva(); update();
   });
   renderPva();
+
+  // ── Trend-CSV import: overlay reality on the chart, feed calibration ──
+  const trendBtn = document.getElementById('trend-import');
+  const trendFile = document.getElementById('trend-file');
+  if (trendBtn && trendFile) {
+    trendBtn.addEventListener('click', () => trendFile.click());
+    trendFile.addEventListener('change', () => {
+      const f = trendFile.files?.[0];
+      trendFile.value = '';
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const res = parseTrendCsv(String(reader.result));
+        const out = document.getElementById('trend-res');
+        if (!res.ok) {
+          if (out) { out.style.display = ''; out.innerHTML = `<span class="calc-warn">${res.error}</span>`; }
+          toast('Could not read the trend file.', { kind: 'error' });
+          return;
+        }
+        actualTrail = { rows: res.rows, name: f.name };
+        state.visible.actual = true;
+        syncLegend();
+
+        const first = res.rows[0], last = res.rows[res.rows.length - 1];
+        const hrs = (last.time - first.time) / 3600000;
+        const ratePerHr = hrs > 0 ? (last.tempF - first.tempF) / hrs : 0;
+        const unitNote =
+          res.tempUnitSource === 'header'
+            ? `°${res.tempUnit} from the header`
+            : res.tempUnitSource === 'forced'
+              ? `°${res.tempUnit} (forced)`
+              : `°${res.tempUnit} guessed from the value range — if that's wrong the overlay will look wrong`;
+        if (out) {
+          out.style.display = '';
+          out.innerHTML =
+            `${res.rows.length} points over ${fmtHrs(hrs)} (${unitNote}${res.skipped ? `, ${res.skipped} bad row${res.skipped === 1 ? '' : 's'} skipped` : ''}). ` +
+            `Achieved <strong>${Math.abs(ratePerHr).toFixed(1)} °F/hr</strong> ` +
+            `${first.tempF.toFixed(1)}→${last.tempF.toFixed(1)}°F, ${first.rh.toFixed(0)}→${last.rh.toFixed(0)}%RH.` +
+            (hrs > 0
+              ? ` <button type="button" class="scn-btn" id="trend-to-pva" style="margin-left:6px">Log to calibration</button>`
+              : '');
+        }
+        document.getElementById('trend-to-pva')?.addEventListener('click', () => {
+          // Same entry shape as the stopwatch path, endpoints from the trail —
+          // renderPva and the efficiency apply-button treat both identically.
+          const plan = rampPlanCore({
+            sla: state.slaProfiles[state.activeSla], hall: state.hall,
+            aTempF: first.tempF, aRH: first.rh, bTempF: last.tempF, bRH: last.rh,
+            p: state.pressure,
+          });
+          const nom = rampPlanCore({
+            sla: state.slaProfiles[state.activeSla], hall: state.hall,
+            aTempF: first.tempF, aRH: first.rh, bTempF: last.tempF, bRH: last.rh,
+            p: state.pressure,
+          }, { nameplate: true });
+          if (!(nom.hours > 0)) { toast('The trail is too small a move to calibrate against.', { kind: 'warn' }); return; }
+          const slaBound = nom.binding.startsWith('SLA');
+          state.hall.results.push({
+            date: last.time.toISOString(),
+            aTemp: first.tempF, aRH: first.rh, bTemp: last.tempF, bRH: last.rh,
+            predHrs: plan.hours, nomHrs: nom.hours, actualHrs: hrs,
+            binding: nom.binding, slaBound,
+            eff: slaBound ? null : nom.hours / hrs,
+          });
+          toast('Trend logged to calibration.', { kind: 'ok' });
+          renderPva(); update();
+        });
+        update();
+      };
+      reader.readAsText(f);
+    });
+  }
 
   // ── Rate calculator: derive all four plant rates from equipment specs ──
   // Temperature: Q[kW] / (C_air + C_equipment), where C_air = m_da·cp_moist
@@ -2788,6 +3007,7 @@ function buildSaveFile() {
     slaProfiles: state.slaProfiles,
     customSites,
     scenarios,
+    sensorLog,
     tempUnit: state.tempUnit,
   };
 }
@@ -2802,7 +3022,17 @@ function mergeSaveFile(data) {
   // cleanly or not at all (v1 could half-apply then throw).
   const v = validateSaveFile(data);
   if (!v.ok) throw new Error(v.error);
-  let halls = 0, slas = 0, sites = 0, scns = 0;
+  let halls = 0, slas = 0, sites = 0, scns = 0, logs = 0;
+  v.sensorLog.forEach((e) => {
+    if (!sensorLog.some((x) => x.sensor === e.sensor && x.date === e.date && x.method === e.method)) {
+      sensorLog.push(e);
+      logs++;
+    }
+  });
+  if (logs) {
+    persistSensorLog();
+    renderSensorLogbook();
+  }
   v.halls.forEach(h => {
     const i = state.hallProfiles.findIndex(x => x.name === h.name
       && (x.siteName || '') === (h.siteName || '')
@@ -2828,7 +3058,7 @@ function mergeSaveFile(data) {
   normalizeCaps(state.slaProfiles);
   applyElevation();
   renderSlaTabs(); renderSlaEditor(); renderHallTabs(); renderHallEditor(); renderScenarios(); update();
-  return `Loaded: ${halls} hall${halls === 1 ? '' : 's'}, ${slas} SLA${slas === 1 ? '' : 's'}, ${sites} custom site${sites === 1 ? '' : 's'}, ${scns} scenario${scns === 1 ? '' : 's'}.`;
+  return `Loaded: ${halls} hall${halls === 1 ? '' : 's'}, ${slas} SLA${slas === 1 ? '' : 's'}, ${sites} custom site${sites === 1 ? '' : 's'}, ${scns} scenario${scns === 1 ? '' : 's'}${logs ? `, ${logs} sensor check${logs === 1 ? '' : 's'}` : ''}.`;
 }
 
 document.getElementById('save-export').addEventListener('click', downloadSaveFile);
@@ -2921,6 +3151,101 @@ function buildExportCanvas() {
 
   return c;
 }
+/**
+ * The door placard: one printable page per hall — envelope snapshot, the
+ * do-not-cross numbers, site pressure basis, and a QR deep-link to the live
+ * planner. Meant to be laminated and taped to the hall door.
+ */
+function buildPlacardCanvas() {
+  const scale = 2;
+  const W = 620, H = 850;
+  const c = document.createElement('canvas');
+  c.width = W * scale; c.height = H * scale;
+  const x = c.getContext('2d');
+  x.scale(scale, scale);
+
+  x.fillStyle = '#0d1b2a'; x.fillRect(0, 0, W, H);
+  // Header band
+  x.fillStyle = '#1a3a5c'; x.fillRect(0, 0, W, 64);
+  x.fillStyle = '#00a9ce'; x.fillRect(0, 64, W, 3);
+  x.fillStyle = '#ffffff'; x.font = 'bold 20px sans-serif'; x.textAlign = 'left';
+  x.fillText('HALL ENVIRONMENT LIMITS', 24, 30);
+  x.fillStyle = '#9db8d0'; x.font = '12px sans-serif';
+  x.fillText('Post at the hall door · verify against site instrumentation before acting', 24, 50);
+
+  // Hall identity
+  const hall = state.hall || {};
+  x.fillStyle = '#e6edf3'; x.font = 'bold 22px sans-serif';
+  x.fillText([hall.name, hall.siteName].filter(Boolean).join(' — ') || 'Hall', 24, 100);
+  x.fillStyle = '#7d96ad'; x.font = '13px monospace';
+  x.fillText(
+    `${Math.round(hall.elevFt ?? 0).toLocaleString()} ft · ${state.pressure.toFixed(2)} kPa site pressure — all numbers below are pressure-aware`,
+    24, 122,
+  );
+
+  // Do-not-cross table from the active SLA
+  const sla = state.slaProfiles[state.activeSla] || {};
+  const U = tLabel();
+  const rows = [
+    ['Temperature', `${dispTs(sla.tMinF)} ${U}`, `${dispTs(sla.tMaxF)} ${U}`],
+    ['Relative humidity', `${sla.rhMin}%`, `${sla.rhMax}%`],
+    ...(sla.dpMaxF != null ? [['Dew point (cap)', '—', `${dispTs(sla.dpMaxF)} ${U}`]] : []),
+    ...(sla.maxDtHr != null ? [['Ramp: temperature', '—', `${Math.round(dispDeltaT(sla.maxDtHr) * 10) / 10}${deltaLabel()}/hr`]] : []),
+    ...(sla.maxDrhHr != null ? [['Ramp: RH', '—', `${sla.maxDrhHr}%/hr`]] : []),
+  ];
+  let ty = 156;
+  x.fillStyle = '#00a9ce'; x.font = 'bold 13px sans-serif';
+  x.fillText(`DO NOT CROSS — ${sla.name || 'SLA'}`, 24, ty);
+  ty += 10;
+  x.font = '13px monospace';
+  const cols = [24, 280, 440];
+  x.fillStyle = '#7d96ad';
+  ['limit', 'min', 'max'].forEach((h, i) => x.fillText(h, cols[i], ty + 20));
+  ty += 28;
+  x.strokeStyle = '#1f3a52'; x.beginPath(); x.moveTo(24, ty); x.lineTo(W - 24, ty); x.stroke();
+  for (const [name, lo, hi] of rows) {
+    ty += 24;
+    x.fillStyle = '#e6edf3'; x.fillText(name, cols[0], ty);
+    x.fillStyle = '#f0a500'; x.fillText(String(lo), cols[1], ty);
+    x.fillStyle = '#f85149'; x.fillText(String(hi), cols[2], ty);
+  }
+  ty += 16;
+
+  // Envelope snapshot — blit the live chart
+  const src = document.getElementById('psychCanvas');
+  const chartH = 330;
+  try {
+    x.drawImage(src, 24, ty, W - 48, chartH);
+  } catch { /* chart not ready — placard still useful */ }
+  ty += chartH + 12;
+
+  // QR deep-link + footer
+  const qrCanvas = document.createElement('canvas');
+  try {
+    drawQr(qrCanvas, currentShareUrl(), 4);
+    x.drawImage(qrCanvas, 24, ty, 120, 120);
+  } catch { /* URL too long for v10 would throw — placard survives */ }
+  x.fillStyle = '#e6edf3'; x.font = 'bold 14px sans-serif';
+  x.fillText('Scan for the live planner', 160, ty + 40);
+  x.fillStyle = '#7d96ad'; x.font = '12px sans-serif';
+  x.fillText('Opens this hall’s current setup — chart, limits and', 160, ty + 62);
+  x.fillText('move timing at this site’s pressure. Works offline.', 160, ty + 78);
+  x.fillStyle = '#f0a500'; x.font = 'bold 12px sans-serif';
+  x.fillText('PLANNING AID, NOT A CONTROL SYSTEM', 160, ty + 106);
+  x.fillStyle = '#6f8aa3'; x.font = '11px monospace';
+  x.fillText(`generated ${new Date().toISOString().slice(0, 10)} · ${VERSION_LABEL}`, 24, H - 18);
+  return c;
+}
+
+document.getElementById('export-placard')?.addEventListener('click', () => {
+  try {
+    exportPdfJpeg(buildPlacardCanvas(), { portrait: true });
+  } catch (e) {
+    logError('export-placard', e);
+    toast('Placard export failed: ' + e.message, { kind: 'error' });
+  }
+});
+
 document.getElementById('export-png').addEventListener('click', () => {
   try {
     const c = buildExportCanvas();
@@ -2938,14 +3263,15 @@ document.getElementById('export-pdf').addEventListener('click', () => {
     exportPdfJpeg(c);   // dependency-free single-page PDF (DCTDecode/JPEG)
   } catch (e) { logError('export-pdf', e); toast('PDF export failed: ' + e.message, { kind: 'error' }); }
 });
-function exportPdfJpeg(canvas) {
+function exportPdfJpeg(canvas, opts = {}) {
   const jpeg = canvas.toDataURL('image/jpeg', 0.92);
   const b64 = jpeg.split(',')[1];
   const raw = atob(b64);
   const imgBytes = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) imgBytes[i] = raw.charCodeAt(i);
   const imgW = canvas.width, imgH = canvas.height;
-  const pageW = 792, pageH = 612, margin = 24;
+  // Letter, landscape by default; the door placard asks for portrait.
+  const pageW = opts.portrait ? 612 : 792, pageH = opts.portrait ? 792 : 612, margin = 24;
   const scale = Math.min((pageW - margin*2)/imgW, (pageH - margin*2)/imgH);
   const dW = imgW*scale, dH = imgH*scale, ox = (pageW-dW)/2, oy = (pageH-dH)/2;
 
@@ -3072,6 +3398,11 @@ document.getElementById('copy-briefing')?.addEventListener('click', () => {
 // ════════════════════════════════════════════════════════════
 const playback = { f: 0, playing: false, raf: 0 };
 
+/** Imported BMS trend, drawn on the chart when state.visible.actual is on.
+ *  Session-scoped on purpose: a trail belongs to the move it recorded, not to
+ *  every future session — the durable record is the calibration entry. */
+let actualTrail = null;
+
 function playbackReadout() {
   const info = document.getElementById('playback-info');
   if (!info) return;
@@ -3172,6 +3503,8 @@ syncLegend();
 update();
 loadScenarios();
 renderScenarios();
+loadSensorLog();
+renderSensorLogbook();
 // A deep link wins over stored state — the person clicked it on purpose.
 if (applyStateFromUrl()) update();
 

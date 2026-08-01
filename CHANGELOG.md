@@ -11,6 +11,27 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — operator companion (logbook, plan-vs-actual, placard)
+
+- **Sensor drift logbook**: any validation check (any of the six methods) can
+  be logged against a named sensor. Per-sensor history table plus a
+  least-squares drift trend (`src/core/driftfit.js`): %RH-or-°F per month and
+  days-to-the-recalibrate-band, always labelled as a linear extrapolation with
+  its point count and span. Persisted (new `sdc_psychro_sensorlog_v1` key,
+  mirrored to native storage), schema-validated and capped at 500 entries,
+  and carried by save-file export/import with de-duplication.
+- **Plan vs. reality**: import the BMS/BAS trend CSV of a real move
+  (`src/lib/trendcsv.js` — BOM, semicolon/comma-decimal EU exports, quoted
+  fields, shuffled columns; refuses rather than guesses, and REPORTS which
+  temperature unit it assumed and why). The actual trajectory overlays the
+  chart as a legend-toggleable layer next to the plan, and one tap logs the
+  measured duration into the existing efficiency calibration — same entry
+  shape as the stopwatch path, so `renderPva` treats both identically.
+- **Door placard PDF**: one printable portrait page per hall — the
+  do-not-cross SLA numbers (incl. dew-point cap and ramp limits), envelope
+  chart snapshot, site pressure basis, and a QR deep-link to the live planner.
+  The PDF emitter grew a portrait option; still zero dependencies.
+
 ### Added — share everywhere (deep links, QR, briefing, playback)
 
 - **Scenario deep links** (`src/state/urlstate.js`): the whole A→B setup in
