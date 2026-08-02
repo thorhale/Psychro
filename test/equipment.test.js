@@ -12,10 +12,14 @@ import {
   normalizeEquip,
   normalizeInventory,
   unitOutput,
+  perMachineOutput,
   inventoryTotals,
   inventoryNameplate,
+  worstSingleLoss,
   unitsForKind,
+  baseUnitOf,
   isThermalKind,
+  isAirKind,
   EQUIP_KINDS,
 } from '../src/core/equipment.js';
 
@@ -138,6 +142,96 @@ describe('inventoryTotals', () => {
   });
 });
 
+describe('air movement', () => {
+  it('converts airflow units exactly and totals into CFM', () => {
+    // 2 fans × 10 000 CFM, one of them at 60 % of nameplate airflow.
+    const good = normalizeEquip({ kind: 'air', count: 2, cap: 10000, unit: 'cfm' });
+    expect(unitOutput(good)).toBeCloseTo(20000, 6);
+    // 1 m³/hr = 0.5885778 CFM — an AHU plated in metric still lands in CFM.
+    const metric = normalizeEquip({ kind: 'air', count: 1, cap: 17000, unit: 'm3h' });
+    expect(unitOutput(metric)).toBeCloseTo(17000 * 0.5885778, 6);
+    // A loading filter or a slipping belt is condition, same as anywhere else.
+    const tired = normalizeEquip({ kind: 'air', count: 1, cap: 10000, unit: 'cfm', condPct: 60 });
+    expect(unitOutput(tired)).toBeCloseTo(6000, 6);
+
+    const t = inventoryTotals(normalizeInventory([good, tired]));
+    expect(t.airCfm).toBeCloseTo(26000, 6);
+    expect(t.counts.air).toBe(3);
+    // Airflow is its own base unit — it must not leak into a thermal total.
+    expect(t.coolKW).toBe(0);
+  });
+
+  it('is neither thermal nor water, and says so', () => {
+    expect(isAirKind('air')).toBe(true);
+    expect(isThermalKind('air')).toBe(false);
+    expect(baseUnitOf('air')).toBe('CFM');
+    expect(baseUnitOf('cool')).toBe('kW');
+    expect(baseUnitOf('humid')).toBe('lb/hr');
+    expect(unitsForKind('air')).toEqual(['cfm', 'm3h', 'cmm', 'lps']);
+    // Air units must not be offered where they would compute nonsense.
+    expect(unitsForKind('cool')).not.toContain('cfm');
+    expect(normalizeEquip({ kind: 'cool', unit: 'cfm' }).unit).toBe('kw');
+    expect(normalizeEquip({ kind: 'air', unit: 'ton' }).unit).toBe('cfm');
+  });
+});
+
+describe('worstSingleLoss', () => {
+  // Four CRAHs in two line items, plus one big AHU. N+1 is only true while
+  // the spare capacity is real, so the question is always "lose the biggest".
+  const inv = normalizeInventory([
+    { kind: 'cool', name: 'CRAH-1..3', count: 3, cap: 30, unit: 'ton' },
+    { kind: 'cool', name: 'AHU-1', count: 1, cap: 50, unit: 'ton' },
+    { kind: 'cool', name: 'CRAH-4', count: 1, cap: 30, unit: 'ton', online: false },
+  ]);
+
+  it('loses ONE machine out of a line item, not the whole line', () => {
+    const three = normalizeEquip({ kind: 'cool', count: 3, cap: 30, unit: 'ton' });
+    expect(perMachineOutput(three)).toBeCloseTo(30 * 3.51685, 6);
+
+    const r = worstSingleLoss(inv, 'cool');
+    // In service: 3 × 30 + 1 × 50 = 140 ton. The single biggest is the 50-ton
+    // AHU, and the out-of-service CRAH is not available to lose.
+    expect(r.total).toBeCloseTo(140 * 3.51685, 6);
+    expect(r.worst).toBeCloseTo(50 * 3.51685, 6);
+    expect(r.worstName).toBe('AHU-1');
+    expect(r.remaining).toBeCloseTo(90 * 3.51685, 6);
+    expect(r.machines).toBe(4);
+  });
+
+  it('counts a degraded machine at what it actually delivers', () => {
+    // A half-dead 50-ton AHU is no longer the worst thing that can fail —
+    // a healthy 30-ton CRAH is. Planning off nameplate would get this wrong.
+    const sick = normalizeInventory([
+      { kind: 'cool', name: 'CRAH', count: 3, cap: 30, unit: 'ton' },
+      { kind: 'cool', name: 'AHU-1', count: 1, cap: 50, unit: 'ton', condPct: 40 },
+    ]);
+    const r = worstSingleLoss(sick, 'cool');
+    expect(r.worstName).toBe('CRAH');
+    expect(r.worst).toBeCloseTo(30 * 3.51685, 6);
+  });
+
+  it('reports nothing to lose rather than a zero that reads like an answer', () => {
+    expect(worstSingleLoss(inv, 'humid')).toBeNull();
+    expect(worstSingleLoss([], 'cool')).toBeNull();
+    expect(worstSingleLoss(null, 'cool')).toBeNull();
+    // Everything tagged out is also "nothing in service to lose".
+    const allOut = normalizeInventory([{ kind: 'cool', count: 2, cap: 30, unit: 'ton', online: false }]);
+    expect(worstSingleLoss(allOut, 'cool')).toBeNull();
+  });
+
+  it('works on evaporative humidifiers through the same model hook', () => {
+    const inv2 = normalizeInventory([
+      { kind: 'humid', name: 'HUM-A', count: 2, evap: { cfm: 9000, effPct: 85 } },
+      { kind: 'humid', name: 'HUM-B', count: 1, cap: 15, unit: 'lbhr' },
+    ]);
+    const r = worstSingleLoss(inv2, 'humid', () => 40);
+    expect(r.total).toBeCloseTo(2 * 40 + 15, 6);
+    expect(r.worstName).toBe('HUM-A'); // 40 lb/hr each beats the 15 lb/hr unit
+    expect(r.remaining).toBeCloseTo(40 + 15, 6);
+    expect(r.machines).toBe(3);
+  });
+});
+
 describe('kind metadata', () => {
   it('offers only units that make sense for the kind', () => {
     expect(unitsForKind('cool')).toContain('ton');
@@ -145,5 +239,6 @@ describe('kind metadata', () => {
     expect(unitsForKind('humid')).toContain('gph');
     expect(unitsForKind('humid')).not.toContain('ton');
     expect(EQUIP_KINDS.filter(isThermalKind)).toEqual(['cool', 'heat']);
+    expect(EQUIP_KINDS.filter(isAirKind)).toEqual(['air']);
   });
 });

@@ -415,6 +415,16 @@
   .eq-totals { display:grid; grid-template-columns:repeat(2,1fr); gap:6px 14px; margin-top:10px;
     padding-top:10px; border-top:1px solid var(--border); font-size:.76rem; font-family:var(--mono); }
   @media (max-width:560px) { .eq-totals { grid-template-columns:1fr; } }
+  /* The add-equipment row grows as kinds are added, so it wraps. Its own
+     class rather than .addcity-actions, which is a fixed two-button row and
+     would push a sixth button clean out of the card. */
+  .eq-add-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+  /* Redundancy lines carry a verdict clause, so they stack full width rather
+     than sharing the two-column totals grid. Its own class, not a modifier on
+     .eq-totals, so "the totals" stays one thing on the page. */
+  .eq-redundancy { display:grid; gap:4px; margin-top:8px; padding-top:8px;
+    border-top:1px dashed var(--border); font-size:.76rem; font-family:var(--mono); }
+  .eq-redundancy .sla-caps-label { margin:0 0 2px; }
   /* All-halls overview: one tappable row per hall. */
   .hall-row { display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:center;
     width:100%; text-align:left; padding:10px 12px; margin-bottom:6px; border-radius:7px;
