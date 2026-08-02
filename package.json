@@ -1,6 +1,6 @@
 {
   "name": "psychro",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "private": true,
   "description": "Stream Hall Environment Planner — ASHRAE TC 9.9 psychrometric planning tool for data center halls",
   "type": "module",
