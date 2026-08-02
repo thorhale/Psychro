@@ -2718,10 +2718,6 @@ function renderHallEditor() {
         hc.innerHTML = `= <strong>${lbhr.toFixed(1)} lb/hr</strong> <button class="calc-apply" data-rk="rateHumLb" data-rv="${lbhr.toFixed(1)}">Apply</button>`;
       } else hc.textContent = '—';
     }
-    // The IT load typed here is what the redundancy check grades the surviving
-    // cooling against, so the inventory panel has to follow it. Same guard as
-    // update(): never re-render a panel someone is typing in.
-    if (!document.getElementById('equip-panel')?.contains(document.activeElement)) renderEquipment();
     // Apply buttons
     hed.querySelectorAll('.calc-apply').forEach(b => b.onclick = () => {
       const k = b.dataset.rk;
@@ -2736,9 +2732,16 @@ function renderHallEditor() {
    'dc-cfm','dc-dp','hc-qty','hc-each','hc-unit',
    'hc-type','hc-cfm','hc-eff','hc-meas'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) { const ev = el.tagName === 'SELECT' ? 'change' : 'input'; el.addEventListener(ev, runRateCalc); }
+    if (el) {
+      const ev = el.tagName === 'SELECT' ? 'change' : 'input';
+      // These feed more than their own readout: the IT load sets how much
+      // cooling is left for pulldown, which decides the derived cooling rate,
+      // the redundancy verdict, and this hall's line in the overview. Letting
+      // them update only their own panel is how the numbers drift apart.
+      el.addEventListener(ev, () => { runRateCalc(); update(); });
+    }
   });
-  runRateCalc();
+  runRateCalc(); // once at render time; update() is already in flight above us
 
 }
 
@@ -4248,14 +4251,24 @@ const UNIT_LABEL = {
   cfm: 'CFM', m3h: 'm³/hr', cmm: 'm³/min', lps: 'L/s',
 };
 
-/** Output per evaporative unit at the hall's live condition. */
-const evapUnitLbHr = (evap) => {
-  const r = evapMediaOutput({
-    cfm: evap.cfm, tempF: state.aTemp, rh: state.aRH,
-    effPct: evap.effPct, pressure: state.pressure,
-  });
+/**
+ * Output per evaporative unit at a GIVEN condition and pressure.
+ *
+ * Wetted media makes less water into damper air and less again at altitude,
+ * so "how much can this humidifier do" has no answer without saying where and
+ * in what. Any surface that grades a hall other than the active one has to
+ * bind this to THAT hall's air — grading Denver's media with Goodyear's would
+ * be a quiet, plausible-looking lie.
+ *
+ * @returns {(evap:{cfm:number, effPct:number}) => number}
+ */
+const evapLbHrAt = (tempF, rh, pressure) => (evap) => {
+  const r = evapMediaOutput({ cfm: evap.cfm, tempF, rh, effPct: evap.effPct, pressure });
   return r ? r.lbPerHr : 0;
 };
+
+/** Output per evaporative unit at the ACTIVE hall's live condition. */
+const evapUnitLbHr = (evap) => evapLbHrAt(state.aTemp, state.aRH, state.pressure)(evap);
 
 /** Is this hall's plan being driven by its inventory right now? */
 const ratesAreLive = (h = state.hall) =>
@@ -4578,6 +4591,7 @@ function renderAllHalls() {
   const sla = state.slaProfiles[state.activeSla];
   let breaches = 0;
   let unplanned = 0;
+  let plantIssues = 0;
 
   const rows = state.hallProfiles.map((h, i) => {
     const active = i === state.activeHall;
@@ -4600,6 +4614,27 @@ function renderAllHalls() {
         : `<span class="badge badge-bad">✗ ${escHtml(fmtSlaReason(chk))}</span>`;
     }
 
+    // Plant status, computed at THIS hall's own air — a humidifier's output
+    // depends on the room it is in, so the active hall's condition would grade
+    // the wrong thing. A hall never worked on has no condition to grade with,
+    // so its media contributes nothing rather than a borrowed number.
+    const evapHere = c ? evapLbHrAt(c.aTemp, c.aRH, p) : () => 0;
+    const inv = h.equipment || [];
+    const plantBits = [];
+    if (inv.length) {
+      const t = inventoryTotals(inv, evapHere);
+      if (t.offline) plantBits.push(`${t.offline} out of service`);
+      if (t.degraded) plantBits.push(`${t.degraded} degraded`);
+      // Only a FAILING redundancy check earns space here: "you cannot lose a
+      // machine" is worth interrupting a scan for, "you can" is not.
+      const itKW = (h.calc || {}).it;
+      const r = worstSingleLoss(inv, 'cool', evapHere);
+      if (r && itKW > 0 && r.remaining < itKW) {
+        plantBits.push(`losing ${escHtml(r.worstName || 'the largest unit')} drops below the IT load`);
+      }
+    }
+    if (plantBits.length) plantIssues++;
+
     const cond = c
       ? `${dispTs(c.aTemp)}${tLabel()} · ${Math.round(c.aRH)}%  →  ${dispTs(c.bTemp)}${tLabel()} · ${Math.round(c.bRH)}%`
       : '—';
@@ -4609,7 +4644,9 @@ function renderAllHalls() {
       `<span><span class="hr-name">${escHtml(h.name || `Hall ${i + 1}`)}</span>` +
       `${where ? `<br><span class="hr-meta">${escHtml(where)}</span>` : ''}` +
       `<br><span class="hr-meta">${Math.round(h.elevFt ?? 0).toLocaleString()} ft · ${p.toFixed(1)} kPa` +
-      `${rates ? '' : ' · no plant rates'}</span></span>` +
+      `${rates ? '' : ' · no plant rates'}</span>` +
+      (plantBits.length ? `<br><span class="hr-plant">⚠ ${plantBits.join(' · ')}</span>` : '') +
+      `</span>` +
       `<span class="hr-cond">${cond}</span>${status}</button>`
     );
   });
@@ -4630,7 +4667,8 @@ function renderAllHalls() {
     sub.textContent =
       `${n} hall${n === 1 ? '' : 's'}` +
       (breaches ? ` · ⚠ ${breaches} outside ${sla.name}` : ' · all inside SLA') +
-      (unplanned ? ` · ${unplanned} missing plant rates` : '');
+      (unplanned ? ` · ${unplanned} missing plant rates` : '') +
+      (plantIssues ? ` · ${plantIssues} with plant to look at` : '');
   }
 }
 

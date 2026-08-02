@@ -440,6 +440,9 @@
   .hall-row.is-active { border-color:var(--stream-teal); background:rgba(0,169,206,.07); }
   .hall-row .hr-name { font-weight:700; }
   .hall-row .hr-meta { color:var(--muted); font-size:.68rem; font-family:var(--mono); }
+  /* Plant trouble in this hall — same size as the other meta lines, but it is
+     the one thing on the row worth interrupting a scan for. */
+  .hall-row .hr-plant { color:var(--warn); font-size:.68rem; font-family:var(--mono); }
   .hall-row .hr-cond { font-family:var(--mono); color:var(--muted); font-size:.72rem; white-space:nowrap; }
   @media (max-width:560px) { .hall-row { grid-template-columns:1fr auto; }
     .hall-row .hr-cond { grid-column:1 / -1; } }

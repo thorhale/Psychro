@@ -11,6 +11,27 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — the all-halls overview can see the plant
+
+The overview was blind to the equipment: a hall with two CRAHs tagged out and
+scaled humidifier media looked exactly like a healthy one. It is the surface
+you scan, so it is where plant trouble belongs.
+
+- Each row now flags **what is out of service and what is degraded** in that
+  hall, and the summary counts halls with plant to look at.
+- A hall that **cannot survive losing its biggest cooling machine** says so by
+  name. Only the failing case is shown — "you can lose one" is not worth
+  interrupting a scan for.
+- Every hall is graded **at its own condition and pressure**. Wetted media
+  makes less water into damper air and less again at altitude, so grading
+  Denver's humidifiers with Goodyear's air would have been a quiet,
+  plausible-looking lie.
+
+### Fixed
+
+- Typing an IT load updated its own readout but not the cooling rate derived
+  from it, the redundancy verdict, or the hall's line in the overview.
+
 ### Changed — the inventory now drives the plan, instead of being copied into it
 
 The inventory used to be a display. You could tag a CRAH out, watch the totals
