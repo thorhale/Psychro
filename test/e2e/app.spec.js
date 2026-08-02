@@ -710,13 +710,35 @@ test.describe('accessibility and onboarding', () => {
 
   test('a first-time operator gets a start-here guide and a glossary', async ({ page }) => {
     await page.goto('./');
-    await page.locator('#start-here summary').click();
+    await page.locator('#start-here > summary').click();
     await expect(page.locator('#start-here')).toContainText('Describe your hall');
-    await page.locator('#glossary summary').click();
+    // The glossary is nested inside the guide: one card at the top of the app,
+    // not two, so a returning operator pays for the guidance only once.
+    await page.locator('#glossary > summary').click();
     // The jargon the readout prints, explained where the operator can find it.
     for (const term of ['Humidity ratio', 'Dew point', 'Wet bulb', 'Enthalpy', 'Guard band']) {
       await expect(page.locator('#glossary')).toContainText(term);
     }
+  });
+
+  test('the guide can be dismissed for good, and brought back', async ({ page }) => {
+    await page.goto('./');
+    await expect(page.locator('#start-here')).toBeVisible();
+    await page.locator('#start-here > summary').click();
+    await page.locator('#onboard-dismiss').click();
+    await expect(page.locator('#start-here')).toBeHidden();
+    await expect(page.locator('#onboard-restore')).toBeVisible();
+
+    // The dismissal sticks across a reload — that is the whole point.
+    await page.reload();
+    await expect(page.locator('#start-here')).toBeHidden();
+
+    // And it is never actually lost.
+    await page.locator('#onboard-restore').click();
+    await expect(page.locator('#start-here')).toBeVisible();
+    await expect(page.locator('#start-here')).toContainText('Describe your hall');
+    await page.reload();
+    await expect(page.locator('#start-here')).toBeVisible();
   });
 
   test('the docs the app cites are actually published', async ({ page }) => {
