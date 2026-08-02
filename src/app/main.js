@@ -47,6 +47,11 @@ import {
   normalizeSensorRegistry,
 } from '../state/schema.js';
 import { driftFit } from '../core/driftfit.js';
+import { evapMediaOutput, effectivenessFromOutput } from '../core/evapmedia.js';
+import {
+  normalizeInventory, inventoryTotals, inventoryNameplate,
+  unitOutput, unitsForKind, isThermalKind,
+} from '../core/equipment.js';
 import { parseTrendCsv, maxWindowedRate } from '../lib/trendcsv.js';
 import { SCENARIOS, refereeRun, TRAINER_VERSION } from '../core/trainer.js';
 import { SV_TOL, svVerdict } from '../core/svverdict.js';
@@ -210,6 +215,39 @@ Object.defineProperty(state, 'hall', {
   get() { return this.hallProfiles[this.activeHall] || this.hallProfiles[0]; },
   set(h) { this.hallProfiles[Math.min(this.activeHall, this.hallProfiles.length - 1)] = h; },
 });
+
+/** Snapshot the working point onto the hall it belongs to. */
+function stashHallConditions(hallIndex = state.activeHall) {
+  const h = state.hallProfiles[hallIndex];
+  if (!h) return;
+  h.cond = { aTemp: state.aTemp, aRH: state.aRH, bTemp: state.bTemp, bRH: state.bRH };
+}
+
+/**
+ * Change the active hall, carrying each hall's own working point with it.
+ * Every switch goes through here — tabs, the overview, add, duplicate,
+ * delete — because a caller that forgets the stash silently loses a hall's
+ * set-points to whichever hall was open before it.
+ */
+function switchHall(i) {
+  stashHallConditions(); //  the point belongs to the hall you are leaving
+  state.activeHall = Math.max(0, Math.min(i, state.hallProfiles.length - 1));
+  restoreHallConditions(); // …and a hall never worked on seeds itself
+  clearActualTrail(); //     a measured trail belongs to one hall
+  applyElevation();
+}
+
+/** Load a hall's own working point, seeding it the first time it is opened. */
+function restoreHallConditions() {
+  const c = state.hall?.cond;
+  if (c) {
+    state.aTemp = c.aTemp; state.aRH = c.aRH;
+    state.bTemp = c.bTemp; state.bRH = c.bRH;
+  } else {
+    stashHallConditions(); // first visit: adopt what is on screen
+  }
+}
+
 // Convenience: the active profile's elevation is the live site elevation.
 
 // Capability flags control DEGREES OF FREEDOM, not slider bounds. Temperature
@@ -2051,6 +2089,11 @@ function update() {
   refreshHallSummary();
   renderSensorValidation();  // re-grade at the new unit / site pressure
   renderTrainingBrief(); //      keep the brief's start temp in the active unit
+  renderAllHalls(); //           every hall's status follows the live point
+  // Evaporative units are computed from the hall's live condition, so their
+  // outputs move with it — but this rebuilds the rows' markup, so never do it
+  // while someone is typing into one.
+  if (!document.getElementById('equip-panel')?.contains(document.activeElement)) renderEquipment();
   renderDomainWarnings();
   if (typeof saveProfiles === 'function') saveProfiles();
 }
@@ -2091,6 +2134,7 @@ function renderHallEditor() {
     <div class="sla-caps">
       <div class="sla-caps-label">Plant capability &amp; rates — what this hall can actually do</div>
       <div class="cap-explain">Temperature rates: use commissioning-observed °F/hr, or derive a physics estimate below (IT load, excess sensible capacity, thermal mass). Moisture is first-principles: hall air mass × ΔW ÷ equipment lb/hr. Enter NET capacity (nameplate minus steady makeup-air latent load). Blank = not plant-limited; the SLA ramp limit still governs.</div>
+      <div id="equip-panel"></div>
       <div class="cap-line"><span class="cap-name">Hall air volume <span class="cap-hint">for the moisture mass balance</span></span><input type="number" id="hall-vol" class="cap-rate" value="${state.hall.hallVolFt3 ?? ''}" placeholder="—" step="1000" min="0"><span class="cap-u">ft³</span></div>
       <div class="cap-line"><span class="cap-name">Supply airflow <span class="cap-hint">for the cooling-load estimate</span></span><input type="number" id="hall-cfm" class="cap-rate" value="${state.hall.airflowCfm ?? ''}" placeholder="—" step="1000" min="0"><span class="cap-u">CFM</span></div>
       <div class="cap-line"><span class="cap-name">Cooling</span><input type="number" id="rate-cool" class="cap-rate" value="${state.hall.rateCoolF ?? ''}" placeholder="—" step="0.5" min="0"><span class="cap-u">°F/hr</span></div>
@@ -2169,7 +2213,24 @@ function renderHallEditor() {
           <div class="calc-res" id="dh-res">—</div>
 
           <div class="calc-method mt">Humidify <span class="cap-hint">evap · ultrasonic · fog · steam</span></div>
-          <div class="calc-grid">
+          <div class="calc-grid2" style="margin-bottom:8px">
+            <select id="hc-type" class="sla-select calc-sel">
+              <option value="rated"${((state.hall.calc||{}).hType??'rated')==='rated'?' selected':''}>Rated output (steam, ultrasonic, fog)</option>
+              <option value="evap"${(state.hall.calc||{}).hType==='evap'?' selected':''}>Wetted media — compute from airflow</option>
+            </select>
+          </div>
+          <div id="hc-evap" style="display:none">
+            <div class="calc-grid2">
+              <input type="number" inputmode="decimal" id="hc-cfm" class="cap-rate" value="${(state.hall.calc||{}).hCfm ?? ''}" placeholder="airflow across media CFM" min="0" step="500">
+              <input type="number" inputmode="decimal" id="hc-eff" class="cap-rate" value="${(state.hall.calc||{}).hEff ?? ''}" placeholder="saturation eff. %" min="1" max="100" step="1">
+            </div>
+            <div class="calc-hint2">Saturation effectiveness comes from your media's own data — the fraction of the theoretical maximum it actually achieves. <strong>This is the number mineral scale destroys:</strong> as deposits block wetted surface and channel air past it, effectiveness falls and so does capacity. Re-enter it as the media fouls, or measure it below.</div>
+            <div class="calc-grid2" style="margin-top:8px">
+              <input type="number" inputmode="decimal" id="hc-meas" class="cap-rate" value="${(state.hall.calc||{}).hMeas ?? ''}" placeholder="measured output lb/hr (optional)" min="0" step="1">
+              <span class="calc-inline-note">↳ back-calculates the effectiveness you are really getting</span>
+            </div>
+          </div>
+          <div class="calc-grid" id="hc-rated">
             <input type="number" id="hc-qty" class="cap-rate" value="${(state.hall.calc||{}).hQty ?? ''}" placeholder="units" min="0" step="1">
             <span class="calc-x">×</span>
             <input type="number" id="hc-each" class="cap-rate" value="${(state.hall.calc||{}).hEach ?? ''}" placeholder="output ea." min="0" step="1">
@@ -2477,7 +2538,9 @@ function renderHallEditor() {
       update();
     }
 
-    // This panel lives inside renderHallEditor's innerHTML, so any unrelated
+    if (typeof renderEquipment === 'function') renderEquipment();
+
+  // This panel lives inside renderHallEditor's innerHTML, so any unrelated
     // edit to the card (a capability checkbox, applying a calibrated
     // efficiency, switching halls) used to wipe the import result — leaving
     // the trail drawn on the chart with no unit toggle and no way to log it.
@@ -2493,16 +2556,6 @@ function renderHallEditor() {
   // supply DP with the exact exponential dry-down. Humidify: steam kW →
   // lb/hr via ≈ 2675 kJ/kg water→steam (≈ 2.97 lb/hr per kW).
   const calcState = () => (state.hall.calc = state.hall.calc || {});
-  function thermalC() {                       // kJ/K, or null if no volume
-    if (!(state.hall.hallVolFt3 > 0)) return null;
-    const p = state.pressure, W0 = currentW();
-    const v = specificVolume(fToC(state.aTemp), W0, p);
-    const mda = (state.hall.hallVolFt3 * 0.0283168) / v;
-    const cAir = mda * (1.006 + 1.86 * W0);
-    const massLb = parseFloat(document.getElementById('rc-mass')?.value);
-    const cEq = massLb > 0 ? massLb * 0.45359237 * 0.5 : 0;
-    return { c: cAir + cEq, airOnly: !(massLb > 0) };
-  }
   const toKW = (val, unit) => unit === 'ton' ? val * 3.51685
     : unit === 'btu' ? val / 3412.14
     : unit === 'mbh' ? val / 3.41214
@@ -2526,6 +2579,13 @@ function renderHallEditor() {
     cs.dhLQty = num('dh-lqty'); cs.dhLat = num('dh-lat'); cs.dhLatUnit = g('dh-latunit')?.value || 'ton';
     cs.cfm = num('dc-cfm'); cs.dp = num('dc-dp');
     cs.hQty = num('hc-qty'); cs.hEach = num('hc-each'); cs.hUnit = g('hc-unit')?.value || 'lbhr';
+    cs.hType = g('hc-type')?.value || 'rated';
+    cs.hCfm = num('hc-cfm'); cs.hEff = num('hc-eff'); cs.hMeas = num('hc-meas');
+
+    // Show the humidifier pane that matches the chosen type.
+    const evapPane = g('hc-evap'), ratedPane = g('hc-rated');
+    if (evapPane) evapPane.style.display = cs.hType === 'evap' ? '' : 'none';
+    if (ratedPane) ratedPane.style.display = cs.hType === 'evap' ? 'none' : '';
 
     // show the active dehum pane
     ['dh-lbhr','dh-latent','dh-coil'].forEach(id => { const el = g(id); if (el) el.style.display = 'none'; });
@@ -2601,7 +2661,38 @@ function renderHallEditor() {
     // Humidify — water output → lb/hr (evap/ultrasonic/fog/steam all rated this way)
     const hc = g('hc-res');
     if (hc) {
-      if (cs.hQty > 0 && cs.hEach > 0) {
+      if (cs.hType === 'evap') {
+        // Wetted media: output is not a nameplate, it is a function of the air
+        // entering the media RIGHT NOW. Evaluated at the Current point and the
+        // site's pressure, so the answer moves with the hall.
+        const measEff = cs.hMeas > 0
+          ? effectivenessFromOutput({
+              cfm: cs.hCfm, tempF: state.aTemp, rh: state.aRH,
+              lbPerHr: cs.hMeas, pressure: state.pressure,
+            })
+          : null;
+        const effUsed = measEff ?? cs.hEff;
+        const r = evapMediaOutput({
+          cfm: cs.hCfm, tempF: state.aTemp, rh: state.aRH,
+          effPct: effUsed, pressure: state.pressure,
+        });
+        if (!(cs.hCfm > 0)) {
+          hc.innerHTML = '<span class="calc-warn">Enter the airflow across the media.</span>';
+        } else if (!r) {
+          hc.innerHTML = measEff === null && cs.hMeas > 0
+            ? '<span class="calc-warn">At the Current condition this air cannot absorb water, so no effectiveness can be inferred from a measurement.</span>'
+            : '<span class="calc-warn">Enter the media\'s saturation effectiveness (or a measured output).</span>';
+        } else {
+          const measNote = measEff != null
+            ? ` <span class="cap-hint">— measured output implies <strong>${measEff.toFixed(0)}%</strong> effectiveness${cs.hEff > 0 ? `, against ${cs.hEff.toFixed(0)}% entered${measEff < cs.hEff * 0.95 ? ' — media is losing capacity' : ''}` : ''}</span>`
+            : '';
+          hc.innerHTML =
+            `At the Current point (${dispTs(state.aTemp)}${tLabel()} / ${Math.round(state.aRH)}% RH, wet bulb ${dispTs(r.twbF)}${tLabel()}): ` +
+            `<strong>${r.lbPerHr.toFixed(1)} lb/hr</strong>${measNote}` +
+            ` <button class="calc-apply" data-rk="rateHumLb" data-rv="${r.lbPerHr.toFixed(1)}">Apply</button>` +
+            `<div class="cap-hint">Air leaves at ${dispTs(r.leavingTempF)}${tLabel()} — evaporative humidification also cools, by ${(Math.round(dispDeltaT(state.aTemp - r.leavingTempF) * 10) / 10)}${deltaLabel()} here. Output falls as the hall gets damper: this figure is for the condition above, not a fixed rating.</div>`;
+        }
+      } else if (cs.hQty > 0 && cs.hEach > 0) {
         const lbhr = waterToLbHr(cs.hQty * cs.hEach, cs.hUnit);
         hc.innerHTML = `= <strong>${lbhr.toFixed(1)} lb/hr</strong> <button class="calc-apply" data-rk="rateHumLb" data-rv="${lbhr.toFixed(1)}">Apply</button>`;
       } else hc.textContent = '—';
@@ -2617,7 +2708,8 @@ function renderHallEditor() {
   }
   ['rc-it','rc-mass','cc-units','cc-cap','cc-capunit','wc-reheat',
    'dh-type','dh-qty','dh-each','dh-unit','dh-lqty','dh-lat','dh-latunit',
-   'dc-cfm','dc-dp','hc-qty','hc-each','hc-unit'].forEach(id => {
+   'dc-cfm','dc-dp','hc-qty','hc-each','hc-unit',
+   'hc-type','hc-cfm','hc-eff','hc-meas'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { const ev = el.tagName === 'SELECT' ? 'change' : 'input'; el.addEventListener(ev, runRateCalc); }
   });
@@ -2736,8 +2828,8 @@ function renderHallTabs() {
     btn.textContent = (!v.loc && loc ? loc + ' · ' : '')
       + (!v.bld && bld ? bld + ' · ' : '') + (h.name || `Hall ${i + 1}`);
     btn.onclick = () => {
-      state.activeHall = i;
-      applyElevation();            // pressure follows the newly active hall
+      if (i === state.activeHall) return;
+      switchHall(i);
       renderHallTabs(); renderHallEditor(); syncAllControls(); update();
     };
     tabs.appendChild(btn);
@@ -2816,8 +2908,8 @@ document.getElementById('hall-add').addEventListener('click', () => {
     siteName: v.loc || '', building: v.bld || '',
     elevFt: sib ? sib.elevFt : (site ? site.elevFt : 0),
   }));
-  state.activeHall = state.hallProfiles.length - 1;
-  applyElevation(); renderHallTabs(); renderHallEditor(); update();
+  switchHall(state.hallProfiles.length - 1);
+  renderHallTabs(); renderHallEditor(); update();
 });
 
 document.getElementById('hall-dup').addEventListener('click', () => {
@@ -2825,8 +2917,8 @@ document.getElementById('hall-dup').addEventListener('click', () => {
   copy.name = `${copy.name || 'Hall'} (copy)`;
   copy.results = [];   // logged results belong to the physical hall they came from
   state.hallProfiles.push(normalizeHall(copy));
-  state.activeHall = state.hallProfiles.length - 1;
-  applyElevation(); renderHallTabs(); renderHallEditor(); update();
+  switchHall(state.hallProfiles.length - 1);
+  renderHallTabs(); renderHallEditor(); update();
 });
 
 document.getElementById('hall-del').addEventListener('click', async () => {
@@ -2840,7 +2932,8 @@ document.getElementById('hall-del').addEventListener('click', async () => {
   if (!ok) return;
   state.hallProfiles.splice(state.activeHall, 1);
   state.activeHall = Math.max(0, state.activeHall - 1);
-  applyElevation(); renderHallTabs(); renderHallEditor(); update();
+  restoreHallConditions(); // the deleted hall's point went with it
+  applyElevation(); renderHallTabs(); renderHallEditor(); syncAllControls(); update();
 });
 
 document.getElementById('hall-export').addEventListener('click', () => {
@@ -4090,6 +4183,272 @@ document.getElementById('playback-toggle')?.addEventListener('click', function (
   playback.raf = requestAnimationFrame(tick);
 });
 
+/**
+ * The hall's thermal capacitance, kJ/K — what a kilowatt has to heat or cool.
+ *
+ * Module scope on purpose: both the rate calculator and the equipment
+ * inventory turn kW into °F/hr, and the two must never disagree about the
+ * mass they are acting on.
+ *
+ * @returns {{c:number, airOnly:boolean}|null} null without a hall volume
+ */
+function thermalC() {
+  if (!(state.hall.hallVolFt3 > 0)) return null;
+  const p = state.pressure, W0 = currentW();
+  const v = specificVolume(fToC(state.aTemp), W0, p);
+  const mda = (state.hall.hallVolFt3 * 0.0283168) / v;
+  const cAir = mda * (1.006 + 1.86 * W0);
+  const massLb = parseFloat(document.getElementById('rc-mass')?.value);
+  const cEq = massLb > 0 ? massLb * 0.45359237 * 0.5 : 0;
+  return { c: cAir + cEq, airOnly: !(massLb > 0) };
+}
+
+// ════════════════════════════════════════════════════════════
+//  EQUIPMENT INVENTORY — what this hall is actually made of
+// ════════════════════════════════════════════════════════════
+// Four typed rates describe a capability without describing the plant that
+// produces it, which leaves ordinary questions unanswerable: CRAH-3 is out,
+// what can we still do? Two of four humidifiers have scaled media — how much
+// have we lost? The inventory answers those by construction: capability is
+// the SUM of what is installed and working, and every unit carries its own
+// condition and its own in-service state.
+
+const EQUIP_LABEL = { cool: 'Cooling', heat: 'Heating', dehum: 'Dehumidifier', humid: 'Humidifier' };
+const UNIT_LABEL = {
+  kw: 'kW', ton: 'tons', btu: 'BTU/hr', mbh: 'MBH',
+  lbhr: 'lb/hr', gph: 'GPH', gpd: 'gal/day', pintday: 'pints/day',
+};
+
+/** Output per evaporative unit at the hall's live condition. */
+const evapUnitLbHr = (evap) => {
+  const r = evapMediaOutput({
+    cfm: evap.cfm, tempF: state.aTemp, rh: state.aRH,
+    effPct: evap.effPct, pressure: state.pressure,
+  });
+  return r ? r.lbPerHr : 0;
+};
+
+function renderEquipment() {
+  const host = document.getElementById('equip-panel');
+  if (!host) return;
+  const inv = state.hall.equipment || [];
+  const now = inventoryTotals(inv, evapUnitLbHr);
+  const full = inventoryNameplate(inv, evapUnitLbHr);
+
+  const rows = inv.map((u, i) => {
+    const isEvap = !!u.evap;
+    const capCell = isEvap
+      ? `<input type="number" inputmode="decimal" class="cap-rate eq-f" data-i="${i}" data-k="evapCfm" value="${u.evap.cfm || ''}" placeholder="CFM" min="0" step="500" title="Airflow across the media, CFM">`
+      : `<input type="number" inputmode="decimal" class="cap-rate eq-f" data-i="${i}" data-k="cap" value="${u.cap || ''}" min="0" step="1" placeholder="each">`;
+    const unitCell = isEvap
+      ? `<span class="cap-u">CFM ea.</span>`
+      : `<select class="sla-select calc-sel eq-f" data-i="${i}" data-k="unit">${unitsForKind(u.kind)
+          .map((x) => `<option value="${x}"${x === u.unit ? ' selected' : ''}>${UNIT_LABEL[x]}</option>`)
+          .join('')}</select>`;
+    const condTitle = isEvap
+      ? 'Media saturation effectiveness — what mineral scale destroys'
+      : "This unit's condition against its own nameplate";
+    const condKey = isEvap ? 'evapEff' : 'condPct';
+    const condVal = isEvap ? u.evap.effPct : u.condPct;
+    const out = unitOutput(u, evapUnitLbHr);
+    const outTxt = isThermalKind(u.kind)
+      ? `${out.toFixed(0)} kW`
+      : `${out.toFixed(1)} lb/hr`;
+
+    return (
+      `<div class="eq-row${u.online ? '' : ' eq-off'}">` +
+      `<input type="text" class="scn-input eq-f" data-i="${i}" data-k="name" value="${escHtml(u.name)}" placeholder="${EQUIP_LABEL[u.kind]} tag" maxlength="60">` +
+      `<input type="number" inputmode="numeric" class="cap-rate eq-f" data-i="${i}" data-k="count" value="${u.count}" min="1" max="999" step="1" title="How many identical units">` +
+      `<span class="cap-u">×</span>${capCell}${unitCell}` +
+      `<input type="number" inputmode="decimal" class="cap-rate eq-f" data-i="${i}" data-k="${condKey}" value="${condVal}" min="0" max="100" step="1" title="${condTitle}">` +
+      `<span class="cap-u">%</span>` +
+      `<label class="cap-ck" title="In service"><input type="checkbox" class="eq-f" data-i="${i}" data-k="online"${u.online ? ' checked' : ''}> on</label>` +
+      `<span class="eq-out">${u.online ? outTxt : 'out of service'}</span>` +
+      `<button type="button" class="scn-del eq-del" data-i="${i}" title="Remove">✕</button>` +
+      `</div>`
+    );
+  });
+
+  // Totals, always against nameplate — "120 of 200 lb/hr" is actionable in a
+  // way a bare "120 lb/hr" is not.
+  const pair = (a, b, unit, dec = 0) =>
+    b > 0
+      ? `<strong>${a.toFixed(dec)}</strong> of ${b.toFixed(dec)} ${unit}${a < b * 0.999 ? ` <span class="sv-marginal">(${Math.round((a / b) * 100)}%)</span>` : ''}`
+      : '—';
+  const totals = inv.length
+    ? `<div class="eq-totals">` +
+      `<div><span class="cap-hint">Cooling</span> ${pair(now.coolKW, full.coolKW, 'kW')} <span class="cap-hint">· ${now.counts.cool} unit${now.counts.cool === 1 ? '' : 's'}</span></div>` +
+      `<div><span class="cap-hint">Heating</span> ${pair(now.heatKW, full.heatKW, 'kW')}</div>` +
+      `<div><span class="cap-hint">Dehumidify</span> ${pair(now.dehumLbHr, full.dehumLbHr, 'lb/hr', 1)}</div>` +
+      `<div><span class="cap-hint">Humidify</span> ${pair(now.humidLbHr, full.humidLbHr, 'lb/hr', 1)} <span class="cap-hint">· ${now.counts.humid} unit${now.counts.humid === 1 ? '' : 's'}</span></div>` +
+      `</div>` +
+      (now.offline || now.degraded
+        ? `<div class="calc-warn" style="margin-top:6px">⚠ ${[
+            now.offline ? `${now.offline} out of service` : '',
+            now.degraded ? `${now.degraded} degraded` : '',
+          ].filter(Boolean).join(' · ')} — the totals above already reflect this.</div>`
+        : '')
+    : '<div class="cap-hint">No equipment listed yet. Add the units this hall actually has and the rates below can be derived from them — including what is offline or fouled.</div>';
+
+  host.innerHTML =
+    `<div class="sla-caps-label">Installed plant — each unit counted, rated and derated on its own</div>` +
+    `<div class="cap-explain">List what is really in this hall. A unit's <strong>%</strong> is its condition against its own nameplate (scaled media, a tired compressor); unticking <strong>on</strong> takes it out of service entirely. Evaporative humidifiers are computed from airflow at the hall's live condition, so their capacity moves with the room.</div>` +
+    `<div id="equip-rows">${rows.join('')}</div>` +
+    `<div class="addcity-actions" style="margin-top:6px">` +
+    Object.entries(EQUIP_LABEL)
+      .map(([k, lbl]) => `<button type="button" class="scn-btn eq-add" data-kind="${k}">+ ${lbl}</button>`)
+      .join('') +
+    `<button type="button" class="scn-btn eq-add" data-kind="humid" data-evap="1">+ Humidifier (wetted media)</button>` +
+    `</div>` + totals +
+    (inv.length
+      ? `<div class="addcity-actions" style="margin-top:8px"><button type="button" class="scn-btn scn-btn-primary" id="equip-apply">Apply inventory to the rates below</button></div>`
+      : '');
+
+  host.querySelectorAll('.eq-f').forEach((el) =>
+    el.addEventListener(el.tagName === 'SELECT' || el.type === 'checkbox' ? 'change' : 'input', function () {
+      const u = state.hall.equipment[+this.dataset.i];
+      if (!u) return;
+      const k = this.dataset.k;
+      if (k === 'online') u.online = this.checked;
+      else if (k === 'name') u.name = this.value;
+      else if (k === 'unit') u.unit = this.value;
+      else if (k === 'evapCfm') u.evap.cfm = parseFloat(this.value) || 0;
+      else if (k === 'evapEff') u.evap.effPct = Math.min(100, Math.max(1, parseFloat(this.value) || 1));
+      else u[k] = parseFloat(this.value) || (k === 'count' ? 1 : 0);
+      state.hall.equipment = normalizeInventory(state.hall.equipment);
+      renderEquipment();
+      update();
+    }),
+  );
+  host.querySelectorAll('.eq-del').forEach((b) =>
+    b.addEventListener('click', () => {
+      state.hall.equipment.splice(+b.dataset.i, 1);
+      renderEquipment();
+      update();
+    }),
+  );
+  host.querySelectorAll('.eq-add').forEach((b) =>
+    b.addEventListener('click', () => {
+      const kind = b.dataset.kind;
+      const seed = { kind, name: '', count: 1, cap: 0 };
+      if (b.dataset.evap) seed.evap = { cfm: state.hall.airflowCfm || 0, effPct: 85 };
+      state.hall.equipment = normalizeInventory([...(state.hall.equipment || []), seed]);
+      renderEquipment();
+      update();
+    }),
+  );
+  document.getElementById('equip-apply')?.addEventListener('click', () => {
+    // Thermal totals need the hall's thermal mass to become °F/hr — the same
+    // conversion the rate calculator uses, so the two can never disagree.
+    const C = thermalC();
+    const applied = [];
+    if (C && now.coolKW > 0) {
+      const itKW = (state.hall.calc || {}).it || 0;
+      const excess = now.coolKW - itKW;
+      if (excess > 0) {
+        state.hall.rateCoolF = Math.round(((excess * 3600) / C.c) * 1.8 * 10) / 10;
+        applied.push('cooling');
+      }
+    }
+    if (C && now.heatKW > 0) {
+      state.hall.rateWarmF = Math.round(((now.heatKW * 3600) / C.c) * 1.8 * 10) / 10;
+      applied.push('warming');
+    }
+    if (now.dehumLbHr > 0) {
+      state.hall.rateDehumLb = Math.round(now.dehumLbHr * 10) / 10;
+      state.hall.canDehumidify = true;
+      applied.push('dehumidify');
+    }
+    if (now.humidLbHr > 0) {
+      state.hall.rateHumLb = Math.round(now.humidLbHr * 10) / 10;
+      state.hall.canHumidify = true;
+      applied.push('humidify');
+    }
+    if (!applied.length) {
+      toast(
+        C ? 'Nothing to apply — add capacities to the units above.'
+          : 'Set the hall air volume first: turning kW into °F/hr needs the mass of air being conditioned.',
+        { kind: 'warn', duration: 7000 },
+      );
+      return;
+    }
+    renderHallEditor();
+    update();
+    toast(`Rates derived from the inventory: ${applied.join(', ')}.`, { kind: 'ok' });
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  ALL HALLS — every hall's status at a glance
+// ════════════════════════════════════════════════════════════
+// One row per hall, each judged at ITS OWN elevation against the active SLA.
+// Halls differ in pressure, so the same temperature and humidity is not the
+// same dew point in Denver as in Goodyear — this is the only surface that
+// shows that side by side.
+
+function renderAllHalls() {
+  const host = document.getElementById('allhalls-body');
+  const sub = document.getElementById('allhalls-sub');
+  if (!host) return;
+  const sla = state.slaProfiles[state.activeSla];
+  let breaches = 0;
+  let unplanned = 0;
+
+  const rows = state.hallProfiles.map((h, i) => {
+    const active = i === state.activeHall;
+    // The active hall's live point may not be stashed yet; use what is on screen.
+    const c = active
+      ? { aTemp: state.aTemp, aRH: state.aRH, bTemp: state.bTemp, bRH: state.bRH }
+      : h.cond;
+    const p = h.baroKpa != null ? h.baroKpa : pressureFromAltitude(h.elevFt ?? 0);
+    const rates = ['rateCoolF', 'rateWarmF'].some((k) => h[k] > 0);
+    if (!rates) unplanned++;
+
+    let status;
+    if (!c) {
+      status = '<span class="cap-hint">not set up yet</span>';
+    } else {
+      const chk = checkSLACore(sla, c.aTemp, c.aRH);
+      if (!chk.ok) breaches++;
+      status = chk.ok
+        ? '<span class="badge badge-ok">✓ in SLA</span>'
+        : `<span class="badge badge-bad">✗ ${escHtml(fmtSlaReason(chk))}</span>`;
+    }
+
+    const cond = c
+      ? `${dispTs(c.aTemp)}${tLabel()} · ${Math.round(c.aRH)}%  →  ${dispTs(c.bTemp)}${tLabel()} · ${Math.round(c.bRH)}%`
+      : '—';
+    const where = [h.siteName, h.building].filter(Boolean).join(' · ');
+    return (
+      `<button type="button" class="hall-row${active ? ' is-active' : ''}" data-hall="${i}">` +
+      `<span><span class="hr-name">${escHtml(h.name || `Hall ${i + 1}`)}</span>` +
+      `${where ? `<br><span class="hr-meta">${escHtml(where)}</span>` : ''}` +
+      `<br><span class="hr-meta">${Math.round(h.elevFt ?? 0).toLocaleString()} ft · ${p.toFixed(1)} kPa` +
+      `${rates ? '' : ' · no plant rates'}</span></span>` +
+      `<span class="hr-cond">${cond}</span>${status}</button>`
+    );
+  });
+
+  host.innerHTML = rows.join('') ||
+    '<div class="sv-hint">No halls yet — add one in the Data Hall card.</div>';
+  host.querySelectorAll('[data-hall]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const i = +b.dataset.hall;
+      if (i === state.activeHall) return;
+      switchHall(i);
+      renderHallTabs(); renderHallEditor(); syncAllControls(); update();
+    }),
+  );
+
+  if (sub) {
+    const n = state.hallProfiles.length;
+    sub.textContent =
+      `${n} hall${n === 1 ? '' : 's'}` +
+      (breaches ? ` · ⚠ ${breaches} outside ${sla.name}` : ' · all inside SLA') +
+      (unplanned ? ` · ${unplanned} missing plant rates` : '');
+  }
+}
+
 // ════════════════════════════════════════════════════════════
 //  ONBOARDING — first-run guidance that does not tax returning users
 // ════════════════════════════════════════════════════════════
@@ -4345,6 +4704,10 @@ async function boot() {
 normalizeCaps(state.slaProfiles);  // default capability flags OFF on preloaded profiles
 loadCustomSites();                 // restore user-added cities
 loadProfiles();                  // restore persisted profiles if available (re-normalizes)
+// The working point is stored ON the active hall, so it comes back with it.
+// (Only the hall profiles persist; the top-level A/B state does not, which is
+// why this restore has to happen explicitly and before the first render.)
+restoreHallConditions();
 applyElevation();
 // Ensure TARGET starts physically on CURRENT's moisture line, then sync controls.
 state.bRH = clampRH(rhFromW_F(state.bTemp, currentW()));

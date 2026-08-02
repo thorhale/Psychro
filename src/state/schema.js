@@ -13,6 +13,8 @@
  *   v1           split hall profiles / SLA profiles / scenarios / customSites.
  */
 
+import { normalizeInventory } from '../core/equipment.js';
+
 /** Fields that belong to the physical HALL, not the customer contract. */
 export const HALL_KEYS = [
   'siteName',
@@ -48,6 +50,23 @@ export function normalizeHall(h) {
   for (const k of ['rateCoolF', 'rateWarmF', 'rateDehumLb', 'rateHumLb'])
     h[k] = numOrNull(h[k]);
   if (h.calc == null || typeof h.calc !== 'object') h.calc = {};
+  // Each hall remembers the conditions last worked on IN THAT HALL. A site
+  // engineer running four halls was re-typing temperature and humidity on
+  // every tab switch, because the working point was global while everything
+  // else about the hall was not. Absent or malformed → null, meaning "this
+  // hall has never been worked on"; the UI seeds it on first switch.
+  h.cond =
+    h.cond != null &&
+    typeof h.cond === 'object' &&
+    isNum(h.cond.aTemp) && isNum(h.cond.aRH) &&
+    isNum(h.cond.bTemp) && isNum(h.cond.bRH)
+      ? {
+          aTemp: h.cond.aTemp,
+          aRH: clamp(h.cond.aRH, 0, 100),
+          bTemp: h.cond.bTemp,
+          bRH: clamp(h.cond.bRH, 0, 100),
+        }
+      : null;
   if (!h.name || typeof h.name !== 'string')
     h.name = h.siteName ? `${h.siteName} · Hall` : 'Hall 1';
   // 1–150, matching the UI: a plant genuinely can beat nameplate (staged
@@ -58,6 +77,11 @@ export function normalizeHall(h) {
   for (const k of ['derateCoolPct', 'derateWarmPct', 'derateDehumPct', 'derateHumPct'])
     h[k] = isNum(h[k]) ? clamp(h[k], 0, 100) : 100;
   if (!Array.isArray(h.results)) h.results = [];
+  // The plant inventory: individual units, each independently degradable and
+  // able to be taken out of service. Absent on every hall that predates it,
+  // which is fine — the manual rates above remain the source of truth until
+  // an inventory exists to derive them from.
+  h.equipment = normalizeInventory(h.equipment);
   return h;
 }
 

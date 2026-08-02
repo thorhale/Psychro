@@ -755,6 +755,206 @@ test.describe('accessibility and onboarding', () => {
   });
 });
 
+test.describe('multiple halls', () => {
+  test('each hall keeps its own working conditions', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // Hall 1 is working a warm move.
+    await page.fill('#a-temp', '75');
+    await page.dispatchEvent('#a-temp', 'input');
+    await page.locator('#a-temp').blur();
+
+    await page.locator('#hall-add').click(); // creates and switches to Hall 2
+    await page.fill('#a-temp', '64');
+    await page.dispatchEvent('#a-temp', 'input');
+    await page.locator('#a-temp').blur();
+
+    // Back to Hall 1: its own point, not Hall 2's.
+    await page.locator('#hall-tabs button').first().click();
+    await expect(page.locator('#a-temp')).toHaveValue('75');
+    await page.locator('#hall-tabs button').nth(1).click();
+    await expect(page.locator('#a-temp')).toHaveValue('64');
+
+    // And it survives a reload — the point belongs to the hall, durably.
+    await page.reload();
+    await expandAll(page);
+    await expect(page.locator('#a-temp')).toHaveValue('64');
+  });
+
+  test('the all-halls overview grades every hall and switches on tap', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.fill('#a-temp', '70');
+    await page.dispatchEvent('#a-temp', 'input');
+    await page.locator('#a-temp').blur();
+    await page.locator('#hall-add').click();
+    // Drive Hall 2 outside the Base SLA (ceiling 95 °F).
+    await page.fill('#a-temp', '99');
+    await page.dispatchEvent('#a-temp', 'input');
+    await page.locator('#a-temp').blur();
+
+    const rows = page.locator('#allhalls-body .hall-row');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0)).toContainText('in SLA');
+    await expect(rows.nth(1)).toContainText('above'); //   names the broken bound
+    await expect(page.locator('#allhalls-sub')).toContainText('1 outside');
+
+    // Tapping the first row switches to it, bringing its own point along.
+    await rows.nth(0).click();
+    await expect(page.locator('#a-temp')).toHaveValue('70');
+    await expect(page.locator('#allhalls-body .hall-row').nth(0)).toHaveClass(/is-active/);
+  });
+});
+
+test.describe('equipment inventory', () => {
+  test('units are counted individually and totalled against nameplate', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-kind="cool"]').click();
+    const row = page.locator('.eq-row').first();
+    await row.locator('[data-k="name"]').fill('CRAH');
+    await row.locator('[data-k="count"]').fill('4');
+    await row.locator('[data-k="count"]').dispatchEvent('input');
+    await row.locator('[data-k="cap"]').fill('30');
+    await row.locator('[data-k="cap"]').dispatchEvent('input');
+    await row.locator('[data-k="unit"]').selectOption('ton');
+
+    // 4 × 30 ton = 422 kW, all healthy, so current equals nameplate.
+    await expect(page.locator('.eq-totals')).toContainText('422');
+    await expect(page.locator('.eq-totals')).toContainText('4 units');
+  });
+
+  test('one unit offline and one degraded change the total, and say so', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // Two separate humidifier line items: one healthy, one scaled.
+    await page.locator('.eq-add[data-kind="humid"]:not([data-evap])').click();
+    await page.locator('.eq-add[data-kind="humid"]:not([data-evap])').click();
+    const rows = page.locator('.eq-row');
+    for (const i of [0, 1]) {
+      await rows.nth(i).locator('[data-k="cap"]').fill('20');
+      await rows.nth(i).locator('[data-k="cap"]').dispatchEvent('input');
+    }
+    await expect(page.locator('.eq-totals')).toContainText('40.0 of 40.0');
+
+    // Scale takes half of one unit's capacity.
+    await rows.nth(1).locator('[data-k="condPct"]').fill('50');
+    await rows.nth(1).locator('[data-k="condPct"]').dispatchEvent('input');
+    await expect(page.locator('.eq-totals')).toContainText('30.0 of 40.0');
+    await expect(page.locator('#equip-panel')).toContainText('1 degraded');
+
+    // And taking the other out of service is not a derate — it is absent.
+    await rows.nth(0).locator('[data-k="online"]').uncheck();
+    await expect(page.locator('.eq-totals')).toContainText('10.0 of 40.0');
+    await expect(page.locator('#equip-panel')).toContainText('out of service');
+  });
+
+  test('a wetted-media humidifier is computed from the hall condition', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-evap="1"]').click();
+    const row = page.locator('.eq-row').first();
+    await row.locator('[data-k="evapCfm"]').fill('10000');
+    await row.locator('[data-k="evapCfm"]').dispatchEvent('input');
+    // Its output is a real lb/hr from the psychrometrics, not a typed rating.
+    await expect(row.locator('.eq-out')).toContainText('lb/hr');
+    const atStart = await row.locator('.eq-out').textContent();
+
+    // Make the hall drier: the same media now produces MORE water.
+    await page.fill('#a-rh', '20');
+    await page.dispatchEvent('#a-rh', 'input');
+    await page.locator('#a-rh').blur();
+    const drier = await page.locator('.eq-row').first().locator('.eq-out').textContent();
+    expect(parseFloat(drier)).toBeGreaterThan(parseFloat(atStart));
+  });
+
+  test('the inventory can drive the hall rates', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-kind="dehum"]').click();
+    const row = page.locator('.eq-row').first();
+    await row.locator('[data-k="cap"]').fill('24');
+    await row.locator('[data-k="cap"]').dispatchEvent('input');
+    await page.locator('#equip-apply').click();
+    await expect(page.locator('.ntf-toast')).toContainText('derived from the inventory');
+    await expect(page.locator('#rate-dehum')).toHaveValue('24');
+    await expect(page.locator('#cap-dehum')).toBeChecked();
+  });
+
+  test('the inventory belongs to its hall', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-kind="cool"]').click();
+    await expect(page.locator('.eq-row')).toHaveCount(1);
+    await page.locator('#hall-add').click(); // a different hall, different plant
+    await expect(page.locator('.eq-row')).toHaveCount(0);
+    await page.locator('#hall-tabs button').first().click();
+    await expect(page.locator('.eq-row')).toHaveCount(1);
+  });
+});
+
+test.describe('evaporative humidifier capacity', () => {
+  test('computes output from airflow and effectiveness, and warns what is missing', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#hc-type').selectOption('evap');
+    await expect(page.locator('#hc-res')).toContainText('airflow across the media');
+
+    await page.fill('#hc-cfm', '10000');
+    await page.dispatchEvent('#hc-cfm', 'input');
+    await expect(page.locator('#hc-res')).toContainText('saturation effectiveness');
+
+    await page.fill('#hc-eff', '90');
+    await page.dispatchEvent('#hc-eff', 'input');
+    // A real number at the Current point, not a nameplate.
+    await expect(page.locator('#hc-res')).toContainText('lb/hr');
+    await expect(page.locator('#hc-res')).toContainText('Current point');
+    // Evaporative humidification cools — the readout says so.
+    await expect(page.locator('#hc-res')).toContainText('also cools');
+  });
+
+  test('fouled media shows up as lost capacity', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#hc-type').selectOption('evap');
+    await page.fill('#hc-cfm', '10000');
+    await page.dispatchEvent('#hc-cfm', 'input');
+    await page.fill('#hc-eff', '90');
+    await page.dispatchEvent('#hc-eff', 'input');
+    const clean = await page.locator('#hc-res').textContent();
+    const cleanLb = Number(clean.match(/([\d.]+) lb\/hr/)[1]);
+
+    // Scale has taken a third of the media's effectiveness.
+    await page.fill('#hc-eff', '60');
+    await page.dispatchEvent('#hc-eff', 'input');
+    const fouled = await page.locator('#hc-res').textContent();
+    const fouledLb = Number(fouled.match(/([\d.]+) lb\/hr/)[1]);
+    expect(fouledLb).toBeLessThan(cleanLb);
+    expect(fouledLb / cleanLb).toBeCloseTo(60 / 90, 2);
+
+    // And a measured output back-calculates what you are really achieving.
+    await page.fill('#hc-eff', '90');
+    await page.dispatchEvent('#hc-eff', 'input');
+    await page.fill('#hc-meas', String(Math.round(cleanLb * (2 / 3))));
+    await page.dispatchEvent('#hc-meas', 'input');
+    await expect(page.locator('#hc-res')).toContainText('implies');
+    await expect(page.locator('#hc-res')).toContainText('losing capacity');
+  });
+
+  test('applying the computed rate fills the hall\'s humidify capacity', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#hc-type').selectOption('evap');
+    await page.fill('#hc-cfm', '10000');
+    await page.dispatchEvent('#hc-cfm', 'input');
+    await page.fill('#hc-eff', '85');
+    await page.dispatchEvent('#hc-eff', 'input');
+    await page.locator('#hc-res .calc-apply').click();
+    await expect(page.locator('#rate-hum')).not.toHaveValue('');
+    await expect(page.locator('#cap-hum')).toBeChecked();
+  });
+});
+
 test.describe('field usability', () => {
   test.use({ hasTouch: true });
 
