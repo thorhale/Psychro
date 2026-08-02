@@ -876,9 +876,76 @@ test.describe('equipment inventory', () => {
     await row.locator('[data-k="cap"]').fill('24');
     await row.locator('[data-k="cap"]').dispatchEvent('input');
     await page.locator('#equip-apply').click();
-    await expect(page.locator('.ntf-toast')).toContainText('derived from the inventory');
+    await expect(page.locator('.ntf-toast')).toContainText('follow this inventory');
     await expect(page.locator('#rate-dehum')).toHaveValue('24');
     await expect(page.locator('#cap-dehum')).toBeChecked();
+  });
+
+  test('a live rate follows the plant instead of going stale', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-kind="humid"]:not([data-evap])').click();
+    const row = page.locator('.eq-row').first();
+    await row.locator('[data-k="count"]').fill('4');
+    await row.locator('[data-k="count"]').dispatchEvent('input');
+    await row.locator('[data-k="cap"]').fill('20');
+    await row.locator('[data-k="cap"]').dispatchEvent('input');
+    await page.locator('#equip-apply').click();
+    await expect(page.locator('#rate-hum')).toHaveValue('80');
+
+    // Tag one of the four out. Before this, the totals moved and the rate did
+    // not — the twin and the plan disagreed until someone pressed Apply again.
+    await row.locator('[data-k="count"]').fill('3');
+    await row.locator('[data-k="count"]').dispatchEvent('input');
+    await expect(page.locator('#rate-hum')).toHaveValue('60');
+    // Scale the media and it drops again, with no button pressed.
+    await row.locator('[data-k="condPct"]').fill('50');
+    await row.locator('[data-k="condPct"]').dispatchEvent('input');
+    await expect(page.locator('#rate-hum')).toHaveValue('30');
+    // A derived rate is not typed into.
+    await expect(page.locator('#rate-hum')).toHaveAttribute('readonly', '');
+  });
+
+  test('taking the rates back by hand restores what was typed before', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // A commissioning-observed rate, typed by a person.
+    await page.locator('#cap-hum').check();
+    await page.fill('#rate-hum', '17.5');
+    await page.dispatchEvent('#rate-hum', 'input');
+
+    await page.locator('.eq-add[data-kind="humid"]:not([data-evap])').click();
+    const row = page.locator('.eq-row').first();
+    await row.locator('[data-k="cap"]').fill('40');
+    await row.locator('[data-k="cap"]').dispatchEvent('input');
+    await page.locator('#equip-apply').click();
+    await expect(page.locator('#rate-hum')).toHaveValue('40');
+
+    // Handing the rates back must return the measurement, not leave the
+    // derived number sitting in its place.
+    await page.locator('#equip-manual').click();
+    await expect(page.locator('#rate-hum')).toHaveValue('17.5');
+    await expect(page.locator('#rate-hum')).not.toHaveAttribute('readonly', '');
+    // And the inventory is still there, ready to drive again.
+    await expect(page.locator('.eq-row')).toHaveCount(1);
+    await expect(page.locator('#equip-apply')).toBeVisible();
+  });
+
+  test('live rates survive a reload and stay attached to their hall', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-kind="dehum"]').click();
+    const row = page.locator('.eq-row').first();
+    await row.locator('[data-k="cap"]').fill('24');
+    await row.locator('[data-k="cap"]').dispatchEvent('input');
+    await page.locator('#equip-apply').click();
+    await expect(page.locator('#rate-dehum')).toHaveValue('24');
+
+    await page.reload();
+    await expandAll(page);
+    await expect(page.locator('#equip-manual')).toBeVisible(); // still live
+    await expect(page.locator('#rate-dehum')).toHaveValue('24');
+    await expect(page.locator('#rate-dehum')).toHaveAttribute('readonly', '');
   });
 
   test('fans are counted and derated like any other machine', async ({ page }) => {

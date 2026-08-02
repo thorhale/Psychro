@@ -415,6 +415,12 @@
   .eq-totals { display:grid; grid-template-columns:repeat(2,1fr); gap:6px 14px; margin-top:10px;
     padding-top:10px; border-top:1px solid var(--border); font-size:.76rem; font-family:var(--mono); }
   @media (max-width:560px) { .eq-totals { grid-template-columns:1fr; } }
+  /* A rate the inventory is producing: still legible, visibly not yours to
+     type into. Readonly rather than disabled so the number stays selectable. */
+  .cap-rate.cap-derived { background:rgba(0,169,206,.08); border-color:var(--stream-teal);
+    color:var(--stream-teal); cursor:default; }
+  .eq-live { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px;
+    padding-top:8px; border-top:1px solid var(--border); font-size:.72rem; color:var(--muted); }
   /* The add-equipment row grows as kinds are added, so it wraps. Its own
      class rather than .addcity-actions, which is a fixed two-button row and
      would push a sixth button clean out of the card. */

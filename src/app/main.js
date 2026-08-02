@@ -50,7 +50,7 @@ import { driftFit } from '../core/driftfit.js';
 import { evapMediaOutput, effectivenessFromOutput } from '../core/evapmedia.js';
 import {
   normalizeInventory, inventoryTotals, inventoryNameplate, worstSingleLoss,
-  unitOutput, unitsForKind, isThermalKind, isAirKind, baseUnitOf,
+  ratesFromTotals, unitOutput, unitsForKind, isThermalKind, isAirKind, baseUnitOf,
 } from '../core/equipment.js';
 import { parseTrendCsv, maxWindowedRate } from '../lib/trendcsv.js';
 import { SCENARIOS, refereeRun, TRAINER_VERSION } from '../core/trainer.js';
@@ -2082,6 +2082,11 @@ function renderDomainWarnings() {
 }
 
 function update() {
+  // FIRST, before anything reads the rates: when the inventory is driving, the
+  // plan has to reflect the plant as it stands right now. Evaporative output
+  // moves with the room, so this is not only an equipment-edit concern — the
+  // humidify rate changes when the hall does.
+  syncDerivedRates();
   drawChart();
   buildTable();
   updateControlReadout();
@@ -2290,6 +2295,22 @@ function renderHallEditor() {
       update();
     });
   };
+  // While the inventory is driving, these four are outputs, not inputs. Marked
+  // readonly rather than disabled so the numbers stay legible and copyable,
+  // and clicking one explains itself instead of doing nothing.
+  if (ratesAreLive()) {
+    for (const id of ['rate-cool', 'rate-warm', 'rate-dehum', 'rate-hum', 'hall-cfm']) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.readOnly = true;
+      el.classList.add('cap-derived');
+      el.title = 'Derived from the equipment inventory above';
+      el.addEventListener('focus', () => {
+        toast('This rate comes from the inventory above. Edit a unit there, or switch back to typing rates by hand.',
+          { kind: 'info', duration: 6000 });
+      }, { once: true });
+    }
+  }
   rateWire('rate-cool',  'rateCoolF');
   rateWire('rate-warm',  'rateWarmF');
   rateWire('rate-dehum', 'rateDehumLb');
@@ -4236,6 +4257,106 @@ const evapUnitLbHr = (evap) => {
   return r ? r.lbPerHr : 0;
 };
 
+/** Is this hall's plan being driven by its inventory right now? */
+const ratesAreLive = (h = state.hall) =>
+  h && h.rateSource === 'inventory' && (h.equipment || []).length > 0;
+
+/**
+ * Keep the hall's planning rates in step with its plant.
+ *
+ * Without this the inventory was a display: tag a CRAH out, watch the totals
+ * drop, and the plan underneath carries on using the rate that was applied
+ * days ago. The twin and the planner disagreed silently, which is the one
+ * failure mode a twin exists to prevent.
+ *
+ * Only ever writes while the hall is in 'inventory' mode, and only writes
+ * values that actually changed — this runs on every update(), including while
+ * the chart is being dragged.
+ *
+ * @returns {boolean} whether any rate moved (the caller may need to re-render)
+ */
+function syncDerivedRates() {
+  if (!ratesAreLive()) return false;
+  const C = thermalC();
+  const derived = ratesFromTotals(inventoryTotals(state.hall.equipment, evapUnitLbHr), {
+    cKJperK: C ? C.c : null,
+    itKW: (state.hall.calc || {}).it,
+  });
+  let changed = false;
+  for (const [k, v] of Object.entries(derived)) {
+    if (state.hall[k] !== v) { state.hall[k] = v; changed = true; }
+  }
+  // The capability flags follow the plant: a hall with no humidifiers listed
+  // cannot humidify, and one that has them can.
+  for (const [flag, rate] of [['canDehumidify', 'rateDehumLb'], ['canHumidify', 'rateHumLb']]) {
+    const able = derived[rate] != null;
+    if (state.hall[flag] !== able) { state.hall[flag] = able; changed = true; }
+  }
+  if (changed) paintDerivedRates();
+  return changed;
+}
+
+/**
+ * Push derived rates into the fields that display them.
+ *
+ * The rate inputs are written by renderHallEditor(), which is far too heavy to
+ * re-run on every update() — it would rebuild the whole card and take focus
+ * with it. These five values are the only thing that moves, so they get
+ * painted directly.
+ */
+function paintDerivedRates() {
+  const set = (id, v) => {
+    const el = /** @type {HTMLInputElement|null} */ (document.getElementById(id));
+    if (el) el.value = v == null ? '' : String(v);
+  };
+  set('rate-cool', state.hall.rateCoolF);
+  set('rate-warm', state.hall.rateWarmF);
+  set('rate-dehum', state.hall.rateDehumLb);
+  set('rate-hum', state.hall.rateHumLb);
+  set('hall-cfm', state.hall.airflowCfm);
+  // The two water rates are gated by their capability checkbox, and the plant
+  // just decided whether this hall has that capability at all.
+  for (const [box, rate, flag] of [
+    ['cap-dehum', 'rate-dehum', 'canDehumidify'],
+    ['cap-hum', 'rate-hum', 'canHumidify'],
+  ]) {
+    const cb = /** @type {HTMLInputElement|null} */ (document.getElementById(box));
+    const el = /** @type {HTMLInputElement|null} */ (document.getElementById(rate));
+    if (cb) cb.checked = !!state.hall[flag];
+    if (el) el.disabled = !state.hall[flag];
+  }
+}
+
+/**
+ * Hand the rates over to the inventory, or take them back.
+ *
+ * Switching to 'inventory' puts the typed rates aside rather than overwriting
+ * them, because a commissioning-observed °F/hr is a measurement someone made
+ * on site and losing it to a mode toggle would be indefensible. Switching back
+ * restores exactly what was set aside.
+ */
+function setRateSource(mode) {
+  const h = state.hall;
+  const KEYS = ['rateCoolF', 'rateWarmF', 'rateDehumLb', 'rateHumLb', 'airflowCfm'];
+  if (mode === 'inventory') {
+    if (h.rateSource !== 'inventory') {
+      h.manualRates = Object.fromEntries(KEYS.map((k) => [k, h[k] ?? null]));
+    }
+    h.rateSource = 'inventory';
+    syncDerivedRates();
+  } else {
+    h.rateSource = 'manual';
+    if (h.manualRates) {
+      for (const k of KEYS) h[k] = h.manualRates[k] ?? null;
+      h.canDehumidify = h.rateDehumLb != null;
+      h.canHumidify = h.rateHumLb != null;
+      h.manualRates = null;
+    }
+  }
+  renderHallEditor();
+  update();
+}
+
 /**
  * "Lose one machine" — the question the inventory exists to answer.
  *
@@ -4377,7 +4498,10 @@ function renderEquipment() {
     `<button type="button" class="scn-btn eq-add" data-kind="humid" data-evap="1">+ Humidifier (wetted media)</button>` +
     `</div>` + totals +
     (inv.length
-      ? `<div class="eq-add-row"><button type="button" class="scn-btn scn-btn-primary" id="equip-apply">Apply inventory to the rates below</button></div>`
+      ? ratesAreLive()
+        ? `<div class="eq-live"><span class="badge badge-ok">● live</span> The rates below are coming from this inventory and follow every change you make here.` +
+          `<button type="button" class="scn-btn" id="equip-manual">Type the rates by hand instead</button></div>`
+        : `<div class="eq-add-row"><button type="button" class="scn-btn scn-btn-primary" id="equip-apply">Drive the rates below from this inventory</button></div>`
       : '');
 
   host.querySelectorAll('.eq-f').forEach((el) =>
@@ -4414,49 +4538,28 @@ function renderEquipment() {
     }),
   );
   document.getElementById('equip-apply')?.addEventListener('click', () => {
-    // Thermal totals need the hall's thermal mass to become °F/hr — the same
-    // conversion the rate calculator uses, so the two can never disagree.
+    // Nothing derivable yet: say which of the two things is missing rather
+    // than switching into a live mode that would blank every rate.
     const C = thermalC();
-    const applied = [];
-    if (C && now.coolKW > 0) {
-      const itKW = (state.hall.calc || {}).it || 0;
-      const excess = now.coolKW - itKW;
-      if (excess > 0) {
-        state.hall.rateCoolF = Math.round(((excess * 3600) / C.c) * 1.8 * 10) / 10;
-        applied.push('cooling');
-      }
-    }
-    if (C && now.heatKW > 0) {
-      state.hall.rateWarmF = Math.round(((now.heatKW * 3600) / C.c) * 1.8 * 10) / 10;
-      applied.push('warming');
-    }
-    if (now.dehumLbHr > 0) {
-      state.hall.rateDehumLb = Math.round(now.dehumLbHr * 10) / 10;
-      state.hall.canDehumidify = true;
-      applied.push('dehumidify');
-    }
-    if (now.humidLbHr > 0) {
-      state.hall.rateHumLb = Math.round(now.humidLbHr * 10) / 10;
-      state.hall.canHumidify = true;
-      applied.push('humidify');
-    }
-    // Supply airflow is what the fans actually deliver today, not the design
-    // figure — that is the whole point of derating them individually.
-    if (now.airCfm > 0) {
-      state.hall.airflowCfm = Math.round(now.airCfm);
-      applied.push('supply airflow');
-    }
-    if (!applied.length) {
-      toast(
-        C ? 'Nothing to apply — add capacities to the units above.'
-          : 'Set the hall air volume first: turning kW into °F/hr needs the mass of air being conditioned.',
-        { kind: 'warn', duration: 7000 },
-      );
+    const anyCapacity = now.coolKW > 0 || now.heatKW > 0 || now.dehumLbHr > 0 ||
+      now.humidLbHr > 0 || now.airCfm > 0;
+    if (!anyCapacity) {
+      toast('Nothing to derive from yet — give the units above their capacities.',
+        { kind: 'warn', duration: 7000 });
       return;
     }
-    renderHallEditor();
-    update();
-    toast(`Rates derived from the inventory: ${applied.join(', ')}.`, { kind: 'ok' });
+    if (!C && (now.coolKW > 0 || now.heatKW > 0)) {
+      toast('Set the hall air volume first: turning kW into °F/hr needs the mass of air being conditioned.',
+        { kind: 'warn', duration: 7000 });
+      return;
+    }
+    setRateSource('inventory');
+    toast('The rates now follow this inventory — change a unit and the plan changes with it.',
+      { kind: 'ok', duration: 6000 });
+  });
+  document.getElementById('equip-manual')?.addEventListener('click', () => {
+    setRateSource('manual');
+    toast('Back to typed rates — your earlier numbers are restored.', { kind: 'ok' });
   });
 }
 

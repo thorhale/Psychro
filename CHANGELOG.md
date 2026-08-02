@@ -11,6 +11,30 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — the inventory now drives the plan, instead of being copied into it
+
+The inventory used to be a display. You could tag a CRAH out, watch the totals
+drop, and the plan underneath would carry on using the rate that was applied
+days ago — the twin and the planner disagreeing silently, which is the one
+failure mode a twin exists to prevent.
+
+- **"Drive the rates below from this inventory"** puts the hall in a live mode:
+  cooling, warming, dehumidify, humidify and supply airflow are re-derived from
+  the plant on every change. Tag a unit out, drop a condition, add a machine —
+  the plan moves with it, with no button to remember.
+- **Evaporative output moves with the room**, so a live humidify rate tracks
+  the hall condition too, not just edits to the equipment list.
+- **Derived rates are shown as outputs**, not empty fields waiting to be typed
+  into, and clicking one says where the number comes from.
+- **Handing the rates back restores what you typed.** The manual rates are set
+  aside when the inventory takes over and put back when you take them back — a
+  commissioning-observed °F/hr is a measurement someone made on site, and
+  losing it to a mode toggle would be indefensible.
+- **A hall's capability follows its plant**: list no humidifiers and the hall
+  cannot humidify; add one and it can.
+- Halls that predate the inventory are untouched — no inventory means typed
+  rates, exactly as before.
+
 ### Added — air movement counted as plant, and the "lose one machine" question
 
 - **Fans and air handlers are equipment too.** A new kind alongside cooling,

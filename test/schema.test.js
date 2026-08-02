@@ -61,6 +61,36 @@ describe('normalizeHall', () => {
   it('derives the name from the site when present', () => {
     expect(normalizeHall({ siteName: 'Goodyear, AZ' }).name).toBe('Goodyear, AZ · Hall');
   });
+
+  it('a hall types its own rates unless it has an inventory to derive them from', () => {
+    // Every hall that predates the inventory keeps its typed rates. Silently
+    // switching one of those to a live mode would blank every rate it has.
+    expect(normalizeHall({ rateCoolF: 2.5 }).rateSource).toBe('manual');
+    expect(normalizeHall({}).rateSource).toBe('manual');
+    // 'inventory' only stands up when there is actually an inventory behind it.
+    expect(normalizeHall({ rateSource: 'inventory' }).rateSource).toBe('manual');
+    expect(normalizeHall({ rateSource: 'inventory', equipment: [{ kind: 'cool', cap: 30 }] }).rateSource)
+      .toBe('inventory');
+    // Anything unrecognised falls back to the safe mode rather than persisting.
+    expect(normalizeHall({ rateSource: 'wishful' }).rateSource).toBe('manual');
+  });
+
+  it('the rates set aside while the inventory drives survive a round trip', () => {
+    // A commissioning-observed °F/hr is a measurement someone made on site;
+    // losing it to a mode toggle and a reload would be indefensible.
+    const h = normalizeHall({
+      rateSource: 'inventory',
+      equipment: [{ kind: 'cool', cap: 30 }],
+      manualRates: { rateCoolF: 2.5, rateWarmF: 1.2, rateDehumLb: 40, rateHumLb: 'junk', airflowCfm: 12000 },
+    });
+    expect(h.manualRates.rateCoolF).toBe(2.5);
+    expect(h.manualRates.rateDehumLb).toBe(40);
+    expect(h.manualRates.airflowCfm).toBe(12000);
+    expect(h.manualRates.rateHumLb).toBeNull(); // unusable value, not a NaN
+    // Absent or malformed means "nothing set aside", never a half-built object.
+    expect(normalizeHall({}).manualRates).toBeNull();
+    expect(normalizeHall({ manualRates: 'nope' }).manualRates).toBeNull();
+  });
 });
 
 describe('normalizeSla', () => {
