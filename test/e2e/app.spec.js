@@ -473,13 +473,60 @@ test.describe('operator companion', () => {
     await expect(page.locator('#trend-res')).toContainText('FASTER than the SLA');
   });
 
-  test('the door placard downloads as a PDF', async ({ page }) => {
+  test('the door placard downloads as a PDF named for its hall and SLA', async ({ page }) => {
     await page.goto('./');
     await expandAll(page);
     const downloadPromise = page.waitForEvent('download');
     await page.locator('#export-placard').click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe('sdc_psychrometric.pdf');
+    // placard_<hall>_<sla>_<date>.pdf — four halls' placards in one Downloads
+    // folder used to be indistinguishable copies of sdc_psychrometric.pdf.
+    expect(download.suggestedFilename()).toMatch(/^placard_.+_\d{4}-\d{2}-\d{2}\.pdf$/);
+  });
+});
+
+test.describe('field usability', () => {
+  test.use({ hasTouch: true });
+
+  test('a clamped typed value snaps back on blur, with an explanation', async ({ page }) => {
+    await page.goto('./');
+    // 300% RH is impossible; the app computes with 100 while the box said 300
+    // until blur — which now reconciles the box and says why.
+    await page.fill('#a-rh', '300');
+    await page.dispatchEvent('#a-rh', 'input');
+    await page.locator('#a-rh').blur();
+    await expect(page.locator('#a-rh')).toHaveValue('100');
+    await expect(page.locator('.ntf-toast')).toContainText('outside the allowed range');
+  });
+
+  test('deleting an SLA profile asks first, and cancel keeps it', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#sla-add').click(); // Base SLA is locked; make a deletable one
+    const tabs = () => page.locator('.sla-tab').count();
+    const before = await tabs();
+    await page.locator('#sla-del').click();
+    const dialog = page.locator('.ntf-dialog');
+    await expect(dialog).toContainText('Delete the SLA profile');
+    await dialog.getByRole('button', { name: /cancel/i }).click();
+    expect(await tabs()).toBe(before);
+    // Confirming really deletes.
+    await page.locator('#sla-del').click();
+    await page.locator('.ntf-dialog').getByRole('button', { name: 'Delete' }).click();
+    await expect(page.locator('.sla-tab')).toHaveCount(before - 1);
+  });
+
+  test('a tap pins the chart inspector on a touch screen', async ({ page }) => {
+    await page.goto('./');
+    const canvas = page.locator('#psychCanvas');
+    const box = await canvas.boundingBox();
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    await page.touchscreen.tap(cx, cy);
+    await expect(page.locator('#chart-tip')).toBeVisible();
+    await expect(page.locator('#chart-tip')).toContainText('RH');
+    // The next still tap dismisses it.
+    await page.touchscreen.tap(cx, cy);
+    await expect(page.locator('#chart-tip')).toBeHidden();
   });
 });
 

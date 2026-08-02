@@ -441,6 +441,29 @@ document.getElementById('b-dp').addEventListener('input', function() {
   syncControlsExcept('b-dp'); update();
 });
 
+// ── Leaving a typed box snaps it back to what the app actually used. ──
+// Values are clamped live (Target temp to the SLA range, RH to 0–100, dew
+// point to saturation) but the box being typed in is deliberately never
+// rewritten mid-keystroke — so a clamped entry used to keep showing the raw
+// number indefinitely: type 95 under an 80 °F SLA and the box said 95 while
+// every calculation used 80. Blur (or Enter) reconciles, and says why.
+['a-temp', 'a-rh', 'b-temp', 'b-rh', 'a-dp', 'b-dp'].forEach((id) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.blur(); });
+  el.addEventListener('blur', () => {
+    const before = parseFloat(el.value);
+    syncAllControls();
+    const after = parseFloat(el.value);
+    // > 1 display unit: beyond what integer display rounding can explain.
+    if (isFinite(before) && isFinite(after) && Math.abs(before - after) > 1) {
+      toast(`Using ${el.value} — the number you typed was outside the allowed range (RH stays 0–100%, dew point stays below air temp, Target stays near the SLA).`, {
+        kind: 'info', duration: 6000,
+      });
+    }
+  });
+});
+
 // Back-compat shim: unit toggle calls syncTempInputs(); route to syncAllControls.
 function syncTempInputs() { syncAllControls(); }
 
@@ -2672,9 +2695,18 @@ document.getElementById('sla-add').addEventListener('click', () => {
   applyElevation(); renderSlaTabs(); renderSlaEditor(); update();
 });
 
-document.getElementById('sla-del').addEventListener('click', () => {
+document.getElementById('sla-del').addEventListener('click', async () => {
   const sla = state.slaProfiles[state.activeSla];
   if (sla.locked || state.slaProfiles.length <= 1) return;
+  // A customer's contract numbers deserve the same one-breath pause the hall
+  // delete has always had — this was a single un-undoable tap.
+  const ok = await confirmDialog({
+    title: 'Delete SLA profile',
+    message: `Delete the SLA profile "${sla.name}" and its limits? This cannot be undone.`,
+    confirmLabel: 'Delete',
+    danger: true,
+  });
+  if (!ok) return;
   state.slaProfiles.splice(state.activeSla, 1);
   state.activeSla = Math.max(0, state.activeSla - 1);
   applyElevation(); renderSlaTabs(); renderSlaEditor(); update();
@@ -2892,18 +2924,19 @@ function centerView() {
   }, { passive:false });
 
   // ── Hover inspector: crosshair + live psychrometric readout ──
-  // Mouse-only (pointer:fine); hidden while dragging or outside the plot rect.
+  // Mouse: follows the cursor. Touch: a still tap pins it, the next tap (or
+  // any pan/pinch) dismisses it — a phone in the hall could previously only
+  // pan and zoom while the hint promised hover and modifier clicks.
   const vline = document.getElementById('ch-vline');
   const hline = document.getElementById('ch-hline');
   const tip   = document.getElementById('chart-tip');
-  const finePointer = window.matchMedia && matchMedia('(pointer:fine)').matches;
   function hideHover() {
     if (vline) vline.style.display = 'none';
     if (hline) hline.style.display = 'none';
     if (tip)   tip.style.display = 'none';
   }
   function updateHover(px, py) {
-    if (!finePointer || dragging || !lastGeom || !tip) { hideHover(); return; }
+    if (dragging || !lastGeom || !tip) { hideHover(); return; }
     const { W, H, pad } = lastGeom;
     if (px < pad.l || px > W - pad.r || py < pad.t || py > H - pad.b) { hideHover(); return; }
     const [tc, hr] = fromXY(px, py, W, H, pad);
@@ -2972,14 +3005,17 @@ function centerView() {
   // Double-click reset
   canvas.addEventListener('dblclick', (e)=>{ e.preventDefault(); resetView(); drawChart(); });
 
-  // Touch: pinch zoom + one-finger pan
+  // Touch: pinch zoom + one-finger pan; a still tap pins the inspector.
   let pinchDist=0, pinchMid=null, touchPan=null;
+  let tapStart=null, tapTravel=0, tipPinned=false;
   canvas.addEventListener('touchstart',(e)=>{
     if(e.touches.length===2){
       e.preventDefault();
       pinchDist=touchDistance(e); pinchMid=touchMidpoint(e, canvas);
+      tapStart=null; hideHover(); tipPinned=false;
     } else if(e.touches.length===1){
       const [px,py]=localXY(e); touchPan=[px,py];
+      tapStart=[px,py]; tapTravel=0;
     }
   },{passive:false});
   canvas.addEventListener('touchmove',(e)=>{
@@ -2996,10 +3032,24 @@ function centerView() {
       const dT=(px-touchPan[0])/(W-pad.l-pad.r)*(view.tMax-view.tMin);
       const dH=(py-touchPan[1])/(H-pad.t-pad.b)*(view.hrMax-view.hrMin);
       view.tMin-=dT; view.tMax-=dT; view.hrMin+=dH; view.hrMax+=dH;
+      tapTravel += Math.abs(px-touchPan[0]) + Math.abs(py-touchPan[1]);
+      if (tapTravel >= 8) { hideHover(); tipPinned = false; }
       touchPan=[px,py]; drawChart();
     }
   },{passive:false});
-  canvas.addEventListener('touchend',(e)=>{ if(e.touches.length===0){pinchDist=0;touchPan=null;} });
+  canvas.addEventListener('touchend',(e)=>{
+    if(e.touches.length===0){
+      // A tap that never really moved: toggle the pinned inspector at that
+      // spot. preventDefault stops the browser's synthetic mousedown/mouseup
+      // replay, whose mousedown handler would hide the tip we just pinned.
+      if (tapStart && tapTravel < 8) {
+        e.preventDefault();
+        if (tipPinned) { hideHover(); tipPinned = false; }
+        else { updateHover(tapStart[0], tapStart[1]); tipPinned = !!(tip && tip.style.display === 'block'); }
+      }
+      pinchDist=0; touchPan=null; tapStart=null;
+    }
+  },{passive:false});
 
   function touchDistance(e){ const a=e.touches[0],b=e.touches[1]; return Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY); }
   function touchMidpoint(e,canvas){ const r=canvas.getBoundingClientRect(); const a=e.touches[0],b=e.touches[1]; return [((a.clientX+b.clientX)/2)-r.left, ((a.clientY+b.clientY)/2)-r.top]; }
@@ -3087,8 +3137,16 @@ function renderScenarios() {
   }).join('');
   list.querySelectorAll('[data-load]').forEach(b => b.addEventListener('click', () => applyScenario(scenarios[+b.dataset.load])));
   list.querySelectorAll('.scn-item-main').forEach(b => b.addEventListener('click', () => applyScenario(scenarios[+b.dataset.idx])));
-  list.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
-    scenarios.splice(+b.dataset.del, 1); persistScenarios(); renderScenarios();
+  list.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+    const i = +b.dataset.del;
+    const ok = await confirmDialog({
+      title: 'Delete scenario',
+      message: `Delete the saved scenario "${scenarios[i]?.name || 'unnamed'}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    scenarios.splice(i, 1); persistScenarios(); renderScenarios();
   }));
 }
 
@@ -3142,6 +3200,19 @@ function buildSaveFile() {
 }
 function saveFileName() {
   return `sdc_planner_save_${new Date().toISOString().slice(0, 10)}.json`;
+}
+
+/**
+ * Deliverable filenames carry WHAT they are and WHERE they came from —
+ * `placard_PHX-Hall-1_Base-SLA_2026-08-02.pdf` sorts, searches and audits;
+ * four halls' placards used to all be `sdc_psychrometric.pdf` in a Downloads
+ * folder, telling nobody apart.
+ */
+function exportName(kind, ext) {
+  const slug = (s) => String(s || '').trim().replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+  const hall = slug(state.hall?.name) || 'hall';
+  const sla = slug(state.slaProfiles[state.activeSla]?.name) || 'sla';
+  return `${kind}_${hall}_${sla}_${new Date().toISOString().slice(0, 10)}.${ext}`;
 }
 function downloadSaveFile() {
   platformSaveFile(saveFileName(), JSON.stringify(buildSaveFile(), null, 2));
@@ -3293,20 +3364,24 @@ function buildPlacardCanvas() {
   const x = c.getContext('2d');
   x.scale(scale, scale);
 
-  x.fillStyle = '#0d1b2a'; x.fillRect(0, 0, W, H);
+  // PRINT palette: this is a laminated door sheet, not a screen. A dark
+  // full-bleed page drained a toner cartridge per hall and collapsed the
+  // amber/red limit columns to matching grey on a mono laser — black on
+  // white with bold weight survives any printer.
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, W, H);
   // Header band
   x.fillStyle = '#1a3a5c'; x.fillRect(0, 0, W, 64);
   x.fillStyle = '#00a9ce'; x.fillRect(0, 64, W, 3);
   x.fillStyle = '#ffffff'; x.font = 'bold 20px sans-serif'; x.textAlign = 'left';
   x.fillText('HALL ENVIRONMENT LIMITS', 24, 30);
-  x.fillStyle = '#9db8d0'; x.font = '12px sans-serif';
+  x.fillStyle = '#cfe3f2'; x.font = '12px sans-serif';
   x.fillText('Post at the hall door · verify against site instrumentation before acting', 24, 50);
 
   // Hall identity
   const hall = state.hall || {};
-  x.fillStyle = '#e6edf3'; x.font = 'bold 22px sans-serif';
+  x.fillStyle = '#10151b'; x.font = 'bold 22px sans-serif';
   x.fillText([hall.name, hall.siteName].filter(Boolean).join(' — ') || 'Hall', 24, 100);
-  x.fillStyle = '#7d96ad'; x.font = '13px monospace';
+  x.fillStyle = '#41576b'; x.font = '13px monospace';
   x.fillText(
     `${Math.round(hall.elevFt ?? 0).toLocaleString()} ft · ${state.pressure.toFixed(1)} kPa (standard atmosphere at elevation) — dew-point cap evaluated at this pressure`,
     24, 122,
@@ -3323,52 +3398,58 @@ function buildPlacardCanvas() {
     ...(sla.maxDrhHr != null ? [['Ramp: RH', '—', `${sla.maxDrhHr}%/hr`]] : []),
   ];
   let ty = 156;
-  x.fillStyle = '#00a9ce'; x.font = 'bold 13px sans-serif';
+  x.fillStyle = '#00707f'; x.font = 'bold 13px sans-serif';
   x.fillText(`DO NOT CROSS — ${sla.name || 'SLA'}`, 24, ty);
   ty += 10;
   x.font = '13px monospace';
   const cols = [24, 280, 440];
-  x.fillStyle = '#7d96ad';
+  x.fillStyle = '#41576b';
   ['limit', 'min', 'max'].forEach((h, i) => x.fillText(h, cols[i], ty + 20));
   ty += 28;
-  x.strokeStyle = '#1f3a52'; x.beginPath(); x.moveTo(24, ty); x.lineTo(W - 24, ty); x.stroke();
+  x.strokeStyle = '#b9c8d4'; x.beginPath(); x.moveTo(24, ty); x.lineTo(W - 24, ty); x.stroke();
+  x.font = 'bold 13px monospace'; // limits must survive a mono laser: weight, not hue
   for (const [name, lo, hi] of rows) {
     ty += 24;
-    x.fillStyle = '#e6edf3'; x.fillText(name, cols[0], ty);
-    x.fillStyle = '#f0a500'; x.fillText(String(lo), cols[1], ty);
-    x.fillStyle = '#f85149'; x.fillText(String(hi), cols[2], ty);
+    x.fillStyle = '#10151b'; x.fillText(name, cols[0], ty);
+    x.fillStyle = '#8a5a00'; x.fillText(String(lo), cols[1], ty);
+    x.fillStyle = '#a01818'; x.fillText(String(hi), cols[2], ty);
   }
   ty += 16;
 
-  // Envelope snapshot — blit the live chart
+  // Envelope snapshot — blit the live chart, framed so the dark chart reads
+  // as a figure on the white page instead of a hole in it.
   const src = document.getElementById('psychCanvas');
   const chartH = 330;
   try {
     x.drawImage(src, 24, ty, W - 48, chartH);
+    x.strokeStyle = '#b9c8d4'; x.strokeRect(24, ty, W - 48, chartH);
   } catch { /* chart not ready — placard still useful */ }
   ty += chartH + 12;
 
-  // QR deep-link + footer
+  // QR deep-link + footer. The caption promises exactly what the link
+  // carries (set-points, unit, hall/SLA names, elevation) — it used to
+  // promise "limits and move timing", which the URL does not encode.
   const qrCanvas = document.createElement('canvas');
   try {
     drawQr(qrCanvas, currentShareUrl(), 4);
     x.drawImage(qrCanvas, 24, ty, 120, 120);
+    x.strokeStyle = '#b9c8d4'; x.strokeRect(24, ty, 120, 120);
   } catch { /* URL too long for v10 would throw — placard survives */ }
-  x.fillStyle = '#e6edf3'; x.font = 'bold 14px sans-serif';
+  x.fillStyle = '#10151b'; x.font = 'bold 14px sans-serif';
   x.fillText('Scan for the live planner', 160, ty + 40);
-  x.fillStyle = '#7d96ad'; x.font = '12px sans-serif';
-  x.fillText('Opens this hall’s current setup — chart, limits and', 160, ty + 62);
-  x.fillText('move timing at this site’s pressure. Works offline.', 160, ty + 78);
-  x.fillStyle = '#f0a500'; x.font = 'bold 12px sans-serif';
+  x.fillStyle = '#41576b'; x.font = '12px sans-serif';
+  x.fillText('Opens the planner preloaded with this hall’s set-points', 160, ty + 62);
+  x.fillText('and site elevation. The limits are on this sheet.', 160, ty + 78);
+  x.fillStyle = '#8a5a00'; x.font = 'bold 12px sans-serif';
   x.fillText('PLANNING AID, NOT A CONTROL SYSTEM', 160, ty + 106);
-  x.fillStyle = '#6f8aa3'; x.font = '11px monospace';
+  x.fillStyle = '#41576b'; x.font = '11px monospace';
   x.fillText(`generated ${new Date().toISOString().slice(0, 10)} · ${VERSION_LABEL}`, 24, H - 18);
   return c;
 }
 
 document.getElementById('export-placard')?.addEventListener('click', () => {
   try {
-    exportPdfJpeg(buildPlacardCanvas(), { portrait: true });
+    exportPdfJpeg(buildPlacardCanvas(), { portrait: true, filename: exportName('placard', 'pdf') });
   } catch (e) {
     logError('export-placard', e);
     toast('Placard export failed: ' + e.message, { kind: 'error' });
@@ -3381,7 +3462,7 @@ document.getElementById('export-png').addEventListener('click', () => {
     c.toBlob(blob => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'sdc_psychrometric.png';
+      a.href = url; a.download = exportName('chart', 'png');
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     }, 'image/png');
   } catch (e) { logError('export-png', e); toast('PNG export failed: ' + e.message, { kind: 'error' }); }
@@ -3432,7 +3513,7 @@ function exportPdfJpeg(canvas, opts = {}) {
   const blob = new Blob(buf, { type:'application/pdf' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'sdc_psychrometric.pdf';
+  a.href = url; a.download = opts.filename || exportName('chart', 'pdf');
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
