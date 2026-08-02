@@ -11,6 +11,32 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — field usability on the hall floor
+
+- **Touch targets sized for gloved thumbs.** On touch screens every small
+  control (zoom buttons, legend chips, tabs, preset and delete buttons)
+  grows to the 44 px platform guidance; desktop keeps the compact layout.
+- **Tap to inspect the chart.** The crosshair readout was mouse-only while
+  the hint promised hover and modifier clicks; a still tap now pins the
+  inspector on a phone, a second tap (or any pan/pinch) dismisses it, and
+  the hint tells the truth about which gestures need a mouse.
+- **Typed values reconcile on blur.** Values are clamped live but the box
+  being typed in was never rewritten — type 95 °F under an 80 °F SLA and
+  the box said 95 forever while everything computed 80. Leaving the box (or
+  pressing Enter) now snaps it to what the app actually used and explains
+  the limit in plain words.
+- **Deleting an SLA profile or a saved scenario asks first** — both were
+  single un-undoable taps while hall delete always confirmed.
+- **Export filenames name their contents**:
+  `placard_<hall>_<SLA>_<date>.pdf` instead of every export from every hall
+  saving as the same `sdc_psychrometric.pdf`. RH and other positive-only
+  fields request the phone's decimal keypad.
+- **The door placard prints on white.** It is a laminated door sheet, and
+  the dark full-bleed page drained toner and collapsed the amber/red limit
+  columns to matching grey on a mono laser. Bold black on white now, chart
+  framed as a figure, and the QR caption promises exactly what the link
+  carries (set-points and site elevation — the limits are on the sheet).
+
 ### Changed — measured-data honesty (guard-banding, trend import, drift, boiling)
 
 - **Sensor verdicts are now guard-banded (ISO 14253-1).** Claiming PASS

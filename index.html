@@ -385,6 +385,19 @@
     color:var(--stream-teal); font-size:.76rem; font-weight:700; font-family:var(--sans); cursor:pointer;
     white-space:nowrap; text-decoration:none; }
   .install-alt:hover { background:rgba(0,169,206,.12); }
+  /* Field ergonomics: on touch screens (gloved thumbs on a phone in the
+     hall) every tap target grows to the 44 px platform guidance. Desktop
+     pointer users keep the compact layout — this block simply never fires. */
+  @media (pointer:coarse) {
+    .zoom-btn { min-width:44px; height:44px; font-size:.95rem; }
+    .leg-item { padding:11px 12px; font-size:.78rem; }
+    .preset-btn { padding:11px 14px; font-size:.78rem; }
+    .sla-tab, .hall-tab { padding:11px 14px; font-size:.8rem; }
+    .scn-btn { padding:10px 14px; }
+    .scn-del { padding:10px 14px; font-size:1rem; }
+    .unit-btn { padding:10px 14px; }
+    .sv-tab { padding:11px 12px; }
+  }
   @media (max-width:560px) { .install-alt { display:none; } }
   .install-dismiss { background:none; border:none; color:var(--muted); font-size:1rem; cursor:pointer; padding:2px 6px; line-height:1; }
   .install-dismiss:hover { color:var(--text); }
@@ -521,7 +534,7 @@
     <div class="ctl-row">
       <span class="ctl-k">RH</span>
       <input type="range" id="slider-a-rh" min="1" max="100" step="1" value="45">
-      <input type="number" id="a-rh" class="ctl-num" value="45" step="any"><span class="ctl-unit">%</span>
+      <input type="number" inputmode="decimal" id="a-rh" class="ctl-num" value="45" step="any"><span class="ctl-unit">%</span>
     </div>
   </div>
   <div class="ctl-group ctl-b">
@@ -539,7 +552,7 @@
     <div class="ctl-row">
       <span class="ctl-k">RH</span>
       <input type="range" id="slider-b-rh" min="1" max="100" step="1" value="28">
-      <input type="number" id="b-rh" class="ctl-num" value="28" step="any"><span class="ctl-unit">%</span>
+      <input type="number" inputmode="decimal" id="b-rh" class="ctl-num" value="28" step="any"><span class="ctl-unit">%</span>
     </div>
   </div>
 
@@ -609,7 +622,7 @@
       <button class="zoom-btn" id="zoom-reset" title="Reset view">⟲ Fit</button>
     </div>
   </div>
-  <div class="zoom-hint">Scroll / pinch to zoom · drag to pan · double-click to reset · hover to inspect any point · <strong>Shift-click sets Target</strong> · <strong>Alt-click sets Current</strong>.</div>
+  <div class="zoom-hint">Scroll / pinch to zoom · drag to pan · double-click to reset · hover (or tap) to inspect any point · with a mouse, <strong>Shift-click sets Target</strong> and <strong>Alt-click sets Current</strong>.</div>
   <div class="playback-row" id="playback-row">
     <button class="zoom-btn" id="playback-toggle" title="Play the move hour by hour">▶</button>
     <input type="range" id="playback-scrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the planned move">
@@ -679,7 +692,7 @@
       <div class="sv-grid">
         <div class="sla-field"><label>Dry bulb <span class="tunit">°F</span></label><input type="number" id="sv-db" step="0.1" placeholder="e.g. 75"></div>
         <div class="sla-field"><label>Wet bulb <span class="tunit">°F</span></label><input type="number" id="sv-wb" step="0.1" placeholder="e.g. 62"></div>
-        <div class="sla-field"><label>Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" id="sv-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+        <div class="sla-field"><label>Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" inputmode="decimal" id="sv-rh" step="0.1" min="0" max="100" placeholder="—"></div>
       </div>
       <div class="sla-field" style="margin-top:10px">
         <label>How was the wet bulb measured?</label>
@@ -696,7 +709,7 @@
       <div class="sv-grid">
         <div class="sla-field"><label>Dry bulb <span class="tunit">°F</span></label><input type="number" id="sv-dp-db" step="0.1" placeholder="e.g. 75"></div>
         <div class="sla-field"><label>Dew point (instrument) <span class="tunit">°F</span></label><input type="number" id="sv-dp-dp" step="0.1" placeholder="e.g. 54"></div>
-        <div class="sla-field"><label>Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" id="sv-dp-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+        <div class="sla-field"><label>Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" inputmode="decimal" id="sv-dp-rh" step="0.1" min="0" max="100" placeholder="—"></div>
       </div>
       <div class="sv-hint">For sites with a chilled-mirror or other dew-point meter — reference-grade when the mirror is clean. RH follows from T<sub>db</sub> and T<sub>dp</sub> alone (pressure-independent).</div>
     </div>
@@ -708,8 +721,8 @@
           <select id="sv-salt-sel" class="sla-select"></select>
         </div>
         <div class="sla-field"><label>Chamber temp <span class="tunit">°F</span></label><input type="number" id="sv-salt-t" step="0.1" placeholder="e.g. 72"></div>
-        <div class="sla-field"><label>Sensor RH % <span class="cap-hint">reading under test</span></label><input type="number" id="sv-salt-rh" step="0.1" min="0" max="100" placeholder="—"></div>
-        <div class="sla-field"><label>Chamber temp known to ± <span class="cap-hint">drives the uncertainty</span></label><input type="number" id="sv-salt-ut" step="0.1" min="0" placeholder="0.9"></div>
+        <div class="sla-field"><label>Sensor RH % <span class="cap-hint">reading under test</span></label><input type="number" inputmode="decimal" id="sv-salt-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+        <div class="sla-field"><label>Chamber temp known to ± <span class="cap-hint">drives the uncertainty</span></label><input type="number" inputmode="decimal" id="sv-salt-ut" step="0.1" min="0" placeholder="0.9"></div>
       </div>
       <div class="sv-hint" id="sv-salt-note">A saturated-salt jar is an <em>absolute</em> reference — physical chemistry, nothing to drift or expire — and its realized accuracy is set by how well you know the chamber temperature. NaCl barely cares (−0.04 %RH/°C); Mg(NO₃)₂ moves −0.30 %RH/°C. Sealed jar, slurry with visible solids, sensor above the slurry, hours to equilibrate. Reference: Greenspan (1977), NBS.</div>
     </div>
@@ -740,7 +753,7 @@
           </select>
         </div>
         <div class="sla-field"><label id="sv-ref-val-label">Reference reads</label><input type="number" id="sv-ref-val" step="0.1" placeholder="—"></div>
-        <div class="sla-field"><label>Reference uncertainty ± <span class="cap-hint">from its cal certificate</span></label><input type="number" id="sv-ref-u" step="0.1" min="0" placeholder="e.g. 1.0"></div>
+        <div class="sla-field"><label>Reference uncertainty ± <span class="cap-hint">from its cal certificate</span></label><input type="number" inputmode="decimal" id="sv-ref-u" step="0.1" min="0" placeholder="e.g. 1.0"></div>
         <div class="sla-field"><label id="sv-ref-reading-label">Sensor under test reads</label><input type="number" id="sv-ref-reading" step="0.1" placeholder="—"></div>
       </div>
       <div class="sv-hint">Side-by-side with a recently calibrated instrument at the same spot, both settled. The verdict band widens by the reference's own uncertainty — a comparison can never be better than the reference.</div>
@@ -765,13 +778,13 @@
     <div class="calc-intro">A plant fault hits a standard training hall (200,000 ft³ · cool 6 / warm 4 °F/hr · dehum 100 / hum 80 lb/hr · the Base SLA). Commit a recovery target; the physics referee plays out four hours minute-by-minute and scores the SLA time you kept. Same core equations as the planner — simplified plant dynamics, honestly simplified. Deterministic per seed: share a challenge code and compete on identical faults.</div>
     <div class="sv-grid">
       <div class="sla-field"><label>Scenario</label><select id="tr-scenario" class="sla-select"></select></div>
-      <div class="sla-field"><label>Seed <span class="cap-hint">same seed = same fault</span></label><input type="number" id="tr-seed" step="1" min="0" value="42"></div>
+      <div class="sla-field"><label>Seed <span class="cap-hint">same seed = same fault</span></label><input type="number" inputmode="numeric" id="tr-seed" step="1" min="0" value="42"></div>
       <div class="sla-field" style="align-self:end"><button class="scn-btn" id="tr-reroll">🎲 New seed</button></div>
     </div>
     <div class="calc-res" id="tr-brief">—</div>
     <div class="sv-grid" style="margin-top:10px">
       <div class="sla-field"><label>Your target temp <span class="tunit">°F</span></label><input type="number" id="tr-temp" step="0.5" placeholder="—"></div>
-      <div class="sla-field"><label>Your target RH %</label><input type="number" id="tr-rh" step="1" min="1" max="99" placeholder="—"></div>
+      <div class="sla-field"><label>Your target RH %</label><input type="number" inputmode="decimal" id="tr-rh" step="1" min="1" max="99" placeholder="—"></div>
       <div class="sla-field" style="align-self:end; display:flex; gap:8px;">
         <button class="scn-btn scn-btn-primary" id="tr-commit">Commit recovery</button>
         <button class="scn-btn" id="tr-idle" title="See what hesitation costs">Hesitate…</button>
