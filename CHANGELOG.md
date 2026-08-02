@@ -11,6 +11,18 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-08-02
+
+Two rounds of feature work and two rounds of audit. Highlights: six ways to
+validate a temperature or humidity sensor against a physical reference, with
+guard-banded verdicts that refuse to overclaim; shareable deep links, QR codes
+and one-tap change-ticket briefings; a sensor drift logbook with per-instrument
+specs and calibration recall; plan-vs-actual import from BMS trend exports; a
+printable door placard; a training mode whose physics teaches real lessons; and
+a first-run guide and glossary for operators new to the tool. Two cross-site
+scripting paths found by audit are closed, and the app is now keyboard- and
+screen-reader-operable.
+
 ### Added — a way in for someone who has never used this before
 
 - **"Start here" card**: what this tool is for, and the four steps in order —
