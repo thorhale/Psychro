@@ -48,7 +48,7 @@ import {
 } from '../state/schema.js';
 import { driftFit } from '../core/driftfit.js';
 import { parseTrendCsv, maxWindowedRate } from '../lib/trendcsv.js';
-import { SCENARIOS, refereeRun } from '../core/trainer.js';
+import { SCENARIOS, refereeRun, TRAINER_VERSION } from '../core/trainer.js';
 import { SV_TOL, svVerdict } from '../core/svverdict.js';
 import {
   LS_KEY_V1,
@@ -4052,22 +4052,33 @@ function runTraining(target) {
   drawTrainingSpark(r);
 }
 
-/** Challenge code: the training hall is fixed, so scenario + seed is the whole game. */
+/** Challenge code: the hall is fixed, so version + scenario + seed is the
+ *  whole game — the version pins WHICH referee's physics scored it. */
 function trainingShareUrl() {
   const base = location.protocol.startsWith('http')
     ? location.href.split('#')[0]
     : 'https://thorhale.github.io/Psychro/';
-  return `${base}#train=${trState.scenarioId}.${trState.seed}`;
+  return `${base}#train=v${TRAINER_VERSION}.${trState.scenarioId}.${trState.seed}`;
 }
 
 /** Open a challenge code at boot. Returns true when one was applied. */
 function applyTrainingFromUrl() {
-  const m = /[#&]train=([a-z][a-z-]*)\.(\d{1,9})\b/.exec(location.hash || '');
+  const m = /[#&]train=(?:v(\d+)\.)?([a-z][a-z-]*)\.(\d{1,9})\b/.exec(location.hash || '');
   if (!m) return false;
-  const s = SCENARIOS.find((x) => x.id === m[1]);
+  const s = SCENARIOS.find((x) => x.id === m[2]);
   if (!s) return false;
+  // A code minted by a different referee still runs — on TODAY'S physics,
+  // with a plain warning. Keeping old physics engines around would mean two
+  // sources of truth; a flagged re-score is the honest alternative.
+  const codeVer = m[1] ? parseInt(m[1], 10) : 1;
+  if (codeVer !== TRAINER_VERSION) {
+    toast(
+      `This challenge code was made with an older version of the referee — it will run on today's physics, so scores may differ from the original.`,
+      { kind: 'warn', duration: 9000 },
+    );
+  }
   trState.scenarioId = s.id;
-  trState.seed = parseInt(m[2], 10);
+  trState.seed = parseInt(m[3], 10);
   const sel = document.getElementById('tr-scenario');
   if (sel) sel.value = s.id;
   const seedEl = document.getElementById('tr-seed');

@@ -3,7 +3,15 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { SCENARIOS, faultForSeed, refereeRun, mulberry32 } from '../src/core/trainer.js';
+import {
+  SCENARIOS,
+  faultForSeed,
+  refereeRun,
+  mulberry32,
+  TRAINER_VERSION,
+  IT_LOAD_F_PER_HR,
+  PLANT_TAU_MIN,
+} from '../src/core/trainer.js';
 import { checkSLA } from '../src/core/envelopes.js';
 
 const HALL = { hallVolFt3: 200000, rateCoolF: 6, rateWarmF: 4, rateDehumLb: 100, rateHumLb: 80 };
@@ -62,19 +70,68 @@ describe('training referee', () => {
   it('every scenario is winnable — a training game must be beatable', () => {
     // A competent target for each scenario keeps the whole run in SLA — at the
     // test pressure AND at the standard atmosphere the training UI fixes
-    // (challenge codes must mean the same run on every device).
+    // (challenge codes must mean the same run on every device). NOTE the
+    // washdown answer: 78/40, not 78/45 — targeting 45 % RH while warming
+    // actually DEMANDS water from the humidifier mid-wash-down, and with the
+    // v2 plant lag that overshoot rides the leak into the dew-point cap on
+    // high-jitter seeds. The right instinct adds no water at all.
     const answers = {
       'stuck-humidifier': { tempF: 72, rh: 38 },
       'chiller-down': { tempF: 70, rh: 45 },
       'cold-snap': { tempF: 74, rh: 48 },
-      washdown: { tempF: 78, rh: 45 }, // warm: same water, lower RH, dp safe
+      washdown: { tempF: 78, rh: 40 }, // warm, and ASK for dry: no water added
     };
     for (const pressure of [P, 101.325]) {
       for (const s of SCENARIOS) {
-        const r = refereeRun({ scenario: s, seed: 42, target: answers[s.id], hall: HALL, checkSla, pressure });
-        expect(r.breachedAtMin, `${s.id} should be survivable at ${pressure} kPa`).toBeNull();
+        for (const seed of [1, 42, 99]) {
+          const r = refereeRun({ scenario: s, seed, target: answers[s.id], hall: HALL, checkSla, pressure });
+          expect(r.breachedAtMin, `${s.id} seed ${seed} should be survivable at ${pressure} kPa`).toBeNull();
+          expect(r.stabilized, `${s.id} seed ${seed} should settle at ${pressure} kPa`).toBe(true);
+        }
       }
     }
+  });
+
+  it('v2: an uncommanded hall eats the server heat — nothing holds it still', () => {
+    // Even the wash-down (whose fault adds no heat and ends at 90 min) drifts
+    // warm all four hours while nobody commits: the IT load is unopposed.
+    const s = SCENARIOS.find((x) => x.id === 'washdown');
+    const idle = run(s, null);
+    const end = idle.trail[idle.trail.length - 1];
+    expect(end.tempF).toBeGreaterThan(s.start.tempF + 10);
+    // …so it never earns the stability bonus a committed recovery earns.
+    expect(idle.stabilized).toBe(false);
+    expect(idle.score).toBeLessThan(run(s, { tempF: 78, rh: 40 }).score);
+  });
+
+  it('v2: the plant lags — the first minutes of a commit deliver only part of it', () => {
+    // Chiller-down, full cooling demanded from minute one: with a first-order
+    // τ of PLANT_TAU_MIN the hall must still WARM initially (fault at full
+    // strength, plant barely spun up), then turn the corner.
+    const s = SCENARIOS.find((x) => x.id === 'chiller-down');
+    const r = run(s, { tempF: 70, rh: 45 });
+    expect(r.trail[3].tempF).toBeGreaterThan(s.start.tempF); // still losing early
+    const peak = Math.max(...r.trail.map((st) => st.tempF));
+    expect(peak).toBeGreaterThan(s.start.tempF + 0.2); //     a real excursion
+    expect(r.trail[r.trail.length - 1].tempF).toBeLessThan(peak - 2); // then recovery
+  });
+
+  it('v2: "stabilized" demands a settled tail, not merely an unbreached run', () => {
+    // The cold-snap with a target the plant cannot quite hold against the
+    // drying fault: survive-but-still-moving must NOT read as stable. Use the
+    // humidifier scenario idle case instead: breached AND moving — false; and
+    // check the flag is not unconditionally true for unbreached runs by
+    // asserting the washdown idle case (unbreached, drifting) is false.
+    const wash = SCENARIOS.find((x) => x.id === 'washdown');
+    const idle = run(wash, null);
+    expect(idle.breachedAtMin).toBeNull();
+    expect(idle.stabilized).toBe(false); // v1 would have said true
+  });
+
+  it('exports its version and physics constants for the challenge-code format', () => {
+    expect(TRAINER_VERSION).toBe(2);
+    expect(IT_LOAD_F_PER_HR).toBeGreaterThan(0);
+    expect(PLANT_TAU_MIN).toBeGreaterThan(1);
   });
 
   it('trail states are physical: RH clamped, temperatures finite', () => {

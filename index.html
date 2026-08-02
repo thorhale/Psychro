@@ -776,7 +776,7 @@
 <details class="card sect">
   <summary><span class="sect-title">Training — Envelope Escape Room</span><span class="sect-sub" id="tr-summary">drill the recovery instinct</span><span class="sect-chev">▸</span></summary>
   <div class="sect-body">
-    <div class="calc-intro">A plant fault hits a standard training hall (200,000 ft³ · cool 6 / warm 4 °F/hr · dehum 100 / hum 80 lb/hr · the Base SLA). Commit a recovery target; the physics referee plays out four hours minute-by-minute and scores the SLA time you kept. Same core equations as the planner — simplified plant dynamics, honestly simplified. Deterministic per seed: share a challenge code and compete on identical faults.</div>
+    <div class="calc-intro">A plant fault hits a standard training hall (200,000 ft³ · cool 6 / warm 4 °F/hr · dehum 100 / hum 80 lb/hr · the Base SLA). Commit a recovery target; the physics referee plays out four hours minute-by-minute and scores the SLA time you kept, plus a bonus for finishing genuinely settled. Two things are always true in this hall: the servers never stop heating it — an uncommanded hall drifts warm on its own — and the plant takes minutes to spin up, so committing early beats committing perfectly. Deterministic per seed: share a challenge code and compete on identical faults.</div>
     <div class="sv-grid">
       <div class="sla-field"><label>Scenario</label><select id="tr-scenario" class="sla-select"></select></div>
       <div class="sla-field"><label>Seed <span class="cap-hint">same seed = same fault</span></label><input type="number" inputmode="numeric" id="tr-seed" step="1" min="0" value="42"></div>
@@ -794,7 +794,7 @@
     <div class="calc-res" id="tr-result" style="display:none"></div>
     <canvas id="tr-spark" style="width:100%; height:70px; display:none; margin-top:8px;"></canvas>
     <div class="sv-actions"><button class="scn-btn" id="tr-share" style="display:none">🔗 Copy challenge code</button></div>
-    <div class="formula-note">The referee is <code>src/core/trainer.js</code>: explicit 1-minute Euler steps of the moisture/temperature balance, plant rates capped, verdicts from the same SLA check the badge uses. A drill, not a simulator — the real hall has thermal mass and control loops this deliberately ignores.</div>
+    <div class="formula-note">The referee is <code>src/core/trainer.js</code>: explicit 1-minute Euler steps of the moisture/temperature balance, plant rates capped and first-order-lagged (τ ≈ 8 min), a constant server heat load on any uncommanded hall, verdicts from the same SLA check the badge uses. A drill, not a simulator — real thermal mass and control-loop tuning are deliberately out of scope, and challenge codes carry the referee version so old codes are flagged rather than silently re-scored.</div>
   </div>
 </details>
 

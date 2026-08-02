@@ -648,16 +648,25 @@ test.describe('training mode', () => {
     await page.locator('#tr-share').click();
     await expect(page.locator('.ntf-toast')).toContainText('Challenge code copied');
     const url = await page.evaluate(() => navigator.clipboard.readText());
-    expect(url).toContain('#train=cold-snap.777');
+    expect(url).toContain('#train=v2.cold-snap.777');
 
     // Opening the code lands preloaded on the identical fault. Leave the page
     // first — a hash-only goto is a same-document navigation and never reboots.
     await page.goto('about:blank');
-    await page.goto('./#train=cold-snap.777');
+    await page.goto('./#train=v2.cold-snap.777');
     await expect(page.locator('.ntf-toast')).toContainText('Challenge accepted');
     await expect(page.locator('#tr-scenario')).toHaveValue('cold-snap');
     await expect(page.locator('#tr-seed')).toHaveValue('777');
     await expect(page.locator('#tr-brief')).toContainText('fault seed 777');
+  });
+
+  test('an unversioned (v1) challenge code still opens, with a re-score warning', async ({ page }) => {
+    // Codes shared before the referee was versioned run on today's physics —
+    // flagged, never silently re-scored as if nothing changed.
+    await page.goto('./#train=washdown.42');
+    await expect(page.locator('.ntf-toast').filter({ hasText: 'older version' })).toBeVisible();
+    await expect(page.locator('#tr-scenario')).toHaveValue('washdown');
+    await expect(page.locator('#tr-seed')).toHaveValue('42');
   });
 });
 

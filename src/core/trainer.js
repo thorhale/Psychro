@@ -24,6 +24,34 @@ import { fToC, ft3ToM3, lbToKg } from './units.js';
 import { humidityRatio, rhFromW } from './psychro.js';
 import { specificVolume } from './psychro.js';
 
+/**
+ * Referee version — part of every challenge code. Bump it whenever a physics
+ * change would make the same (scenario, seed, target) score differently, so
+ * a code minted by an older referee is flagged instead of silently re-scored.
+ *   v1: instant plant, no server heat, stability = "didn't breach".
+ *   v2: first-order plant lag; an UNCOMMANDED hall eats the full IT load;
+ *       stabilized requires a genuinely settled tail (temp AND humidity).
+ */
+export const TRAINER_VERSION = 2;
+
+/**
+ * Always-on server heat, °F/hr, felt by an UNCOMMANDED hall. While a target
+ * is committed the plant rates below are net of this load (a hall's usable
+ * cooling is what remains after the servers are paid); with no commitment
+ * the control loop is in its fault-confused idle state and the servers win.
+ * That asymmetry is the game's core lesson made physical: hesitation does
+ * not hold the hall still — nothing holds a data hall still.
+ */
+export const IT_LOAD_F_PER_HR = 4;
+
+/**
+ * First-order plant response time constant, minutes. Valves stroke, fans
+ * spin up, control loops settle: output approaches demand as
+ * out += (demand − out)/τ per minute, so the first ~τ minutes of any commit
+ * deliver only part of the plant — which is why committing EARLY matters.
+ */
+export const PLANT_TAU_MIN = 8;
+
 /** Same PRNG as the invariant suites — reproducible from the printed seed. */
 export function mulberry32(a) {
   return function () {
@@ -141,27 +169,36 @@ export function refereeRun(p) {
   let breachDetail = null;
   const trail = [{ tempF, rh: scenario.start.rh }];
 
+  // Lagged plant outputs (per-minute quantities): the plant is machinery,
+  // not an equation — output chases demand with time constant PLANT_TAU_MIN.
+  let outT = 0;
+  let outWkg = 0;
+
   const faultMinutes = Math.round((scenario.faultHours ?? scenario.simHours) * 60);
   for (let m = 1; m <= totalMinutes; m++) {
     const faultActive = m <= faultMinutes;
-    // Plant response toward the committed target, capped by the rates.
-    // No commitment (target null) = no fight: the fault runs the hall.
-    let dTplant = 0;
-    let dWplantKg = 0;
+    // Plant DEMAND toward the committed target, capped by the (net-of-IT)
+    // rates. No commitment = no demand: the loop idles and the servers win.
+    let demandT = 0;
+    let demandWkg = 0;
     if (target) {
       const dtWant = target.tempF - tempF;
       const tRate = dtWant > 0 ? (hall.rateWarmF || 0) : (hall.rateCoolF || 0);
-      dTplant = Math.sign(dtWant) * Math.min(Math.abs(dtWant) * 60, tRate) / 60;
+      demandT = Math.sign(dtWant) * Math.min(Math.abs(dtWant) * 60, tRate) / 60;
 
       const wTarget = humidityRatio(fToC(target.tempF), target.rh, pressure);
       const dwWant = wTarget - w;
       const wRateLb = dwWant > 0 ? (hall.rateHumLb || 0) : fault.dehumLocked ? 0 : (hall.rateDehumLb || 0);
-      dWplantKg = Math.sign(dwWant) * Math.min(Math.abs(dwWant) * mDa * 60, lbToKg(wRateLb)) / 60;
+      demandWkg = Math.sign(dwWant) * Math.min(Math.abs(dwWant) * mDa * 60, lbToKg(wRateLb)) / 60;
     }
+    outT += (demandT - outT) / PLANT_TAU_MIN;
+    outWkg += (demandWkg - outWkg) / PLANT_TAU_MIN;
 
-    // Disturbance (while it lasts) + plant, explicit Euler over one minute.
-    tempF += (faultActive ? fault.dTempFPerHr : 0) / 60 + dTplant;
-    w += (faultActive ? lbToKg(fault.dWaterLbPerHr) / mDa : 0) / 60 + dWplantKg / mDa;
+    // Disturbance (while it lasts) + server heat (only while UNCOMMANDED —
+    // committed rates are net of it) + lagged plant, Euler over one minute.
+    const itDrift = target ? 0 : IT_LOAD_F_PER_HR;
+    tempF += (itDrift + (faultActive ? fault.dTempFPerHr : 0)) / 60 + outT;
+    w += (faultActive ? lbToKg(fault.dWaterLbPerHr) / mDa : 0) / 60 + outWkg / mDa;
     w = Math.max(0, w);
 
     const rh = Math.min(100, Math.max(0, rhFromW(fToC(tempF), w, pressure)));
@@ -175,14 +212,20 @@ export function refereeRun(p) {
     }
   }
 
-  // Stabilized: the last half hour stayed in-SLA and barely moved.
+  // Stabilized: the last half hour stayed entirely in-SLA and genuinely
+  // settled — temperature AND humidity. (v1 declared any unbreached run
+  // "stabilized" unconditionally and never looked at RH; a hall still
+  // sliding toward the dew-point cap at minute 240 is not stable.)
   const tail = trail.slice(-30);
-  const tSpread = Math.max(...tail.map((s) => s.tempF)) - Math.min(...tail.map((s) => s.tempF));
-  const stabilized =
-    breachedAtMin === null || (minutesInSla >= totalMinutes - 30 && tSpread < 0.75);
+  const spread = (get) => Math.max(...tail.map(get)) - Math.min(...tail.map(get));
   const inWindow = tail.every((s) => checkSla(s.tempF, s.rh).ok);
+  const stabilized =
+    inWindow &&
+    minutesInSla >= totalMinutes - 30 &&
+    spread((s) => s.tempF) < 0.75 &&
+    spread((s) => s.rh) < 3;
 
   // Score: a point per SLA-minute, a stability bonus worth half an hour.
-  const score = minutesInSla + (stabilized && inWindow ? 30 : 0);
-  return { minutesInSla, totalMinutes, breachedAtMin, breachDetail, stabilized: stabilized && inWindow, score, trail };
+  const score = minutesInSla + (stabilized ? 30 : 0);
+  return { minutesInSla, totalMinutes, breachedAtMin, breachDetail, stabilized, score, trail };
 }
