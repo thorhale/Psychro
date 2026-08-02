@@ -11,6 +11,30 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — the training referee got real (v2)
+
+- **The servers never stop.** An uncommanded hall now drifts warm under a
+  constant IT heat load — "do nothing" was previously a perfectly stable
+  hall, the single most optimistic thing a recovery drill could teach. Every
+  scenario now punishes hesitation: the stuck humidifier breaches the
+  dew-point cap sooner, the tripped chiller runs away, and even the benign
+  wash-down drifts out of its comfort zone and forfeits the stability bonus.
+- **The plant is machinery, not an equation.** Outputs now chase demand with
+  a first-order lag (τ ≈ 8 min), so the first minutes of any commit deliver
+  only part of the plant — committing early beats committing perfectly, and
+  the chiller-down drill now shows a real excursion-then-recovery arc. One
+  emergent lesson: the old wash-down "answer" (78 °F / 45 %) actually asked
+  the humidifier to add water mid-wash-down, and with lag that overshoot
+  rides the leak into the dew-point cap — the sound target asks for *dry*.
+- **"Stabilized" now means stable.** The bonus previously applied to any
+  unbreached run and only ever looked at temperature; it now requires the
+  final half hour to be entirely in-SLA and genuinely settled in both
+  temperature and humidity.
+- **Challenge codes carry the referee version** (`#train=v2.<scenario>.<seed>`).
+  A code minted before the physics changed still opens and runs — on today's
+  referee, with a plain warning that scores may differ — rather than being
+  silently re-scored or keeping two physics engines alive.
+
 ### Added — sensor registry, calibration recall, audit-ready logbook
 
 - **Sensor registry**: each instrument can now record its OWN datasheet spec
