@@ -11,6 +11,32 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Security — untrusted text can no longer reach the DOM as markup
+
+- **Fixed two cross-site-scripting paths.** Names in this app arrive from
+  colleagues' save files and from BMS trend exports, not just from the local
+  keyboard, so a crafted string was never "only the user's own problem": it
+  would have run inside the app with access to every stored hall, SLA and the
+  whole calibration logbook.
+  - A trend-CSV import failure echoed the file's own header row into the page
+    as HTML. The parser no longer quotes untrusted file text back at all — it
+    names the columns it needed and how many it saw — and the message renders
+    as text, not markup.
+  - A hall's site name and an SLA profile's name were interpolated unescaped
+    into the conditions readout, so importing a colleague's save file could
+    execute code and persist it for every later boot.
+  One escaper (`escHtml`) now covers every place user-supplied text meets
+  `innerHTML`, and stored data is still preserved verbatim so legitimate names
+  containing `&` or `<` are never mangled. End-to-end tests arm a tripwire and
+  assert the payload stays inert through save-file, CSV and sensor-label paths.
+- **The calibration logbook can no longer fail to save in silence.** Its two
+  writers bypassed the quota-aware storage helper, so on a full device the
+  most audit-critical data in the app was dropped while the UI confirmed each
+  check as "Logged". Both now surface the storage-full warning.
+- **A save file from a newer build is refused, not half-imported.** The format
+  version was written but never read, so a future file merged whatever this
+  build recognised and reported success while silently discarding the rest.
+
 ### Changed — the training referee got real (v2)
 
 - **The servers never stop.** An uncommanded hall now drifts warm under a

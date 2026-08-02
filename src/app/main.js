@@ -102,6 +102,24 @@ const deltaLabel = () => deltaLabelFor(state.tempUnit || 'F');
 // where it already holds a vapour pressure.
 const humidityRatioGPw = (pw, p, tc) => humidityRatioFromPw(pw, p, tc) * 1000;
 
+/**
+ * Escape user-supplied text for HTML interpolation.
+ *
+ * Every name in this app — halls, sites, SLA profiles, scenarios, sensors —
+ * can arrive from a COLLEAGUE'S SAVE FILE, not just from the keyboard, so
+ * "the user only hurts themselves" was never true: a shared save file with a
+ * crafted hall name would run in this origin with access to every stored
+ * profile and the whole calibration logbook. Anywhere such a string meets
+ * `innerHTML`, it goes through here first.
+ */
+const escHtml = (s) =>
+  String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 /** Storage quota warning — shown once per session, not per keystroke. */
 let quotaWarned = false;
 function persistJSON(key, value) {
@@ -775,7 +793,10 @@ function loadSensorLog() {
 }
 function persistSensorLog() {
   sensorLog = normalizeSensorLog(sensorLog);
-  storage.set(SENSOR_LOG_KEY, JSON.stringify(sensorLog));
+  // persistJSON, not storage.set: it surfaces a quota failure. Silently
+  // dropping writes here would lose the most audit-critical data in the app
+  // while the UI cheerfully confirmed each check was "Logged".
+  persistJSON(SENSOR_LOG_KEY, sensorLog);
 }
 
 // ── Sensor registry: each instrument's OWN spec and calibration cadence ────
@@ -798,7 +819,7 @@ function loadSensorRegistry() {
 }
 function persistSensorRegistry() {
   sensorRegistry = normalizeSensorRegistry(sensorRegistry);
-  storage.set(SENSOR_REG_KEY, JSON.stringify(sensorRegistry));
+  persistJSON(SENSOR_REG_KEY, sensorRegistry);
 }
 function upsertSensorMeta(name, patch) {
   const key = String(name || '').trim();
@@ -864,7 +885,7 @@ function svlogSection(scoped, qty, meta) {
         `<tr><td>${new Date(e.date).toLocaleDateString()}</td><td>${e.method}</td>` +
         `<td>${e.ref.toFixed(1)} ± ${e.u.toFixed(1)}</td><td>${e.reading.toFixed(1)}</td>` +
         `<td style="color:${Math.abs(e.err) <= band ? 'var(--ok)' : 'var(--danger)'}">${e.err >= 0 ? '+' : ''}${e.err.toFixed(2)}</td>` +
-        `<td class="cap-hint">${[e.hallName, e.tech].filter(Boolean).map((s) => String(s).replace(/</g, '&lt;')).join(' · ') || '—'}</td></tr>`,
+        `<td class="cap-hint">${[e.hallName, e.tech].filter(Boolean).map(escHtml).join(' · ') || '—'}</td></tr>`,
     )
     .join('');
 
@@ -949,7 +970,7 @@ function renderSensorLogbook() {
 
   host.innerHTML =
     `<div class="sla-field" style="margin:10px 0 6px"><label>Logbook — sensor</label>` +
-    `<select id="svlog-sel" class="sla-select">${sensors.map((n) => `<option${n === selected ? ' selected' : ''}>${n.replace(/</g, '&lt;')}</option>`).join('')}</select></div>` +
+    `<select id="svlog-sel" class="sla-select">${sensors.map((n) => `<option${n === selected ? ' selected' : ''}>${escHtml(n)}</option>`).join('')}</select></div>` +
     regHtml + dueLine + sections +
     `<div class="sv-actions">` +
     (sensorLog.length > 8 ? `<button class="scn-btn" id="svlog-more">${svlogShowAll ? 'Show recent only' : 'Show all history'}</button>` : '') +
@@ -1832,7 +1853,7 @@ function updateControlReadout() {
           ? `<div class="ramp-foot ramp-ok">✓ Achievable within about an hour</div>`
           : plan.needsTempRate || plan.needsVol
             ? ''
-            : `<div class="ramp-foot ramp-bad">⏱ Plan ≥ ${fmtHrs(minHrs)} — ${plan.binding} is the constraint${plan.binding.startsWith('SLA')?` (${sla.name})`:''}</div>`}
+            : `<div class="ramp-foot ramp-bad">⏱ Plan ≥ ${fmtHrs(minHrs)} — ${plan.binding} is the constraint${plan.binding.startsWith('SLA')?` (${escHtml(sla.name)})`:''}</div>`}
         ${volHint}
         ${rateHint}
       </div>`;
@@ -1849,13 +1870,13 @@ function updateControlReadout() {
           : 'can humidify (add moisture)';
   let capNote;
   if (deh && hum) {
-    capNote = `<div class="cap-note"><strong>${state.hall.siteName || 'This hall'}: full moisture control.</strong> Cooling, warming, dehumidification, and humidification are all available — any Target in the envelope is achievable with equipment, not just by riding the temperature move.</div>`;
+    capNote = `<div class="cap-note"><strong>${escHtml(state.hall.siteName || 'This hall')}: full moisture control.</strong> Cooling, warming, dehumidification, and humidification are all available — any Target in the envelope is achievable with equipment, not just by riding the temperature move.</div>`;
   } else if (!deh && !hum) {
-    capNote = `<div class="cap-note"><strong>${state.hall.siteName || 'This hall'}: no moisture control.</strong> There's no dehumidifier or humidifier — if your Target's absolute moisture differs from Current's, it isn't reachable by cooling/warming alone (see the water flag above). Add plant capability in the Data Hall panel to close that gap.</div>`;
+    capNote = `<div class="cap-note"><strong>${escHtml(state.hall.siteName || 'This hall')}: no moisture control.</strong> There's no dehumidifier or humidifier — if your Target's absolute moisture differs from Current's, it isn't reachable by cooling/warming alone (see the water flag above). Add plant capability in the Data Hall panel to close that gap.</div>`;
   } else if (deh && !hum) {
-    capNote = `<div class="cap-note"><strong>${state.hall.siteName || 'This hall'}: dehumidify only.</strong> Removing moisture is achievable; a Target that needs moisture <strong>added</strong> isn't reachable with the current plant.</div>`;
+    capNote = `<div class="cap-note"><strong>${escHtml(state.hall.siteName || 'This hall')}: dehumidify only.</strong> Removing moisture is achievable; a Target that needs moisture <strong>added</strong> isn't reachable with the current plant.</div>`;
   } else {
-    capNote = `<div class="cap-note"><strong>${state.hall.siteName || 'This hall'}: humidify only.</strong> Adding moisture is achievable; a Target that needs moisture <strong>removed</strong> isn't reachable with the current plant.</div>`;
+    capNote = `<div class="cap-note"><strong>${escHtml(state.hall.siteName || 'This hall')}: humidify only.</strong> Adding moisture is achievable; a Target that needs moisture <strong>removed</strong> isn't reachable with the current plant.</div>`;
   }
 
   // ── "Why" annotation: failure mode as Target nears an envelope edge ──
@@ -2328,7 +2349,16 @@ function renderHallEditor() {
       const res = parseTrendCsv(text, forceUnit ? { tempUnit: forceUnit } : {});
       const out = document.getElementById('trend-res');
       if (!res.ok) {
-        if (out) { out.style.display = ''; out.innerHTML = `<span class="calc-warn">${res.error}</span>`; }
+        // textContent, not innerHTML: this message describes a file we did
+        // not write and cannot vouch for.
+        if (out) {
+          out.style.display = '';
+          out.textContent = '';
+          const warn = document.createElement('span');
+          warn.className = 'calc-warn';
+          warn.textContent = res.error;
+          out.appendChild(warn);
+        }
         toast('Could not read the trend file.', { kind: 'error' });
         return;
       }
@@ -2596,7 +2626,7 @@ function renderHallTabs() {
   const tabs = document.getElementById('hall-tabs');
   if (!tabs) return;
   const v = state.hallView || (state.hallView = { loc: '', bld: '' });
-  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const esc = escHtml; // one escaper for the whole app
   const nHalls = pred => state.hallProfiles.filter(pred).length;
   const cnt = n => n ? ` · ${n} hall${n === 1 ? '' : 's'}` : '';
 
