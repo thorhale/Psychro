@@ -49,8 +49,8 @@ import {
 import { driftFit } from '../core/driftfit.js';
 import { evapMediaOutput, effectivenessFromOutput } from '../core/evapmedia.js';
 import {
-  normalizeInventory, inventoryTotals, inventoryNameplate,
-  unitOutput, unitsForKind, isThermalKind,
+  normalizeInventory, inventoryTotals, inventoryNameplate, worstSingleLoss,
+  unitOutput, unitsForKind, isThermalKind, isAirKind, baseUnitOf,
 } from '../core/equipment.js';
 import { parseTrendCsv, maxWindowedRate } from '../lib/trendcsv.js';
 import { SCENARIOS, refereeRun, TRAINER_VERSION } from '../core/trainer.js';
@@ -2697,6 +2697,10 @@ function renderHallEditor() {
         hc.innerHTML = `= <strong>${lbhr.toFixed(1)} lb/hr</strong> <button class="calc-apply" data-rk="rateHumLb" data-rv="${lbhr.toFixed(1)}">Apply</button>`;
       } else hc.textContent = '—';
     }
+    // The IT load typed here is what the redundancy check grades the surviving
+    // cooling against, so the inventory panel has to follow it. Same guard as
+    // update(): never re-render a panel someone is typing in.
+    if (!document.getElementById('equip-panel')?.contains(document.activeElement)) renderEquipment();
     // Apply buttons
     hed.querySelectorAll('.calc-apply').forEach(b => b.onclick = () => {
       const k = b.dataset.rk;
@@ -4213,10 +4217,14 @@ function thermalC() {
 // the SUM of what is installed and working, and every unit carries its own
 // condition and its own in-service state.
 
-const EQUIP_LABEL = { cool: 'Cooling', heat: 'Heating', dehum: 'Dehumidifier', humid: 'Humidifier' };
+const EQUIP_LABEL = {
+  cool: 'Cooling', heat: 'Heating', dehum: 'Dehumidifier',
+  humid: 'Humidifier', air: 'Fan / AHU',
+};
 const UNIT_LABEL = {
   kw: 'kW', ton: 'tons', btu: 'BTU/hr', mbh: 'MBH',
   lbhr: 'lb/hr', gph: 'GPH', gpd: 'gal/day', pintday: 'pints/day',
+  cfm: 'CFM', m3h: 'm³/hr', cmm: 'm³/min', lps: 'L/s',
 };
 
 /** Output per evaporative unit at the hall's live condition. */
@@ -4227,6 +4235,58 @@ const evapUnitLbHr = (evap) => {
   });
   return r ? r.lbPerHr : 0;
 };
+
+/**
+ * "Lose one machine" — the question the inventory exists to answer.
+ *
+ * Every hall is built to some N+1 story, and the story is only true while the
+ * spare capacity is real: four CRAHs at 100 % is N+1, the same four with two
+ * at 70 % may not be. The loss taken is always the LARGEST machine actually
+ * in service, because planning around the average failure is planning around
+ * a failure that does not happen. A kind with a single machine gets said out
+ * loud too — that is a single point of failure, not a redundancy figure.
+ */
+function redundancyHtml(inv) {
+  const KINDS = [
+    { k: 'cool', label: 'Cooling', dec: 0 },
+    { k: 'heat', label: 'Heating', dec: 0 },
+    { k: 'dehum', label: 'Dehumidify', dec: 1 },
+    { k: 'humid', label: 'Humidify', dec: 1 },
+    { k: 'air', label: 'Airflow', dec: 0 },
+  ];
+  const itKW = (state.hall.calc || {}).it;
+  const lines = [];
+  for (const { k, label, dec } of KINDS) {
+    const r = worstSingleLoss(inv, k, evapUnitLbHr);
+    if (!r || r.worst <= 0) continue;
+    const unit = baseUnitOf(k);
+    const who = r.worstName ? ` <span class="cap-hint">(${escHtml(r.worstName)})</span>` : '';
+    if (r.machines < 2) {
+      lines.push(
+        `<div><span class="cap-hint">${label}</span> <span class="calc-warn">only one machine${who} — losing it leaves nothing.</span></div>`,
+      );
+      continue;
+    }
+    // Cooling is the one kind with a demand already on file to check against.
+    let verdict = '';
+    if (k === 'cool' && itKW > 0) {
+      verdict = r.remaining >= itKW
+        ? ` <span class="sv-pass">still covers the ${itKW.toFixed(0)} kW IT load</span>`
+        : ` <span class="sv-fail">short of the ${itKW.toFixed(0)} kW IT load by ${(itKW - r.remaining).toFixed(0)} kW</span>`;
+    }
+    lines.push(
+      `<div><span class="cap-hint">${label}</span> −${r.worst.toFixed(dec)} ${unit}${who} → ` +
+      `<strong>${r.remaining.toFixed(dec)} ${unit}</strong> left${verdict}</div>`,
+    );
+  }
+  if (!lines.length) return '';
+  return (
+    `<div class="eq-redundancy">` +
+    `<div class="sla-caps-label">Lose one machine — the biggest one that is running</div>` +
+    lines.join('') +
+    `</div>`
+  );
+}
 
 function renderEquipment() {
   const host = document.getElementById('equip-panel');
@@ -4247,13 +4307,17 @@ function renderEquipment() {
           .join('')}</select>`;
     const condTitle = isEvap
       ? 'Media saturation effectiveness — what mineral scale destroys'
-      : "This unit's condition against its own nameplate";
+      : isAirKind(u.kind)
+        ? 'Delivered airflow against nameplate — filter loading, belt slip, a dead fan in the array'
+        : "This unit's condition against its own nameplate";
     const condKey = isEvap ? 'evapEff' : 'condPct';
     const condVal = isEvap ? u.evap.effPct : u.condPct;
     const out = unitOutput(u, evapUnitLbHr);
-    const outTxt = isThermalKind(u.kind)
-      ? `${out.toFixed(0)} kW`
-      : `${out.toFixed(1)} lb/hr`;
+    const outTxt = isAirKind(u.kind)
+      ? `${Math.round(out).toLocaleString()} CFM`
+      : isThermalKind(u.kind)
+        ? `${out.toFixed(0)} kW`
+        : `${out.toFixed(1)} lb/hr`;
 
     return (
       `<div class="eq-row${u.online ? '' : ' eq-off'}">` +
@@ -4271,17 +4335,29 @@ function renderEquipment() {
 
   // Totals, always against nameplate — "120 of 200 lb/hr" is actionable in a
   // way a bare "120 lb/hr" is not.
-  const pair = (a, b, unit, dec = 0) =>
-    b > 0
-      ? `<strong>${a.toFixed(dec)}</strong> of ${b.toFixed(dec)} ${unit}${a < b * 0.999 ? ` <span class="sv-marginal">(${Math.round((a / b) * 100)}%)</span>` : ''}`
+  const pair = (a, b, unit, dec = 0, group = false) => {
+    const f = (x) => (group ? Math.round(x).toLocaleString() : x.toFixed(dec));
+    return b > 0
+      ? `<strong>${f(a)}</strong> of ${f(b)} ${unit}${a < b * 0.999 ? ` <span class="sv-marginal">(${Math.round((a / b) * 100)}%)</span>` : ''}`
       : '—';
+  };
+  // Air changes per hour is the sanity check on an airflow figure: data halls
+  // generally run tens of ACH, so a number in the single digits usually means
+  // a units mix-up rather than a very calm room.
+  const ach = now.airCfm > 0 && state.hall.hallVolFt3 > 0
+    ? (now.airCfm * 60) / state.hall.hallVolFt3
+    : null;
+
   const totals = inv.length
     ? `<div class="eq-totals">` +
       `<div><span class="cap-hint">Cooling</span> ${pair(now.coolKW, full.coolKW, 'kW')} <span class="cap-hint">· ${now.counts.cool} unit${now.counts.cool === 1 ? '' : 's'}</span></div>` +
       `<div><span class="cap-hint">Heating</span> ${pair(now.heatKW, full.heatKW, 'kW')}</div>` +
       `<div><span class="cap-hint">Dehumidify</span> ${pair(now.dehumLbHr, full.dehumLbHr, 'lb/hr', 1)}</div>` +
       `<div><span class="cap-hint">Humidify</span> ${pair(now.humidLbHr, full.humidLbHr, 'lb/hr', 1)} <span class="cap-hint">· ${now.counts.humid} unit${now.counts.humid === 1 ? '' : 's'}</span></div>` +
-      `</div>` +
+      (now.counts.air || full.airCfm > 0
+        ? `<div><span class="cap-hint">Airflow</span> ${pair(now.airCfm, full.airCfm, 'CFM', 0, true)} <span class="cap-hint">· ${now.counts.air} fan${now.counts.air === 1 ? '' : 's'}${ach ? ` · ${ach.toFixed(0)} air changes/hr` : ''}</span></div>`
+        : '') +
+      `</div>` + redundancyHtml(inv) +
       (now.offline || now.degraded
         ? `<div class="calc-warn" style="margin-top:6px">⚠ ${[
             now.offline ? `${now.offline} out of service` : '',
@@ -4294,14 +4370,14 @@ function renderEquipment() {
     `<div class="sla-caps-label">Installed plant — each unit counted, rated and derated on its own</div>` +
     `<div class="cap-explain">List what is really in this hall. A unit's <strong>%</strong> is its condition against its own nameplate (scaled media, a tired compressor); unticking <strong>on</strong> takes it out of service entirely. Evaporative humidifiers are computed from airflow at the hall's live condition, so their capacity moves with the room.</div>` +
     `<div id="equip-rows">${rows.join('')}</div>` +
-    `<div class="addcity-actions" style="margin-top:6px">` +
+    `<div class="eq-add-row">` +
     Object.entries(EQUIP_LABEL)
       .map(([k, lbl]) => `<button type="button" class="scn-btn eq-add" data-kind="${k}">+ ${lbl}</button>`)
       .join('') +
     `<button type="button" class="scn-btn eq-add" data-kind="humid" data-evap="1">+ Humidifier (wetted media)</button>` +
     `</div>` + totals +
     (inv.length
-      ? `<div class="addcity-actions" style="margin-top:8px"><button type="button" class="scn-btn scn-btn-primary" id="equip-apply">Apply inventory to the rates below</button></div>`
+      ? `<div class="eq-add-row"><button type="button" class="scn-btn scn-btn-primary" id="equip-apply">Apply inventory to the rates below</button></div>`
       : '');
 
   host.querySelectorAll('.eq-f').forEach((el) =>
@@ -4363,6 +4439,12 @@ function renderEquipment() {
       state.hall.rateHumLb = Math.round(now.humidLbHr * 10) / 10;
       state.hall.canHumidify = true;
       applied.push('humidify');
+    }
+    // Supply airflow is what the fans actually deliver today, not the design
+    // figure — that is the whole point of derating them individually.
+    if (now.airCfm > 0) {
+      state.hall.airflowCfm = Math.round(now.airCfm);
+      applied.push('supply airflow');
     }
     if (!applied.length) {
       toast(

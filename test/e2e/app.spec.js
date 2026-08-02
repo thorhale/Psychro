@@ -881,6 +881,78 @@ test.describe('equipment inventory', () => {
     await expect(page.locator('#cap-dehum')).toBeChecked();
   });
 
+  test('fans are counted and derated like any other machine', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-kind="air"]').click();
+    const row = page.locator('.eq-row').first();
+    await row.locator('[data-k="count"]').fill('4');
+    await row.locator('[data-k="count"]').dispatchEvent('input');
+    await row.locator('[data-k="cap"]').fill('10000');
+    await row.locator('[data-k="cap"]').dispatchEvent('input');
+    await expect(page.locator('.eq-totals')).toContainText('40,000 of 40,000 CFM');
+
+    // A loaded filter bank costs airflow, and the total says so.
+    await row.locator('[data-k="condPct"]').fill('75');
+    await row.locator('[data-k="condPct"]').dispatchEvent('input');
+    await expect(page.locator('.eq-totals')).toContainText('30,000 of 40,000 CFM');
+
+    // And that delivered figure — not the design one — drives the hall.
+    await page.locator('#equip-apply').click();
+    await expect(page.locator('#hall-cfm')).toHaveValue('30000');
+  });
+
+  test('losing the biggest running machine is answered, not guessed', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // Three 30-ton CRAHs plus one 50-ton AHU.
+    await page.locator('.eq-add[data-kind="cool"]').click();
+    await page.locator('.eq-add[data-kind="cool"]').click();
+    const rows = page.locator('.eq-row');
+    await rows.nth(0).locator('[data-k="name"]').fill('CRAH');
+    await rows.nth(0).locator('[data-k="count"]').fill('3');
+    await rows.nth(0).locator('[data-k="count"]').dispatchEvent('input');
+    await rows.nth(0).locator('[data-k="cap"]').fill('30');
+    await rows.nth(0).locator('[data-k="cap"]').dispatchEvent('input');
+    await rows.nth(0).locator('[data-k="unit"]').selectOption('ton');
+    await rows.nth(1).locator('[data-k="name"]').fill('AHU-1');
+    await rows.nth(1).locator('[data-k="cap"]').fill('50');
+    await rows.nth(1).locator('[data-k="cap"]').dispatchEvent('input');
+    await rows.nth(1).locator('[data-k="unit"]').selectOption('ton');
+
+    // 140 ton in service; the single biggest loss is the 50-ton AHU (176 kW),
+    // leaving 3 × 30 ton = 316.5 kW.
+    const red = page.locator('.eq-redundancy');
+    await expect(red).toContainText('AHU-1');
+    await expect(red).toContainText('−176 kW');
+    await expect(red).toContainText('317 kW left');
+
+    // With an IT load on file the remainder gets a verdict rather than a number.
+    await page.fill('#rc-it', '200');
+    await page.dispatchEvent('#rc-it', 'input');
+    await expect(red).toContainText('still covers the 200 kW IT load');
+    await page.fill('#rc-it', '400');
+    await page.dispatchEvent('#rc-it', 'input');
+    await expect(red).toContainText('short of the 400 kW IT load');
+  });
+
+  test('a single machine is called a single point of failure', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-kind="humid"]:not([data-evap])').click();
+    const row = page.locator('.eq-row').first();
+    await row.locator('[data-k="name"]').fill('HUM-1');
+    await row.locator('[data-k="cap"]').fill('20');
+    await row.locator('[data-k="cap"]').dispatchEvent('input');
+    await expect(page.locator('.eq-redundancy')).toContainText('only one machine');
+
+    // Add a second and it becomes a redundancy figure instead of a warning.
+    await row.locator('[data-k="count"]').fill('2');
+    await row.locator('[data-k="count"]').dispatchEvent('input');
+    await expect(page.locator('.eq-redundancy')).not.toContainText('only one machine');
+    await expect(page.locator('.eq-redundancy')).toContainText('20.0 lb/hr left');
+  });
+
   test('the inventory belongs to its hall', async ({ page }) => {
     await page.goto('./');
     await expandAll(page);

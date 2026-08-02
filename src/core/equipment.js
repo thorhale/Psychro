@@ -34,7 +34,7 @@
  */
 
 /** Equipment kinds the environment plant is made of. */
-export const EQUIP_KINDS = ['cool', 'heat', 'dehum', 'humid'];
+export const EQUIP_KINDS = ['cool', 'heat', 'dehum', 'humid', 'air'];
 
 /** Thermal capacity units → kW. */
 const THERMAL_TO_KW = {
@@ -53,9 +53,24 @@ const WATER_TO_LBHR = {
 };
 
 /**
+ * Airflow units → CFM.
+ *
+ * Fans are environment plant too: a slipping belt, a loading filter or a dead
+ * fan in an array all mean less air over the coil and the media, and none of
+ * them announce themselves. Air movement gets counted and derated like
+ * everything else.
+ */
+const AIR_TO_CFM = {
+  cfm: 1,
+  m3h: 0.5885778, //  m³/hr
+  cmm: 35.31467, //   m³/min
+  lps: 2.118880, //   litres/second
+};
+
+/**
  * @typedef {object} EquipUnit
  * @property {string} id
- * @property {'cool'|'heat'|'dehum'|'humid'} kind
+ * @property {'cool'|'heat'|'dehum'|'humid'|'air'} kind
  * @property {string} name
  * @property {number} count      how many identical units
  * @property {number} cap        capacity EACH, in `unit`
@@ -65,12 +80,24 @@ const WATER_TO_LBHR = {
  * @property {{cfm:number, effPct:number}|null} evap wetted-media parameters
  */
 
-/** Is this kind measured in thermal units (vs water output)? */
+/** Is this kind measured in thermal units (vs water output or airflow)? */
 export const isThermalKind = (kind) => kind === 'cool' || kind === 'heat';
+
+/** Is this kind measured as airflow? */
+export const isAirKind = (kind) => kind === 'air';
+
+/** The conversion table a kind's capacity is expressed in. */
+const scaleFor = (kind) =>
+  isAirKind(kind) ? AIR_TO_CFM : isThermalKind(kind) ? THERMAL_TO_KW : WATER_TO_LBHR;
+
+/** Base unit a kind totals into: 'kW', 'lb/hr' or 'CFM'. */
+export function baseUnitOf(kind) {
+  return isAirKind(kind) ? 'CFM' : isThermalKind(kind) ? 'kW' : 'lb/hr';
+}
 
 /** Capacity units valid for a kind — the UI offers exactly these. */
 export function unitsForKind(kind) {
-  return isThermalKind(kind) ? Object.keys(THERMAL_TO_KW) : Object.keys(WATER_TO_LBHR);
+  return Object.keys(scaleFor(kind));
 }
 
 const isNum = (v) => typeof v === 'number' && isFinite(v);
@@ -142,8 +169,19 @@ export function unitOutput(u, evapLbHr) {
     const each = evapLbHr(u.evap);
     return isNum(each) && each > 0 ? each * u.count * cond : 0;
   }
-  const factor = isThermalKind(u.kind) ? THERMAL_TO_KW[u.unit] : WATER_TO_LBHR[u.unit];
+  const factor = scaleFor(u.kind)[u.unit];
   return (u.cap || 0) * (factor ?? 1) * u.count * cond;
+}
+
+/**
+ * What ONE machine of this line item delivers — the whole line divided by how
+ * many are in it. This is the number redundancy is measured in: a line item
+ * reading "4 × 30 ton" loses a quarter of itself when a machine trips, not
+ * all of it.
+ */
+export function perMachineOutput(u, evapLbHr) {
+  const total = unitOutput(u, evapLbHr);
+  return u && u.count > 0 ? total / u.count : 0;
 }
 
 /**
@@ -152,29 +190,60 @@ export function unitOutput(u, evapLbHr) {
  * @param {EquipUnit[]} inv normalized inventory
  * @param {(evap:{cfm:number, effPct:number}) => number} [evapLbHr]
  * @returns {{coolKW:number, heatKW:number, dehumLbHr:number, humidLbHr:number,
- *            counts:{cool:number, heat:number, dehum:number, humid:number},
+ *            airCfm:number,
+ *            counts:{cool:number, heat:number, dehum:number, humid:number, air:number},
  *            offline:number, degraded:number}}
  *   `counts` are units IN SERVICE (quantity, not line items). `offline` and
  *   `degraded` count line items needing attention, for an at-a-glance banner.
  */
 export function inventoryTotals(inv, evapLbHr) {
   const t = {
-    coolKW: 0, heatKW: 0, dehumLbHr: 0, humidLbHr: 0,
-    counts: { cool: 0, heat: 0, dehum: 0, humid: 0 },
+    coolKW: 0, heatKW: 0, dehumLbHr: 0, humidLbHr: 0, airCfm: 0,
+    counts: { cool: 0, heat: 0, dehum: 0, humid: 0, air: 0 },
     offline: 0, degraded: 0,
   };
+  const bucket = { cool: 'coolKW', heat: 'heatKW', dehum: 'dehumLbHr', humid: 'humidLbHr', air: 'airCfm' };
   for (const u of Array.isArray(inv) ? inv : []) {
     if (!u || !EQUIP_KINDS.includes(u.kind)) continue;
     if (!u.online) { t.offline++; continue; }
     if (u.condPct < 100) t.degraded++;
     t.counts[u.kind] += u.count;
-    const out = unitOutput(u, evapLbHr);
-    if (u.kind === 'cool') t.coolKW += out;
-    else if (u.kind === 'heat') t.heatKW += out;
-    else if (u.kind === 'dehum') t.dehumLbHr += out;
-    else t.humidLbHr += out;
+    t[bucket[u.kind]] += unitOutput(u, evapLbHr);
   }
   return t;
+}
+
+/**
+ * The redundancy question: lose one machine — the biggest one — and what is
+ * left?
+ *
+ * Every data centre is designed to some N+1 story, and the story is only true
+ * while the spare capacity is real. A hall running four CRAHs at 100 % is N+1
+ * on paper; the same hall with two of them at 70 % may not be. Because the
+ * inventory knows each machine's own condition, the answer falls straight out
+ * of it — and it is deliberately the LARGEST in-service machine, because
+ * planning against the average failure is planning against a failure that
+ * does not happen.
+ *
+ * @param {EquipUnit[]} inv normalized inventory
+ * @param {string} kind which kind to interrogate
+ * @param {(evap:{cfm:number, effPct:number}) => number} [evapLbHr]
+ * @returns {{total:number, worst:number, worstName:string, remaining:number,
+ *            machines:number}|null}
+ *   null when this kind has nothing in service to lose.
+ */
+export function worstSingleLoss(inv, kind, evapLbHr) {
+  let total = 0, worst = 0, worstName = '', machines = 0;
+  for (const u of Array.isArray(inv) ? inv : []) {
+    if (!u || u.kind !== kind || !u.online) continue;
+    const out = unitOutput(u, evapLbHr);
+    total += out;
+    machines += u.count;
+    const each = perMachineOutput(u, evapLbHr);
+    if (each > worst) { worst = each; worstName = u.name || ''; }
+  }
+  if (machines === 0) return null;
+  return { total, worst, worstName, remaining: total - worst, machines };
 }
 
 /**

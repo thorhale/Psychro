@@ -11,6 +11,33 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — air movement counted as plant, and the "lose one machine" question
+
+- **Fans and air handlers are equipment too.** A new kind alongside cooling,
+  heating, dehumidifiers and humidifiers, rated in CFM, m³/hr, m³/min or L/s,
+  and derated individually — a loading filter bank, a slipping belt or one
+  dead fan in an array all cost airflow, and none of them announce
+  themselves. The totals show delivered airflow against nameplate plus air
+  changes per hour, and "Apply inventory" now sets the hall's supply airflow
+  from what the fans actually deliver rather than the design figure.
+- **"Lose one machine — the biggest one that is running."** Every hall is
+  built to some N+1 story, and the story is only true while the spare
+  capacity is real: four CRAHs at 100 % is N+1, the same four with two at
+  70 % may not be. Each kind now reports what the largest in-service machine
+  is worth and what would remain without it — taking one machine out of a
+  line item, not the whole line. A degraded 50-ton AHU stops being the worst
+  thing that can fail once a healthy 30-ton CRAH outproduces it, which is a
+  judgement nameplate figures get wrong.
+- **Cooling gets graded.** With an IT load on file, the surviving cooling is
+  reported as covering it or short of it by a stated number of kW.
+- **A single machine is called a single point of failure**, not given a
+  redundancy figure of zero that reads like an answer.
+
+### Fixed
+
+- The add-equipment button row could not wrap, so a sixth button was pushed
+  outside the card and became unclickable.
+
 ### Added — equipment inventory: a hall is now made of countable units
 
 The first step toward a digital twin. A hall used to be four numbers —
