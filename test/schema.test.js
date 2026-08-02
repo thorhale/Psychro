@@ -15,6 +15,8 @@ import {
   isValidLogEntry,
   normalizeSensorLog,
   SENSOR_LOG_MAX,
+  isValidSensorMeta,
+  normalizeSensorRegistry,
 } from '../src/state/schema.js';
 
 describe('normalizeHall', () => {
@@ -193,6 +195,82 @@ describe('sensor log schema', () => {
     expect(capped).toHaveLength(SENSOR_LOG_MAX);
     // Newest survive the cap — history serves the trend, and trends live at the end.
     expect(capped[capped.length - 1].date).toBe(day(SENSOR_LOG_MAX + 49).date);
+  });
+});
+
+describe('sensor log audit fields', () => {
+  const base = {
+    sensor: 'CRAH-1 supply', method: 'salt', quantity: 'rh',
+    ref: 75.3, u: 0.4, reading: 74.1, err: -1.2, date: '2026-08-01T00:00:00.000Z',
+  };
+
+  it('optional hall/site/tech ride along; junk versions are dropped, not fatal', () => {
+    // Backward compatibility is the contract: every save file written before
+    // these fields existed must stay valid forever.
+    expect(isValidLogEntry(base)).toBe(true);
+    const rich = { ...base, hallName: 'PHX · Hall 1', siteName: 'Goodyear, AZ', tech: 'TH' };
+    const out = normalizeSensorLog([rich, base]);
+    expect(out).toHaveLength(2);
+    expect(out.find((e) => e.tech)?.hallName).toBe('PHX · Hall 1');
+    // A non-string tech doesn't kill the entry — the field is dropped instead.
+    const junk = normalizeSensorLog([{ ...base, tech: 42, hallName: '' }]);
+    expect(junk).toHaveLength(1);
+    expect('tech' in junk[0]).toBe(false);
+    expect('hallName' in junk[0]).toBe(false);
+  });
+});
+
+describe('sensor registry schema', () => {
+  const good = { name: 'CRAH-1 supply', specRh: 3, specTF: 0.9, calIntervalDays: 90, lastCalDate: '2026-06-01T00:00:00.000Z' };
+
+  it('accepts full and minimal entries, rejects nonsense', () => {
+    expect(isValidSensorMeta(good)).toBe(true);
+    expect(isValidSensorMeta({ name: 'bare sensor' })).toBe(true); // placeholder is fine
+    for (const kill of [
+      { name: '' }, { name: 3 }, { specRh: -1 }, { specRh: 'tight' },
+      { specTF: 0 }, { calIntervalDays: -5 }, { lastCalDate: 'someday' },
+    ]) {
+      expect(isValidSensorMeta({ ...good, ...kill }), JSON.stringify(kill)).toBe(false);
+    }
+    expect(isValidSensorMeta(null)).toBe(false);
+  });
+
+  it('normalizes: de-dupes by name with last write winning, fills nulls', () => {
+    const out = normalizeSensorRegistry([
+      { name: 'A', specRh: 2 },
+      { junk: true },
+      { name: 'A', specRh: 3 }, // fresher datasheet wins
+      { name: 'B' },
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.find((m) => m.name === 'A').specRh).toBe(3);
+    expect(out.find((m) => m.name === 'B')).toEqual({
+      name: 'B', specRh: null, specTF: null, calIntervalDays: null, lastCalDate: null,
+    });
+  });
+
+  it('rides validateSaveFile alongside the log', () => {
+    const v = validateSaveFile({
+      slaProfiles: [{ name: 'X', tMinF: 59, tMaxF: 89.6, rhMin: 8, rhMax: 80 }],
+      sensorRegistry: [{ name: 'CRAH-1 supply', specRh: 3 }, 'junk'],
+    });
+    expect(v.ok).toBe(true);
+    expect(v.sensorRegistry).toHaveLength(1);
+    expect(v.sensorRegistry[0].specRh).toBe(3);
+    // Absent input → empty array, never undefined (merge code iterates it).
+    expect(validateSaveFile({ slaProfiles: [{ name: 'X' }] }).sensorRegistry).toEqual([]);
+  });
+});
+
+describe('measured barometer override', () => {
+  it('normalizeHall keeps a plausible baroKpa and clears everything else', () => {
+    expect(normalizeHall({ baroKpa: 97.6 }).baroKpa).toBe(97.6);
+    expect(normalizeHall({}).baroKpa).toBeNull();
+    // Outside the physics-vouched 55–110 kPa window: cleared, not clamped —
+    // a wild barometer entry must not silently become a different wrong value.
+    expect(normalizeHall({ baroKpa: 30 }).baroKpa).toBeNull();
+    expect(normalizeHall({ baroKpa: 200 }).baroKpa).toBeNull();
+    expect(normalizeHall({ baroKpa: 'high' }).baroKpa).toBeNull();
   });
 });
 

@@ -38,6 +38,10 @@ export function normalizeHall(h) {
   if (typeof h.siteName !== 'string') h.siteName = '';
   if (typeof h.building !== 'string') h.building = '';
   h.elevFt = isNum(h.elevFt) ? clamp(h.elevFt, -15000, 20000) : 0;
+  // Optional MEASURED barometric pressure (kPa). The standard atmosphere at
+  // elevation is worth ±2 kPa against real weather; a hall with a barometer
+  // can pin the truth. Bounded to the pressures the physics is vouched for.
+  h.baroKpa = isNum(h.baroKpa) && h.baroKpa >= 55 && h.baroKpa <= 110 ? h.baroKpa : null;
   h.hallVolFt3 = numOrNull(h.hallVolFt3);
   h.airflowCfm = numOrNull(h.airflowCfm);
   for (const k of ['canHeat', 'canDehumidify', 'canHumidify']) h[k] = h[k] === true;
@@ -171,12 +175,66 @@ export function isValidLogEntry(e) {
  * Normalize a stored sensor log: keep only valid entries, oldest-first,
  * capped at SENSOR_LOG_MAX (newest win — history is for trends, and a trend
  * that needs >500 points has a different problem).
+ *
+ * Optional audit fields (`hallName`, `siteName`, `tech`) ride along when they
+ * are strings and are dropped otherwise — a pre-existing save file without
+ * them stays valid forever.
  */
 export function normalizeSensorLog(raw) {
   const list = (Array.isArray(raw) ? raw : [])
     .filter(isValidLogEntry)
+    .map((e) => {
+      const out = { ...e };
+      for (const k of ['hallName', 'siteName', 'tech']) {
+        if (out[k] != null && (typeof out[k] !== 'string' || !out[k].trim())) delete out[k];
+      }
+      return out;
+    })
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   return list.slice(-SENSOR_LOG_MAX);
+}
+
+/** Cap on registered sensors — a hall floor has dozens, not thousands. */
+export const SENSOR_REG_MAX = 200;
+
+/**
+ * One registered sensor's metadata: its OWN spec (which then replaces the
+ * generic tolerance defaults in verdicts) and its calibration cadence.
+ * Everything except the name is optional — a registry entry with just a name
+ * is a valid placeholder.
+ */
+export function isValidSensorMeta(m) {
+  const optNum = (v, lo) => v == null || (isNum(v) && v > (lo ?? 0));
+  return (
+    m != null &&
+    typeof m === 'object' &&
+    typeof m.name === 'string' &&
+    m.name.trim().length > 0 &&
+    optNum(m.specRh) &&
+    optNum(m.specTF) &&
+    optNum(m.calIntervalDays) &&
+    (m.lastCalDate == null ||
+      (typeof m.lastCalDate === 'string' && isFinite(new Date(m.lastCalDate).getTime())))
+  );
+}
+
+/**
+ * Normalize a stored sensor registry: valid entries only, de-duplicated by
+ * name (last write wins — a merge brings the newer spec), capped.
+ */
+export function normalizeSensorRegistry(raw) {
+  const byName = new Map();
+  for (const m of Array.isArray(raw) ? raw : []) {
+    if (!isValidSensorMeta(m)) continue;
+    byName.set(m.name.trim(), {
+      name: m.name.trim(),
+      specRh: m.specRh ?? null,
+      specTF: m.specTF ?? null,
+      calIntervalDays: m.calIntervalDays ?? null,
+      lastCalDate: m.lastCalDate ?? null,
+    });
+  }
+  return [...byName.values()].slice(-SENSOR_REG_MAX);
 }
 
 export function validateSaveFile(data) {
@@ -208,6 +266,7 @@ export function validateSaveFile(data) {
   const sites = (Array.isArray(data.customSites) ? data.customSites : []).filter(isValidSite);
   const scenarios = (Array.isArray(data.scenarios) ? data.scenarios : []).filter(isValidScenario);
   const sensorLog = normalizeSensorLog(data.sensorLog);
+  const sensorRegistry = normalizeSensorRegistry(data.sensorRegistry);
 
-  return { ok: true, halls, slas, sites, scenarios, sensorLog };
+  return { ok: true, halls, slas, sites, scenarios, sensorLog, sensorRegistry };
 }

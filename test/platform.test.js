@@ -214,9 +214,12 @@ describe('native storage: write-through mirroring', () => {
     for (const k of [LS_KEY_V1, LS_KEY_V3, LS_KEY_V4]) {
       expect(p.OWNED_KEYS, `${k} must be mirrored`).toContain(k);
     }
-    // Scenarios and custom sites are written by main.js under these names.
+    // Scenarios, custom sites, the sensor log and the sensor registry are
+    // written by main.js under these names.
     expect(p.OWNED_KEYS).toContain('sdc_psychro_scenarios_v1');
     expect(p.OWNED_KEYS).toContain('sdc_psychro_custom_sites_v1');
+    expect(p.OWNED_KEYS).toContain('sdc_psychro_sensorlog_v1');
+    expect(p.OWNED_KEYS).toContain('sdc_psychro_sensors_v1');
   });
 });
 

@@ -98,4 +98,34 @@ describe('briefing generator', () => {
     const text = buildBriefing(params);
     expect(text).toContain(`W ${params.a.Wg.toFixed(2)} → ${params.b.Wg.toFixed(2)} g/kg`);
   });
+
+  it('narrates the hourly set-point ladder the caller computed', () => {
+    // The briefing only narrates — the caller derives the rungs with the same
+    // interpolation the chart's pacing ticks use, so the ticket and the chart
+    // can never disagree about hour 3.
+    const text = buildBriefing(
+      makeParams({
+        hourly: [
+          { tempF: 70.5, rh: 44 },
+          { tempF: 73, rh: 41.6 },
+          { tempF: 75, rh: 35 },
+        ],
+      }),
+    );
+    expect(text).toContain('Hourly set-points:');
+    expect(text).toContain('Hour 1: 70.5 °F / 44% RH');
+    expect(text).toContain('Hour 2: 73 °F / 42% RH');
+    expect(text).toContain('Hour 3 (arrival): 75 °F / 35% RH');
+    // No ladder requested → no header.
+    expect(buildBriefing(makeParams())).not.toContain('Hourly set-points');
+  });
+
+  it('stamps the generation time the caller passes — and stays deterministic', () => {
+    const at = new Date('2026-08-02T14:33:00Z');
+    const text = buildBriefing(makeParams({ generatedAt: at }));
+    expect(text).toContain('Generated 2026-08-02 14:33 UTC');
+    expect(text).toContain('verify against site instrumentation');
+    // Same inputs incl. the timestamp → same text, byte for byte.
+    expect(buildBriefing(makeParams({ generatedAt: at }))).toBe(text);
+  });
 });
