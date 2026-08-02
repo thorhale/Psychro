@@ -804,6 +804,67 @@ test.describe('multiple halls', () => {
     await expect(page.locator('#a-temp')).toHaveValue('70');
     await expect(page.locator('#allhalls-body .hall-row').nth(0)).toHaveClass(/is-active/);
   });
+
+  test('the overview shows which halls have plant to look at', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#hall-add').click(); // Hall 2 is the one with trouble
+    await expandAll(page); // adding a hall rebuilds the editor, closing its panes
+    await page.locator('.eq-add[data-kind="cool"]').click();
+    await page.locator('.eq-add[data-kind="cool"]').click();
+    const rows = page.locator('.eq-row');
+    await rows.nth(0).locator('[data-k="cap"]').fill('30');
+    await rows.nth(0).locator('[data-k="cap"]').dispatchEvent('input');
+    await rows.nth(1).locator('[data-k="cap"]').fill('30');
+    await rows.nth(1).locator('[data-k="cap"]').dispatchEvent('input');
+    await rows.nth(1).locator('[data-k="online"]').uncheck();
+
+    const hallRows = page.locator('#allhalls-body .hall-row');
+    await expect(hallRows.nth(1)).toContainText('1 out of service');
+    await expect(hallRows.nth(0)).not.toContainText('out of service');
+    await expect(page.locator('#allhalls-sub')).toContainText('1 with plant to look at');
+
+    // A hall that cannot survive losing its biggest machine says so — that is
+    // worth interrupting a scan for in a way "you can" is not.
+    await page.fill('#rc-it', '80');
+    await page.dispatchEvent('#rc-it', 'input');
+    await expect(hallRows.nth(1)).toContainText('drops below the IT load');
+  });
+
+  test("each hall's media is graded with its own air, not the open hall's", async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // Hall 1: dry and at sea level, so its media can absorb a lot.
+    await page.fill('#hall-elev', '0');
+    await page.dispatchEvent('#hall-elev', 'input');
+    await page.fill('#a-rh', '20');
+    await page.dispatchEvent('#a-rh', 'input');
+    await page.locator('#a-rh').blur();
+    await page.locator('.eq-add[data-evap="1"]').click();
+    let row = page.locator('.eq-row').first();
+    await row.locator('[data-k="evapCfm"]').fill('10000');
+    await row.locator('[data-k="evapCfm"]').dispatchEvent('input');
+    const dryOutput = parseFloat(await row.locator('.eq-out').textContent());
+
+    // Hall 2: identical humidifier, but a damp room. Same machine, less water.
+    await page.locator('#hall-add').click();
+    await page.fill('#a-rh', '60');
+    await page.dispatchEvent('#a-rh', 'input');
+    await page.locator('#a-rh').blur();
+    await page.locator('.eq-add[data-evap="1"]').click();
+    row = page.locator('.eq-row').first();
+    await row.locator('[data-k="evapCfm"]').fill('10000');
+    await row.locator('[data-k="evapCfm"]').dispatchEvent('input');
+    const dampOutput = parseFloat(await row.locator('.eq-out').textContent());
+    expect(dampOutput).toBeLessThan(dryOutput);
+
+    // Now the tell: with Hall 2 open, Hall 1's humidifier must still be worth
+    // its own dry-room figure. Grading it with the open hall's damp air would
+    // be a quiet, plausible-looking lie.
+    await page.locator('#hall-tabs button').first().click();
+    await expect(page.locator('.eq-row').first().locator('.eq-out'))
+      .toContainText(dryOutput.toFixed(1));
+  });
 });
 
 test.describe('equipment inventory', () => {
