@@ -15,6 +15,7 @@ import {
   perMachineOutput,
   inventoryTotals,
   inventoryNameplate,
+  ratesFromTotals,
   worstSingleLoss,
   unitsForKind,
   baseUnitOf,
@@ -229,6 +230,77 @@ describe('worstSingleLoss', () => {
     expect(r.worstName).toBe('HUM-A'); // 40 lb/hr each beats the 15 lb/hr unit
     expect(r.remaining).toBeCloseTo(40 + 15, 6);
     expect(r.machines).toBe(3);
+  });
+});
+
+describe('ratesFromTotals', () => {
+  // A 20 000 ft³ hall of air is roughly 700 kJ/K; the exact figure comes from
+  // the caller, so these tests use a round one and check the algebra.
+  const C = 700;
+  const totals = (over = {}) => ({ ...inventoryTotals([]), ...over });
+
+  it('turns kilowatts into °F/hr against the mass being conditioned', () => {
+    // 100 kW into 700 kJ/K = 100·3600/700 K/hr = 514.3 K/hr → ×1.8 = 925.7 °F/hr
+    const r = ratesFromTotals(totals({ heatKW: 100 }), { cKJperK: C });
+    expect(r.rateWarmF).toBeCloseTo(925.7, 1);
+    // Halving the capacity halves the rate; doubling the mass halves it again.
+    expect(ratesFromTotals(totals({ heatKW: 50 }), { cKJperK: C }).rateWarmF)
+      .toBeCloseTo(r.rateWarmF / 2, 1);
+    expect(ratesFromTotals(totals({ heatKW: 100 }), { cKJperK: 2 * C }).rateWarmF)
+      .toBeCloseTo(r.rateWarmF / 2, 1);
+  });
+
+  it('cooling has to carry the IT load before any of it pulls the room down', () => {
+    const full = ratesFromTotals(totals({ coolKW: 300 }), { cKJperK: C });
+    const loaded = ratesFromTotals(totals({ coolKW: 300 }), { cKJperK: C, itKW: 200 });
+    // Only the 100 kW of excess is a rate, so it matches 100 kW of heating.
+    expect(loaded.rateCoolF).toBeCloseTo(
+      ratesFromTotals(totals({ heatKW: 100 }), { cKJperK: C }).rateWarmF, 6);
+    expect(loaded.rateCoolF).toBeLessThan(full.rateCoolF);
+    // Cooling that does not beat the IT load is no pulldown at all — null,
+    // not a small positive number promising a move that never finishes.
+    expect(ratesFromTotals(totals({ coolKW: 150 }), { cKJperK: C, itKW: 200 }).rateCoolF).toBeNull();
+    expect(ratesFromTotals(totals({ coolKW: 200 }), { cKJperK: C, itKW: 200 }).rateCoolF).toBeNull();
+  });
+
+  it('says null rather than guessing when it cannot answer', () => {
+    // Water and airflow need no thermal mass, so they still come through.
+    const noMass = ratesFromTotals(totals({ coolKW: 300, humidLbHr: 40, airCfm: 12000 }), {});
+    expect(noMass.rateCoolF).toBeNull();
+    expect(noMass.rateWarmF).toBeNull();
+    expect(noMass.rateHumLb).toBe(40);
+    expect(noMass.airflowCfm).toBe(12000);
+    // A kind with nothing installed is null, which is how the hall says
+    // "cannot do this at all" rather than "can do it at zero".
+    expect(noMass.rateDehumLb).toBeNull();
+    // Junk in, nulls out — never a NaN loose in the planner.
+    for (const bad of [null, undefined]) {
+      const r = ratesFromTotals(bad, { cKJperK: C });
+      expect(Object.values(r).every((v) => v === null)).toBe(true);
+    }
+    expect(ratesFromTotals(totals({ heatKW: 100 }), { cKJperK: 0 }).rateWarmF).toBeNull();
+  });
+
+  it('rounds to what an operator would actually type', () => {
+    const r = ratesFromTotals(totals({ heatKW: 1, dehumLbHr: 24.44449, airCfm: 9999.6 }), { cKJperK: C });
+    expect(r.rateWarmF).toBe(9.3); //     one decimal, like the rate field
+    expect(r.rateDehumLb).toBe(24.4); //  one decimal, like the lb/hr field
+    expect(r.airflowCfm).toBe(10000); //  whole CFM
+  });
+
+  it('agrees with a real inventory end to end', () => {
+    const inv = normalizeInventory([
+      { kind: 'cool', count: 4, cap: 30, unit: 'ton' },
+      { kind: 'humid', count: 2, cap: 20, unit: 'lbhr', condPct: 50 },
+      { kind: 'air', count: 2, cap: 10000, unit: 'cfm', condPct: 75 },
+    ]);
+    const r = ratesFromTotals(inventoryTotals(inv), { cKJperK: C, itKW: 100 });
+    // 120 ton = 422.02 kW, less 100 kW of IT = 322.02 kW of pulldown.
+    const excess = 120 * 3.51685 - 100;
+    expect(r.rateCoolF).toBeCloseTo(Math.round(((excess * 3600) / C) * 1.8 * 10) / 10, 6);
+    expect(r.rateHumLb).toBe(20); //   2 × 20 lb/hr at half condition
+    expect(r.airflowCfm).toBe(15000); // 2 × 10 000 CFM at 75 %
+    expect(r.rateWarmF).toBeNull(); //   no heating installed
   });
 });
 

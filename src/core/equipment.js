@@ -214,6 +214,52 @@ export function inventoryTotals(inv, evapLbHr) {
 }
 
 /**
+ * Turn inventory totals into the hall's four planning rates.
+ *
+ * This is the join between the twin and the planner, and it is deliberately
+ * pure: the caller works out the hall's thermal capacitance (which needs air
+ * volume, pressure and the live moisture) and the IT load, and this does the
+ * arithmetic. Keeping it here rather than in the UI is what lets the derived
+ * rates be tested against the same numbers the rate calculator produces.
+ *
+ * A rate comes back null when it genuinely cannot be stated:
+ *
+ *   - no equipment of that kind installed — the hall cannot do it at all;
+ *   - cooling that does not exceed the IT load — there is no pulldown margin,
+ *     and a positive number here would promise a move that never finishes;
+ *   - a thermal rate with no hall volume — kW cannot become °F/hr without
+ *     knowing what mass is being heated or cooled.
+ *
+ * Null is the honest answer in each case, and the planner already knows how to
+ * say "enter a rate to time this move".
+ *
+ * @param {ReturnType<typeof inventoryTotals>} totals
+ * @param {{cKJperK?:number|null, itKW?:number|null}} [ctx]
+ *   cKJperK  hall thermal capacitance, kJ/K (null when volume is unknown)
+ *   itKW     steady IT load the cooling has to beat before it can pull down
+ * @returns {{rateCoolF:number|null, rateWarmF:number|null,
+ *            rateDehumLb:number|null, rateHumLb:number|null,
+ *            airflowCfm:number|null}}
+ */
+export function ratesFromTotals(totals, ctx = {}) {
+  const t = totals || inventoryTotals([]); // a zeroed rollup, not a bare {}
+  const c = isNum(ctx.cKJperK) && ctx.cKJperK > 0 ? ctx.cKJperK : null;
+  const itKW = isNum(ctx.itKW) && ctx.itKW > 0 ? ctx.itKW : 0;
+  // kW → °F/hr for this hall's mass: (kW · 3600 s/hr) ÷ (kJ/K) × 1.8 °F/K
+  const degF = (kw) => (c && kw > 0 ? Math.round(((kw * 3600) / c) * 1.8 * 10) / 10 : null);
+  const lb = (v) => (v > 0 ? Math.round(v * 10) / 10 : null);
+  return {
+    // Cooling has to carry the IT load before any of it is available to pull
+    // the room down; only the excess is a rate.
+    rateCoolF: degF((t.coolKW || 0) - itKW),
+    rateWarmF: degF(t.heatKW || 0),
+    rateDehumLb: lb(t.dehumLbHr || 0),
+    rateHumLb: lb(t.humidLbHr || 0),
+    airflowCfm: t.airCfm > 0 ? Math.round(t.airCfm) : null,
+  };
+}
+
+/**
  * The redundancy question: lose one machine — the biggest one — and what is
  * left?
  *

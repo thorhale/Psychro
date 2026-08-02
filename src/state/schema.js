@@ -82,6 +82,25 @@ export function normalizeHall(h) {
   // which is fine — the manual rates above remain the source of truth until
   // an inventory exists to derive them from.
   h.equipment = normalizeInventory(h.equipment);
+  // Where the four rates above come from. 'inventory' means they are LIVE —
+  // re-derived from the equipment on every change, so tagging a CRAH out
+  // changes the plan instead of quietly leaving it stale. Anything else, and
+  // absence, means 'manual': every hall that predates this keeps its typed
+  // rates untouched, which is the only safe default.
+  h.rateSource = h.rateSource === 'inventory' && h.equipment.length ? 'inventory' : 'manual';
+  // The typed rates put aside while the inventory is driving, so going back to
+  // manual restores a commissioning-observed number rather than leaving the
+  // derived one in its place. Only meaningful while rateSource is 'inventory'.
+  h.manualRates =
+    h.manualRates != null && typeof h.manualRates === 'object'
+      ? {
+          rateCoolF: numOrNull(h.manualRates.rateCoolF),
+          rateWarmF: numOrNull(h.manualRates.rateWarmF),
+          rateDehumLb: numOrNull(h.manualRates.rateDehumLb),
+          rateHumLb: numOrNull(h.manualRates.rateHumLb),
+          airflowCfm: numOrNull(h.manualRates.airflowCfm),
+        }
+      : null;
   return h;
 }
 
