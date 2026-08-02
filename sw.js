@@ -16,13 +16,27 @@
 const BUILD = '__BUILD_VERSION__';
 const RAW_VERSION = 'raw-v6-stale-while-revalidate';
 const CACHE = 'sdc-psychro-' + (BUILD.charAt(0) === '_' ? RAW_VERSION : BUILD);
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+// StreamHallPlanner.html is the "works offline, take it with you" download the
+// install banner advertises — and it was the one thing that 404'd offline,
+// because nothing on the page ever fetches it, so the runtime cache never saw
+// it. Precaching it makes the offline promise true.
+const ASSETS = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-512.png',
+  './StreamHallPlanner.html',
+];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches
       .open(CACHE)
-      .then((c) => c.addAll(ASSETS))
+      // addAll is atomic — a single missing asset would abort the install and
+      // leave the app with no cache at all. Take what we can get.
+      .then((c) => Promise.all(ASSETS.map((a) => c.add(a).catch(() => {}))))
       .then(() => self.skipWaiting()),
   );
 });

@@ -385,6 +385,12 @@
     color:var(--stream-teal); font-size:.76rem; font-weight:700; font-family:var(--sans); cursor:pointer;
     white-space:nowrap; text-decoration:none; }
   .install-alt:hover { background:rgba(0,169,206,.12); }
+  .start-steps { margin:10px 0 0 0; padding-left:20px; color:var(--text); font-size:.82rem; line-height:1.65; }
+  .start-steps li { margin-bottom:8px; }
+  .gloss { margin:0; font-size:.82rem; line-height:1.6; }
+  .gloss dt { color:var(--accent2); font-weight:700; margin-top:12px; }
+  .gloss dt:first-child { margin-top:0; }
+  .gloss dd { margin:2px 0 0 0; color:var(--muted); }
   /* Field ergonomics: on touch screens (gloved thumbs on a phone in the
      hall) every tap target grows to the 44 px platform guidance. Desktop
      pointer users keep the compact layout — this block simply never fires. */
@@ -429,6 +435,66 @@
   </div>
 </div>
 
+<!-- START HERE — the one thing a first-time operator needs before anything else -->
+<details class="card sect" id="start-here">
+  <summary><span class="sect-title">Start here</span><span class="sect-sub">new to this tool? 60 seconds</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+    <div class="calc-intro">
+      This tool answers one question: <strong>can I move my hall from where it is
+      now to where I want it, without breaking the customer's contract — and how
+      long will it take?</strong>
+    </div>
+    <ol class="start-steps">
+      <li><strong>Describe your hall</strong> (Data Hall card): where it is, how
+        big it is, and how fast your plant can cool, warm, dry or humidify it.
+        Without those rates the tool can show you the physics but cannot time
+        the move — it will say so rather than guess.</li>
+      <li><strong>Set the contract</strong> (Customer SLA card): the temperature
+        and humidity limits you are not allowed to cross, plus the dew-point cap
+        and how fast you're permitted to change things.</li>
+      <li><strong>Plan the move</strong> (Conditions card): set <em>Current</em>
+        to what the hall reads now and <em>Target</em> to where you want it. The
+        chart draws both, the badge tells you whether each one is inside the
+        contract, and the advisory tells you the earliest honest finish time and
+        which limit is holding you back.</li>
+      <li><strong>Check your instruments</strong> (Sensor Validation card) before
+        you trust any of it — six ways to verify a temperature or humidity
+        sensor against something physical, from a jar of table salt to a pot of
+        boiling water.</li>
+    </ol>
+    <div class="formula-note">Not sure what a word means? Open <strong>Plain-English glossary</strong> below. Everything here is a planning aid — verify against site instrumentation before acting.</div>
+  </div>
+</details>
+
+<!-- GLOSSARY — every derived property the app shows, in plain words -->
+<details class="card sect" id="glossary">
+  <summary><span class="sect-title">Plain-English glossary</span><span class="sect-sub">what the numbers mean</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+    <dl class="gloss">
+      <dt>Dry bulb (the "temperature")</dt>
+      <dd>What an ordinary thermometer reads. When this app says "temp", it means this.</dd>
+      <dt>Relative humidity (RH %)</dt>
+      <dd>How full the air is, as a percentage of the most water it could hold <em>at its current temperature</em>. The catch: warm the same air without adding water and RH falls, because warm air can hold more. Nothing about the water changed.</dd>
+      <dt>Humidity ratio (W, g/kg)</dt>
+      <dd>The actual weight of water in the air, per kilogram of dry air. Unlike RH, this only changes when water is genuinely added or removed — which is why the tool plans moves with it.</dd>
+      <dt>Dew point</dt>
+      <dd>The temperature at which that water would start condensing. Any surface colder than the dew point gets wet — cold water pipes, chilled coils, an economizer damper on a winter morning. That's why SLAs cap it.</dd>
+      <dt>Wet bulb</dt>
+      <dd>What a thermometer reads with a wet sock over it, in moving air. Evaporation cools it, so the drier the air the lower it falls. It's what a sling psychrometer measures.</dd>
+      <dt>Enthalpy (kJ/kg)</dt>
+      <dd>The total heat energy in the air — the sensible heat you can feel plus the latent heat hiding in the water vapour. Cooling equipment is really removing enthalpy.</dd>
+      <dt>Sensible vs latent heat, and SHR</dt>
+      <dd>Sensible heat changes the temperature; latent heat changes the moisture. The sensible heat ratio (SHR) is the fraction of the job that's temperature. An SHR near 1.0 means you're almost purely cooling; a lower number means the coil is doing serious dehumidification too.</dd>
+      <dt>ASHRAE classes A1–A4</dt>
+      <dd>Industry envelopes for how far IT equipment is rated to be pushed, from the tightest (A1) to the widest (A4). The badge tells you which one your point falls inside.</dd>
+      <dt>Site pressure</dt>
+      <dd>Air pressure at your elevation. It matters because the same RH holds different amounts of water at different pressures — a plan computed at sea level is wrong in Denver.</dd>
+      <dt>Guard band (on sensor checks)</dt>
+      <dd>To honestly call a sensor "in spec", its error has to be inside tolerance by more than your reference's own uncertainty. If it isn't, the tool says "too close to call" instead of guessing.</dd>
+    </dl>
+  </div>
+</details>
+
 <div class="layout">
 <div class="col-left">
 
@@ -437,8 +503,8 @@
   <summary><span class="sect-title">Data Hall</span><span class="sect-sub" id="hall-summary">—</span><span class="sect-chev">▸</span></summary>
   <div class="sect-body">
     <div class="hall-filter-row">
-      <div class="hall-filter"><label>Location <span class="cap-hint">sets site + elevation</span></label><select id="hall-loc-filter" class="sla-select"></select></div>
-      <div class="hall-filter"><label>Building</label><select id="hall-bld-filter" class="sla-select"></select></div>
+      <div class="hall-filter"><label for="hall-loc-filter">Location <span class="cap-hint">sets site + elevation</span></label><select id="hall-loc-filter" class="sla-select"></select></div>
+      <div class="hall-filter"><label for="hall-bld-filter">Building</label><select id="hall-bld-filter" class="sla-select"></select></div>
     </div>
     <div class="sla-addcity">
       <button type="button" class="addcity-toggle" id="addcity-toggle">+ Add a city / site</button>
@@ -508,8 +574,7 @@
         </button>
         <div class="chip-panel" id="chip-panel">
           <div class="chip-elev-row">
-            <label>Elevation</label>
-            <input type="text" inputmode="text" id="chip-elev-input" placeholder="e.g. 1066 or -200">
+            <label for="chip-elev-input">Elevation</label><input type="text" inputmode="text" id="chip-elev-input" placeholder="e.g. 1066 or -200">
             <span class="chip-unit">ft</span>
           </div>
           <div class="pressure-readout" id="pressure-readout">— kPa</div>
@@ -628,7 +693,7 @@
     <input type="range" id="playback-scrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the planned move">
     <span id="playback-info" class="playback-info">—</span>
   </div>
-  <div class="psych-wrap"><canvas id="psychCanvas" role="img" aria-label="Psychrometric chart. The state points and derived properties are listed in the properties table below." tabindex="0"></canvas><div class="ch-line" id="ch-vline"></div><div class="ch-line" id="ch-hline"></div><div id="chart-tip"></div></div>
+  <div class="psych-wrap"><canvas id="psychCanvas" role="application" aria-label="Psychrometric chart. Arrow keys pan, plus and minus zoom, 0 resets the view. The state points and derived properties are also listed in the properties table below." tabindex="0"></canvas><div class="ch-line" id="ch-vline"></div><div class="ch-line" id="ch-hline"></div><div id="chart-tip"></div></div>
   <div class="legend" id="legend">
     <button class="leg-item" data-vis="Rec"><span class="leg-line" style="background:rgba(255,255,255,.4);border-top:2px dashed rgba(255,255,255,.4)"></span>Rec.</button>
     <button class="leg-item" data-vis="A1"><span class="leg-line" style="background:#3fb950"></span>A1</button>
@@ -690,13 +755,12 @@
     <!-- 1 · Psychrometer (wet bulb) -->
     <div class="sv-pane active" id="sv-pane-psy" role="tabpanel">
       <div class="sv-grid">
-        <div class="sla-field"><label>Dry bulb <span class="tunit">°F</span></label><input type="number" id="sv-db" step="0.1" placeholder="e.g. 75"></div>
-        <div class="sla-field"><label>Wet bulb <span class="tunit">°F</span></label><input type="number" id="sv-wb" step="0.1" placeholder="e.g. 62"></div>
-        <div class="sla-field"><label>Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" inputmode="decimal" id="sv-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+        <div class="sla-field"><label for="sv-db">Dry bulb <span class="tunit">°F</span></label><input type="number" id="sv-db" step="0.1" placeholder="e.g. 75"></div>
+        <div class="sla-field"><label for="sv-wb">Wet bulb <span class="tunit">°F</span></label><input type="number" id="sv-wb" step="0.1" placeholder="e.g. 62"></div>
+        <div class="sla-field"><label for="sv-rh">Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" inputmode="decimal" id="sv-rh" step="0.1" min="0" max="100" placeholder="—"></div>
       </div>
       <div class="sla-field" style="margin-top:10px">
-        <label>How was the wet bulb measured?</label>
-        <select id="sv-method" class="sla-select">
+        <label for="sv-method">How was the wet bulb measured?</label><select id="sv-method" class="sla-select">
           <option value="psy" selected>Sling / aspirated psychrometer — WMO (what an instrument reads)</option>
           <option value="thermo">Thermodynamic wet bulb — ASHRAE Eq. 35 (a chart property)</option>
         </select>
@@ -707,9 +771,9 @@
     <!-- 2 · Dew-point instrument -->
     <div class="sv-pane" id="sv-pane-dp" role="tabpanel">
       <div class="sv-grid">
-        <div class="sla-field"><label>Dry bulb <span class="tunit">°F</span></label><input type="number" id="sv-dp-db" step="0.1" placeholder="e.g. 75"></div>
-        <div class="sla-field"><label>Dew point (instrument) <span class="tunit">°F</span></label><input type="number" id="sv-dp-dp" step="0.1" placeholder="e.g. 54"></div>
-        <div class="sla-field"><label>Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" inputmode="decimal" id="sv-dp-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+        <div class="sla-field"><label for="sv-dp-db">Dry bulb <span class="tunit">°F</span></label><input type="number" id="sv-dp-db" step="0.1" placeholder="e.g. 75"></div>
+        <div class="sla-field"><label for="sv-dp-dp">Dew point (instrument) <span class="tunit">°F</span></label><input type="number" id="sv-dp-dp" step="0.1" placeholder="e.g. 54"></div>
+        <div class="sla-field"><label for="sv-dp-rh">Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" inputmode="decimal" id="sv-dp-rh" step="0.1" min="0" max="100" placeholder="—"></div>
       </div>
       <div class="sv-hint">For sites with a chilled-mirror or other dew-point meter — reference-grade when the mirror is clean. RH follows from T<sub>db</sub> and T<sub>dp</sub> alone (pressure-independent).</div>
     </div>
@@ -717,12 +781,11 @@
     <!-- 3 · Saturated-salt chamber -->
     <div class="sv-pane" id="sv-pane-salt" role="tabpanel">
       <div class="sv-grid">
-        <div class="sla-field"><label>Salt</label>
-          <select id="sv-salt-sel" class="sla-select"></select>
+        <div class="sla-field"><label for="sv-salt-sel">Salt</label><select id="sv-salt-sel" class="sla-select"></select>
         </div>
-        <div class="sla-field"><label>Chamber temp <span class="tunit">°F</span></label><input type="number" id="sv-salt-t" step="0.1" placeholder="e.g. 72"></div>
-        <div class="sla-field"><label>Sensor RH % <span class="cap-hint">reading under test</span></label><input type="number" inputmode="decimal" id="sv-salt-rh" step="0.1" min="0" max="100" placeholder="—"></div>
-        <div class="sla-field"><label>Chamber temp known to ± <span class="cap-hint">drives the uncertainty</span></label><input type="number" inputmode="decimal" id="sv-salt-ut" step="0.1" min="0" placeholder="0.9"></div>
+        <div class="sla-field"><label for="sv-salt-t">Chamber temp <span class="tunit">°F</span></label><input type="number" id="sv-salt-t" step="0.1" placeholder="e.g. 72"></div>
+        <div class="sla-field"><label for="sv-salt-rh">Sensor RH % <span class="cap-hint">reading under test</span></label><input type="number" inputmode="decimal" id="sv-salt-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+        <div class="sla-field"><label for="sv-salt-ut">Chamber temp known to ± <span class="cap-hint">drives the uncertainty</span></label><input type="number" inputmode="decimal" id="sv-salt-ut" step="0.1" min="0" placeholder="0.9"></div>
       </div>
       <div class="sv-hint" id="sv-salt-note">A saturated-salt jar is an <em>absolute</em> reference — physical chemistry, nothing to drift or expire — and its realized accuracy is set by how well you know the chamber temperature. NaCl barely cares (−0.04 %RH/°C); Mg(NO₃)₂ moves −0.30 %RH/°C. Sealed jar, slurry with visible solids, sensor above the slurry, hours to equilibrate. Reference: Greenspan (1977), NBS.</div>
     </div>
@@ -730,7 +793,7 @@
     <!-- 4 · Ice point (temperature) -->
     <div class="sv-pane" id="sv-pane-ice" role="tabpanel">
       <div class="sv-grid">
-        <div class="sla-field"><label>Sensor temp in ice bath <span class="tunit">°F</span></label><input type="number" id="sv-ice-t" step="0.1" placeholder="e.g. 32.4"></div>
+        <div class="sla-field"><label for="sv-ice-t">Sensor temp in ice bath <span class="tunit">°F</span></label><input type="number" id="sv-ice-t" step="0.1" placeholder="e.g. 32.4"></div>
       </div>
       <div class="sv-hint">Crushed ice + a little distilled water — slush, not floating cubes. Stir, wait 2 min, keep the probe mid-bath off the walls. Reference: 32.0 °F / 0.00 °C by definition.</div>
     </div>
@@ -738,7 +801,7 @@
     <!-- 5 · Boiling point (temperature, altitude-corrected) -->
     <div class="sv-pane" id="sv-pane-boil" role="tabpanel">
       <div class="sv-grid">
-        <div class="sla-field"><label>Sensor temp in boiling water <span class="tunit">°F</span></label><input type="number" id="sv-boil-t" step="0.1" placeholder="—"></div>
+        <div class="sla-field"><label for="sv-boil-t">Sensor temp in boiling water <span class="tunit">°F</span></label><input type="number" id="sv-boil-t" step="0.1" placeholder="—"></div>
       </div>
       <div class="sv-hint" id="sv-boil-note">Rolling boil, probe mid-water off the pot. The reference is computed from this site's pressure — water does not boil at 212 °F at altitude. Impurities and superheat limit a field check to about ±0.9 °F.</div>
     </div>
@@ -746,20 +809,19 @@
     <!-- 6 · Reference instrument comparison -->
     <div class="sv-pane" id="sv-pane-ref" role="tabpanel">
       <div class="sv-grid">
-        <div class="sla-field"><label>Quantity</label>
-          <select id="sv-ref-qty" class="sla-select">
+        <div class="sla-field"><label for="sv-ref-qty">Quantity</label><select id="sv-ref-qty" class="sla-select">
             <option value="rh" selected>Relative humidity (%)</option>
             <option value="temp">Temperature</option>
           </select>
         </div>
-        <div class="sla-field"><label id="sv-ref-val-label">Reference reads</label><input type="number" id="sv-ref-val" step="0.1" placeholder="—"></div>
-        <div class="sla-field"><label>Reference uncertainty ± <span class="cap-hint">from its cal certificate</span></label><input type="number" inputmode="decimal" id="sv-ref-u" step="0.1" min="0" placeholder="e.g. 1.0"></div>
-        <div class="sla-field"><label id="sv-ref-reading-label">Sensor under test reads</label><input type="number" id="sv-ref-reading" step="0.1" placeholder="—"></div>
+        <div class="sla-field"><label id="sv-ref-val-label" for="sv-ref-val">Reference reads</label><input type="number" id="sv-ref-val" step="0.1" placeholder="—"></div>
+        <div class="sla-field"><label for="sv-ref-u">Reference uncertainty ± <span class="cap-hint">from its cal certificate</span></label><input type="number" inputmode="decimal" id="sv-ref-u" step="0.1" min="0" placeholder="e.g. 1.0"></div>
+        <div class="sla-field"><label id="sv-ref-reading-label" for="sv-ref-reading">Sensor under test reads</label><input type="number" id="sv-ref-reading" step="0.1" placeholder="—"></div>
       </div>
       <div class="sv-hint">Side-by-side with a recently calibrated instrument at the same spot, both settled. The verdict band widens by the reference's own uncertainty — a comparison can never be better than the reference.</div>
     </div>
 
-    <div class="calc-res" id="sv-res">Enter readings to compute the reference value.</div>
+    <div class="calc-res" id="sv-res" role="status" aria-live="polite" aria-atomic="true">Enter readings to compute the reference value.</div>
     <div class="sv-actions" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
       <button class="scn-btn" id="sv-to-current" disabled>→ Set as Current point</button>
       <input type="text" id="sv-sensor-label" class="scn-input" style="flex:1; min-width:150px;" placeholder="Sensor label (e.g. CRAH-3 supply)">
@@ -778,14 +840,14 @@
   <div class="sect-body">
     <div class="calc-intro">A plant fault hits a standard training hall (200,000 ft³ · cool 6 / warm 4 °F/hr · dehum 100 / hum 80 lb/hr · the Base SLA). Commit a recovery target; the physics referee plays out four hours minute-by-minute and scores the SLA time you kept, plus a bonus for finishing genuinely settled. Two things are always true in this hall: the servers never stop heating it — an uncommanded hall drifts warm on its own — and the plant takes minutes to spin up, so committing early beats committing perfectly. Deterministic per seed: share a challenge code and compete on identical faults.</div>
     <div class="sv-grid">
-      <div class="sla-field"><label>Scenario</label><select id="tr-scenario" class="sla-select"></select></div>
-      <div class="sla-field"><label>Seed <span class="cap-hint">same seed = same fault</span></label><input type="number" inputmode="numeric" id="tr-seed" step="1" min="0" value="42"></div>
+      <div class="sla-field"><label for="tr-scenario">Scenario</label><select id="tr-scenario" class="sla-select"></select></div>
+      <div class="sla-field"><label for="tr-seed">Seed <span class="cap-hint">same seed = same fault</span></label><input type="number" inputmode="numeric" id="tr-seed" step="1" min="0" value="42"></div>
       <div class="sla-field" style="align-self:end"><button class="scn-btn" id="tr-reroll">🎲 New seed</button></div>
     </div>
     <div class="calc-res" id="tr-brief">—</div>
     <div class="sv-grid" style="margin-top:10px">
-      <div class="sla-field"><label>Your target temp <span class="tunit">°F</span></label><input type="number" id="tr-temp" step="0.5" placeholder="—"></div>
-      <div class="sla-field"><label>Your target RH %</label><input type="number" inputmode="decimal" id="tr-rh" step="1" min="1" max="99" placeholder="—"></div>
+      <div class="sla-field"><label for="tr-temp">Your target temp <span class="tunit">°F</span></label><input type="number" id="tr-temp" step="0.5" placeholder="—"></div>
+      <div class="sla-field"><label for="tr-rh">Your target RH %</label><input type="number" inputmode="decimal" id="tr-rh" step="1" min="1" max="99" placeholder="—"></div>
       <div class="sla-field" style="align-self:end; display:flex; gap:8px;">
         <button class="scn-btn scn-btn-primary" id="tr-commit">Commit recovery</button>
         <button class="scn-btn" id="tr-idle" title="See what hesitation costs">Hesitate…</button>
@@ -815,7 +877,7 @@
   </div>
   <div style="color:#9db8d0; font-size:.8rem; margin-bottom:10px;">Hall Environment Planner · Critical Engineering · ASHRAE TC 9.9</div>
   <div style="font-size:.72rem; color:#9db8d0; line-height:1.5;">
-    ASHRAE Fundamentals Ch.1 psychrometrics, validated against CoolProp (ASHRAE RP-1485) — see the self-test above and <code>docs/coolprop-comparison.md</code>
+    ASHRAE Fundamentals Ch.1 psychrometrics, validated against CoolProp (ASHRAE RP-1485) — see the self-test above and <a href="./docs/coolprop-comparison.md" style="color:var(--stream-teal)">docs/coolprop-comparison.md</a>. New here? <a href="./docs/OPERATOR-GUIDE.md" style="color:var(--stream-teal)">Operator guide</a>.
   </div>
   <div style="font-size:.68rem; color:#6f8aa3; margin-top:10px; line-height:1.5;">
     Planning tool, not a control system — verify moves against site instrumentation before acting.

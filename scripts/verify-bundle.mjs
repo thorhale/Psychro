@@ -223,8 +223,15 @@ check('blockworld/ copied through', existsSync(join(dist, 'blockworld', 'index.h
 // playback (~9 kB gzipped so far, headroom for the logbook/CSV/training
 // milestones). Still small enough that a vendored library or an accidental
 // asset inline blows the budget immediately.
-const RAW_BUDGET_KB = 280;
-const GZIP_BUDGET_KB = 85;
+//
+// Raised again 280/85 → 300/95 for the in-app Start-here guide and glossary.
+// This is prose, not code: it compresses well and it is the difference
+// between a first-time operator understanding "W g/kg" or not. An audit found
+// the app had no first-run guidance and no glossary anywhere, while the docs
+// it pointed at were not even published. Prose that closes that gap is worth
+// its bytes; the budget still trips instantly on a vendored library.
+const RAW_BUDGET_KB = 300;
+const GZIP_BUDGET_KB = 95;
 const rawKb = statSync(join(dist, 'index.html')).size / 1024;
 const gzipKb = gzipSync(readFileSync(join(dist, 'index.html'))).length / 1024;
 check(

@@ -37,7 +37,7 @@
 import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
@@ -70,7 +70,14 @@ const BUILD_SHA = gitSha();
  *   - `sw.js` is stamped rather than copied: its cache key must change every
  *     build, and it has to stay a top-level file so its scope covers the app.
  */
-const UNREFERENCED_ASSETS = ['icon-512.png', 'robots.txt', 'privacy.html'];
+const UNREFERENCED_ASSETS = [
+  'icon-512.png',
+  'icon-maskable-512.png', // manifest-only: padded for Android's icon masks
+  'screenshot-wide.png', //   manifest-only: richer install dialog
+  'screenshot-narrow.png',
+  'robots.txt',
+  'privacy.html',
+];
 
 function staticCompanions() {
   return {
@@ -85,6 +92,18 @@ function staticCompanions() {
       writeFileSync(resolve(out, 'sw.js'), sw);
       for (const name of UNREFERENCED_ASSETS) {
         cpSync(resolve(__dirname, name), resolve(out, name));
+      }
+      // The app cites docs/sensor-validation.md and docs/coolprop-comparison.md
+      // in four places on screen; only dist/ is deployed, so on the live site
+      // and in both native shells those were 404s. Ship the reference docs
+      // with the app that points at them.
+      const docsSrc = resolve(__dirname, 'docs');
+      if (existsSync(docsSrc)) {
+        const docsOut = resolve(out, 'docs');
+        mkdirSync(docsOut, { recursive: true });
+        for (const f of readdirSync(docsSrc)) {
+          if (f.endsWith('.md')) cpSync(resolve(docsSrc, f), resolve(docsOut, f));
+        }
       }
       if (existsSync(resolve(__dirname, 'blockworld'))) {
         cpSync(resolve(__dirname, 'blockworld'), resolve(out, 'blockworld'), { recursive: true });

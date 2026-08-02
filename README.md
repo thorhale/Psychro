@@ -41,8 +41,8 @@ npm run lint
 npm run typecheck
 npm run analyze        # per-property accuracy table vs CoolProp
 npm run build
-npm run verify:bundle  # 44 artifact-integrity checks
-npm run e2e            # 130 Playwright tests across all three artifacts
+npm run verify:bundle  # 46 artifact-integrity checks
+npm run e2e            # 140 Playwright tests across all three artifacts
 ```
 
 `npm run e2e` deliberately tests shipped artifacts, never the dev server. It
@@ -120,8 +120,8 @@ writes — export a save file when you see that warning.
 
 - **CI on every push**: lint, typecheck, 233 tests (CoolProp oracle, physical
   invariants over seeded-random states, cross-surface consistency, asset layout,
-  storage migration, platform adapters), the accuracy report, 44 bundle-integrity
-  checks, and 130 Playwright tests covering all three artifacts — the raw-served
+  storage migration, platform adapters), the accuracy report, 46 bundle-integrity
+  checks, and 140 Playwright tests covering all three artifacts — the raw-served
   module tree, the deployed single-file `dist/`, and `StreamHallPlanner.html`
   opened over `file://` — including an offline boot and five chart goldens.
 - **In-app**: the footer self-test badge re-runs a 39-case validation from the

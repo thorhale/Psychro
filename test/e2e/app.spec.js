@@ -670,6 +670,69 @@ test.describe('round-2 seam fixes', () => {
   });
 });
 
+test.describe('accessibility and onboarding', () => {
+  test('the sensor verdict announces itself to assistive tech', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    const res = page.locator('#sv-res');
+    await expect(res).toHaveAttribute('role', 'status');
+    await expect(res).toHaveAttribute('aria-live', 'polite');
+  });
+
+  test('every visible field label points at its input', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    const orphans = await page.evaluate(() =>
+      [...document.querySelectorAll('label')]
+        .filter((l) => !l.getAttribute('for') && !l.querySelector('input, select, textarea'))
+        .map((l) => l.textContent.trim().slice(0, 40)),
+    );
+    expect(orphans, `labels bound to nothing: ${orphans.join(' | ')}`).toEqual([]);
+  });
+
+  test('the chart is operable from the keyboard', async ({ page }) => {
+    await page.goto('./');
+    const snapshot = () =>
+      page.evaluate(() => document.getElementById('psychCanvas').toDataURL().length);
+    await page.locator('#psychCanvas').focus();
+    const before = await snapshot();
+    await page.keyboard.press('ArrowRight'); // pan
+    await page.waitForTimeout(120);
+    const panned = await snapshot();
+    expect(panned).not.toBe(before);
+    await page.keyboard.press('+'); //          zoom
+    await page.waitForTimeout(120);
+    expect(await snapshot()).not.toBe(panned);
+    await page.keyboard.press('0'); //          reset returns to the start view
+    await page.waitForTimeout(150);
+    expect(await snapshot()).toBe(before);
+  });
+
+  test('a first-time operator gets a start-here guide and a glossary', async ({ page }) => {
+    await page.goto('./');
+    await page.locator('#start-here summary').click();
+    await expect(page.locator('#start-here')).toContainText('Describe your hall');
+    await page.locator('#glossary summary').click();
+    // The jargon the readout prints, explained where the operator can find it.
+    for (const term of ['Humidity ratio', 'Dew point', 'Wet bulb', 'Enthalpy', 'Guard band']) {
+      await expect(page.locator('#glossary')).toContainText(term);
+    }
+  });
+
+  test('the docs the app cites are actually published', async ({ page }) => {
+    // Four places on screen cite docs/*.md; only dist/ is deployed, so these
+    // were 404s on the live site and in both native shells.
+    await page.goto('./');
+    for (const doc of ['sensor-validation.md', 'coolprop-comparison.md', 'OPERATOR-GUIDE.md']) {
+      const status = await page.evaluate(
+        async (d) => (await fetch(new URL(`./docs/${d}`, location.href))).status,
+        doc,
+      );
+      expect(status, `docs/${doc} must be served`).toBe(200);
+    }
+  });
+});
+
 test.describe('field usability', () => {
   test.use({ hasTouch: true });
 
