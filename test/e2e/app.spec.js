@@ -806,6 +806,93 @@ test.describe('multiple halls', () => {
   });
 });
 
+test.describe('equipment inventory', () => {
+  test('units are counted individually and totalled against nameplate', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-kind="cool"]').click();
+    const row = page.locator('.eq-row').first();
+    await row.locator('[data-k="name"]').fill('CRAH');
+    await row.locator('[data-k="count"]').fill('4');
+    await row.locator('[data-k="count"]').dispatchEvent('input');
+    await row.locator('[data-k="cap"]').fill('30');
+    await row.locator('[data-k="cap"]').dispatchEvent('input');
+    await row.locator('[data-k="unit"]').selectOption('ton');
+
+    // 4 × 30 ton = 422 kW, all healthy, so current equals nameplate.
+    await expect(page.locator('.eq-totals')).toContainText('422');
+    await expect(page.locator('.eq-totals')).toContainText('4 units');
+  });
+
+  test('one unit offline and one degraded change the total, and say so', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // Two separate humidifier line items: one healthy, one scaled.
+    await page.locator('.eq-add[data-kind="humid"]:not([data-evap])').click();
+    await page.locator('.eq-add[data-kind="humid"]:not([data-evap])').click();
+    const rows = page.locator('.eq-row');
+    for (const i of [0, 1]) {
+      await rows.nth(i).locator('[data-k="cap"]').fill('20');
+      await rows.nth(i).locator('[data-k="cap"]').dispatchEvent('input');
+    }
+    await expect(page.locator('.eq-totals')).toContainText('40.0 of 40.0');
+
+    // Scale takes half of one unit's capacity.
+    await rows.nth(1).locator('[data-k="condPct"]').fill('50');
+    await rows.nth(1).locator('[data-k="condPct"]').dispatchEvent('input');
+    await expect(page.locator('.eq-totals')).toContainText('30.0 of 40.0');
+    await expect(page.locator('#equip-panel')).toContainText('1 degraded');
+
+    // And taking the other out of service is not a derate — it is absent.
+    await rows.nth(0).locator('[data-k="online"]').uncheck();
+    await expect(page.locator('.eq-totals')).toContainText('10.0 of 40.0');
+    await expect(page.locator('#equip-panel')).toContainText('out of service');
+  });
+
+  test('a wetted-media humidifier is computed from the hall condition', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-evap="1"]').click();
+    const row = page.locator('.eq-row').first();
+    await row.locator('[data-k="evapCfm"]').fill('10000');
+    await row.locator('[data-k="evapCfm"]').dispatchEvent('input');
+    // Its output is a real lb/hr from the psychrometrics, not a typed rating.
+    await expect(row.locator('.eq-out')).toContainText('lb/hr');
+    const atStart = await row.locator('.eq-out').textContent();
+
+    // Make the hall drier: the same media now produces MORE water.
+    await page.fill('#a-rh', '20');
+    await page.dispatchEvent('#a-rh', 'input');
+    await page.locator('#a-rh').blur();
+    const drier = await page.locator('.eq-row').first().locator('.eq-out').textContent();
+    expect(parseFloat(drier)).toBeGreaterThan(parseFloat(atStart));
+  });
+
+  test('the inventory can drive the hall rates', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-kind="dehum"]').click();
+    const row = page.locator('.eq-row').first();
+    await row.locator('[data-k="cap"]').fill('24');
+    await row.locator('[data-k="cap"]').dispatchEvent('input');
+    await page.locator('#equip-apply').click();
+    await expect(page.locator('.ntf-toast')).toContainText('derived from the inventory');
+    await expect(page.locator('#rate-dehum')).toHaveValue('24');
+    await expect(page.locator('#cap-dehum')).toBeChecked();
+  });
+
+  test('the inventory belongs to its hall', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-kind="cool"]').click();
+    await expect(page.locator('.eq-row')).toHaveCount(1);
+    await page.locator('#hall-add').click(); // a different hall, different plant
+    await expect(page.locator('.eq-row')).toHaveCount(0);
+    await page.locator('#hall-tabs button').first().click();
+    await expect(page.locator('.eq-row')).toHaveCount(1);
+  });
+});
+
 test.describe('evaporative humidifier capacity', () => {
   test('computes output from airflow and effectiveness, and warns what is missing', async ({ page }) => {
     await page.goto('./');

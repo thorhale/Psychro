@@ -11,6 +11,32 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — equipment inventory: a hall is now made of countable units
+
+The first step toward a digital twin. A hall used to be four numbers —
+cooling, warming, dehumidify, humidify — which describe a capability without
+describing the plant that produces it, leaving ordinary questions
+unanswerable: *CRAH-3 is out, what can we still do? Two of four humidifiers
+have scaled media, how much have we lost?*
+
+- **List the units this hall actually has.** Cooling, heating, dehumidifiers
+  and humidifiers, each with a tag, a quantity ("4 × 30 ton"), a capacity in
+  whatever unit the schedule uses, and its own condition percentage.
+- **Every unit degrades independently.** A unit's % is its condition against
+  *its own* nameplate — fouled media, a tired compressor. Separately, a unit
+  can be taken **out of service**, which is not a derate: it contributes
+  nothing, and when it returns it brings back its own condition rather than a
+  fictional 100 %.
+- **Totals are always shown against nameplate** — "30.0 of 40.0 lb/hr (75 %)"
+  is actionable in a way a bare number is not — with a banner counting what is
+  offline or degraded.
+- **Wetted-media humidifiers are computed, not rated**, using the evaporative
+  physics: their capacity moves with the hall's live condition and pressure,
+  so a drier room shows more output from the same equipment.
+- **One button derives the hall's four rates from the inventory**, using the
+  same thermal-mass conversion the rate calculator uses, so the two can never
+  disagree. The manual rates remain for halls that have no inventory yet.
+
 ### Added — evaporative humidifier capacity, and the mineral scaling that erodes it
 
 - **Wetted-media humidifiers are now computed, not typed.** A nameplate lb/hr

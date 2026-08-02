@@ -13,6 +13,8 @@
  *   v1           split hall profiles / SLA profiles / scenarios / customSites.
  */
 
+import { normalizeInventory } from '../core/equipment.js';
+
 /** Fields that belong to the physical HALL, not the customer contract. */
 export const HALL_KEYS = [
   'siteName',
@@ -75,6 +77,11 @@ export function normalizeHall(h) {
   for (const k of ['derateCoolPct', 'derateWarmPct', 'derateDehumPct', 'derateHumPct'])
     h[k] = isNum(h[k]) ? clamp(h[k], 0, 100) : 100;
   if (!Array.isArray(h.results)) h.results = [];
+  // The plant inventory: individual units, each independently degradable and
+  // able to be taken out of service. Absent on every hall that predates it,
+  // which is fine — the manual rates above remain the source of truth until
+  // an inventory exists to derive them from.
+  h.equipment = normalizeInventory(h.equipment);
   return h;
 }
 
