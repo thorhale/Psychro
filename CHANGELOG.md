@@ -11,6 +11,19 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — UI polish
+
+- **The onboarding no longer taxes returning users.** The Start-here guide and
+  the glossary were two full-width cards permanently above the tool — on a
+  phone they consumed the top of the screen before you reached anything you
+  came for. They are now one quiet, dashed card with the glossary nested
+  inside, and a "Got it — hide this" button that retires it for good, leaving
+  a single line to bring it back.
+- **Hint text inside field labels is no longer shouted.** Labels uppercase
+  their contents, which turned "optional — a barometer beats the elevation
+  estimate" into three lines of capitals above one input. Hints now render as
+  sentences, and unit symbols keep their case — `kPa`, not `KPA`.
+
 ## [2.2.0] — 2026-08-02
 
 Two rounds of feature work and two rounds of audit. Highlights: six ways to

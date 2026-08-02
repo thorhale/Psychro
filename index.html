@@ -185,6 +185,13 @@
   .sla-editor { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:12px; }
   .sla-field { display:flex; flex-direction:column; gap:4px; }
   .sla-field label { font-size:.65rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  /* A hint inside a field label is a sentence, not a heading: uppercasing it
+     with the label turned "optional — a barometer beats the elevation
+     estimate" into three lines of shouting above a single input. */
+  .sla-field label .cap-hint { text-transform:none; letter-spacing:0; font-size:.62rem; opacity:.85; }
+  /* Unit symbols are case-significant: kPa is not KPA, and an engineer reads
+     the difference as sloppiness. Exempt them from the label's uppercasing. */
+  .sla-field label .u { text-transform:none; letter-spacing:0; }
   .sla-field input { background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-family:var(--mono); font-size:.85rem; padding:5px 8px; outline:none; -moz-appearance:textfield; }
   .sla-field input::-webkit-inner-spin-button { -webkit-appearance:none; }
   .sla-field input:focus { border-color:var(--accent); }
@@ -385,6 +392,17 @@
     color:var(--stream-teal); font-size:.76rem; font-weight:700; font-family:var(--sans); cursor:pointer;
     white-space:nowrap; text-decoration:none; }
   .install-alt:hover { background:rgba(0,169,206,.12); }
+  /* Onboarding is for the FIRST visit. It sits above the tool, so it stays
+     visually quiet and can be dismissed for good once it has done its job. */
+  .onboard { border-style:dashed; }
+  .onboard > summary .sect-title { font-size:.72rem; }
+  .sub-sect { margin-top:12px; border-top:1px solid var(--border); padding-top:10px; }
+  .sub-sect > summary { cursor:pointer; font-size:.8rem; color:var(--text); list-style:none; }
+  .sub-sect > summary::-webkit-details-marker { display:none; }
+  .sub-sect[open] > summary .sect-chev { transform:rotate(90deg); }
+  #onboard-restore { background:none; border:none; color:var(--muted); font-size:.7rem;
+    cursor:pointer; font-family:var(--sans); padding:2px 0; text-decoration:underline; }
+  #onboard-restore:hover { color:var(--accent2); }
   .start-steps { margin:10px 0 0 0; padding-left:20px; color:var(--text); font-size:.82rem; line-height:1.65; }
   .start-steps li { margin-bottom:8px; }
   .gloss { margin:0; font-size:.82rem; line-height:1.6; }
@@ -435,9 +453,9 @@
   </div>
 </div>
 
-<!-- START HERE — the one thing a first-time operator needs before anything else -->
-<details class="card sect" id="start-here">
-  <summary><span class="sect-title">Start here</span><span class="sect-sub">new to this tool? 60 seconds</span><span class="sect-chev">▸</span></summary>
+<!-- START HERE — first-run guidance, dismissible once it has done its job -->
+<details class="card sect onboard" id="start-here">
+  <summary><span class="sect-title">Start here</span><span class="sect-sub">new to this tool? 60 seconds · plain-English glossary</span><span class="sect-chev">▸</span></summary>
   <div class="sect-body">
     <div class="calc-intro">
       This tool answers one question: <strong>can I move my hall from where it is
@@ -462,14 +480,10 @@
         sensor against something physical, from a jar of table salt to a pot of
         boiling water.</li>
     </ol>
-    <div class="formula-note">Not sure what a word means? Open <strong>Plain-English glossary</strong> below. Everything here is a planning aid — verify against site instrumentation before acting.</div>
-  </div>
-</details>
+    <div class="formula-note">Everything here is a planning aid — verify against site instrumentation before acting.</div>
 
-<!-- GLOSSARY — every derived property the app shows, in plain words -->
-<details class="card sect" id="glossary">
-  <summary><span class="sect-title">Plain-English glossary</span><span class="sect-sub">what the numbers mean</span><span class="sect-chev">▸</span></summary>
-  <div class="sect-body">
+    <details class="sub-sect" id="glossary">
+      <summary><strong>Plain-English glossary</strong> — what the numbers mean <span class="sect-chev">▸</span></summary>
     <dl class="gloss">
       <dt>Dry bulb (the "temperature")</dt>
       <dd>What an ordinary thermometer reads. When this app says "temp", it means this.</dd>
@@ -492,6 +506,9 @@
       <dt>Guard band (on sensor checks)</dt>
       <dd>To honestly call a sensor "in spec", its error has to be inside tolerance by more than your reference's own uncertainty. If it isn't, the tool says "too close to call" instead of guessing.</dd>
     </dl>
+    </details>
+
+    <div class="sv-actions"><button class="scn-btn" id="onboard-dismiss">✓ Got it — hide this</button></div>
   </div>
 </details>
 

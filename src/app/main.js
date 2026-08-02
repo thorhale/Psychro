@@ -2087,7 +2087,7 @@ function renderHallEditor() {
     </div>
     <div class="sla-field"><label for="hall-site">Site / location <span class="cap-hint">set by the Location picker above</span></label><input type="text" id="hall-site" value="${(state.hall.siteName||'').replace(/"/g,'&quot;')}" placeholder="e.g. Goodyear, AZ" ></div>
     <div class="sla-field"><label for="hall-elev">Elevation ft <span class="cap-hint">preset from location; fine-tune here</span></label><input type="number" id="hall-elev" value="${state.hall.elevFt ?? 0}" step="10" min="-15000" max="20000" ></div>
-    <div class="sla-field"><label for="hall-baro">Measured pressure kPa <span class="cap-hint">optional — a barometer beats the elevation estimate</span></label><input type="number" inputmode="decimal" id="hall-baro" value="${state.hall.baroKpa ?? ''}" step="0.1" min="55" max="110" placeholder="blank = from elevation"></div>
+    <div class="sla-field"><label for="hall-baro">Measured pressure <span class="u">kPa</span> <span class="cap-hint">optional — a barometer beats the elevation estimate</span></label><input type="number" inputmode="decimal" id="hall-baro" value="${state.hall.baroKpa ?? ''}" step="0.1" min="55" max="110" placeholder="blank = from elevation"></div>
     <div class="sla-caps">
       <div class="sla-caps-label">Plant capability &amp; rates — what this hall can actually do</div>
       <div class="cap-explain">Temperature rates: use commissioning-observed °F/hr, or derive a physics estimate below (IT load, excess sensible capacity, thermal mass). Moisture is first-principles: hall air mass × ΔW ÷ equipment lb/hr. Enter NET capacity (nameplate minus steady makeup-air latent load). Blank = not plant-limited; the SLA ramp limit still governs.</div>
@@ -4089,6 +4089,43 @@ document.getElementById('playback-toggle')?.addEventListener('click', function (
   };
   playback.raf = requestAnimationFrame(tick);
 });
+
+// ════════════════════════════════════════════════════════════
+//  ONBOARDING — first-run guidance that does not tax returning users
+// ════════════════════════════════════════════════════════════
+// The Start-here card sits above the tool, which is right for a first visit
+// and wrong for the hundredth. Dismissing it leaves a one-line link so the
+// guidance is never actually lost — just out of the way.
+const ONBOARD_KEY = 'sdc_psychro_onboard_dismissed_v1';
+
+(function initOnboarding() {
+  const card = document.getElementById('start-here');
+  if (!card) return;
+
+  const restore = document.createElement('button');
+  restore.id = 'onboard-restore';
+  restore.type = 'button';
+  restore.textContent = 'Show the Start-here guide and glossary';
+  restore.style.display = 'none';
+  card.parentNode.insertBefore(restore, card.nextSibling);
+
+  const setDismissed = (hidden) => {
+    card.style.display = hidden ? 'none' : '';
+    restore.style.display = hidden ? '' : 'none';
+  };
+  setDismissed(storage.get(ONBOARD_KEY) === '1');
+
+  document.getElementById('onboard-dismiss')?.addEventListener('click', () => {
+    storage.set(ONBOARD_KEY, '1');
+    setDismissed(true);
+  });
+  restore.addEventListener('click', () => {
+    storage.set(ONBOARD_KEY, '0');
+    setDismissed(false);
+    card.open = true;
+    card.scrollIntoView({ block: 'start' });
+  });
+})();
 
 // ════════════════════════════════════════════════════════════
 //  TRAINING — Envelope Escape Room
