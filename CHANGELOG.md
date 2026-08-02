@@ -11,6 +11,48 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — measured-data honesty (guard-banding, trend import, drift, boiling)
+
+- **Sensor verdicts are now guard-banded (ISO 14253-1).** Claiming PASS
+  requires the error to be inside tolerance *by more than the reference's own
+  uncertainty*; when the reference's ±u straddles the limit, the verdict is a
+  new "TOO CLOSE TO CALL — use a tighter reference to decide". The previous
+  rule widened the pass band instead, which let a *worse* reference pass more
+  sensors — backwards, and now impossible. Grading moved to a unit-tested
+  core module (`src/core/svverdict.js`); `docs/sensor-validation.md` explains
+  the rule and its honest consequence: the boiling-point method (±0.9 °F
+  practical) can catch gross errors but can never certify a PASS — the ice
+  bath can.
+- **BMS trend import got street-smart.** Null sentinels (−9999, 32767) are
+  rejected *before* the temperature-unit heuristic they used to corrupt, and
+  values that only become nonsense after unit conversion are dropped too.
+  Day/month vs month/day is decided from the whole date column (an EU export
+  no longer silently time-travels), and the readout says when the order was
+  assumed rather than proven. The temperature-unit override that existed in
+  the parser but never in the UI is now two taps ("°F / °C — re-read the
+  file"). Dropout gaps break the chart overlay line instead of being drawn
+  as confident straight segments.
+- **SLA ramp limits are finally checked against something.** New `checkRamp`
+  in the tested core plus a gap-aware rolling-window maximum rate: every
+  imported trend now reports its fastest *sustained* ramp (window widens to
+  the sample interval on coarse data, and says so) with a plain verdict
+  against the SLA's °F/hr and %RH/hr limits — the same numbers the door
+  placard prints as DO NOT CROSS. Long idle stretches at either end of a
+  trend are called out, since they dilute the average rate and any
+  efficiency logged from it.
+- **Drift forecasts earn their precision.** The logbook's days-to-band figure
+  now requires three checks (two points fit any line exactly), carries the
+  slope's standard error, and renders as a range ("roughly 40–90 days")
+  instead of a single number that reads like a scheduling date.
+- **Boiling-point reference: fixtures now span the full declared 55–110 kPa
+  window** (IAPWS-IF97 oracle, agreement ≤0.002 °C), and a non-converged
+  inversion returns "no answer" instead of its last guess.
+- **Site pressure displays one decimal, not three**, labeled "standard
+  atmosphere at elevation — weather swings ±2 kPa". Three decimals asserted
+  precision the elevation model does not have; the placard's "all numbers
+  below are pressure-aware" overclaim now names exactly what is (the
+  dew-point cap).
+
 ### Fixed — say true things (verdicts, units, planner honesty)
 
 - **Briefing said "remove moisture" on every move, even humidification.**

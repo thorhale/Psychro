@@ -19,14 +19,25 @@ import {
 } from '../src/core/boilref.js';
 import { pressureFromAltitude } from '../src/core/psychro.js';
 
-/** IF-97 saturation temperatures (standard steam tables), °C at kPa. */
+/**
+ * IF-97 saturation temperatures, °C at kPa — spanning the FULL declared
+ * 55–110 kPa window, not just its middle. The 55–60 and 101.325–110 edges
+ * were previously vouched for but never fixtured; values from the IAPWS-IF97
+ * region-4 backward equation Ts(p) (which reproduces the canonical anchors
+ * 99.606 °C at 100 kPa and 99.974 °C at 1 atm).
+ */
 const STEAM_TABLE = [
-  [60, 85.94],
-  [70, 89.95],
-  [80, 93.5],
-  [90, 96.71],
-  [100, 99.61],
-  [101.325, 99.97],
+  [55, 83.709],
+  [60, 85.926],
+  [65, 87.993],
+  [70, 89.932],
+  [75, 91.758],
+  [80, 93.485],
+  [90, 96.687],
+  [100, 99.606],
+  [101.325, 99.974],
+  [105, 100.976],
+  [110, 102.292],
 ];
 
 describe('boiling-point reference', () => {

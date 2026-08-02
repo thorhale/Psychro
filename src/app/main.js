@@ -32,6 +32,7 @@ import {
   envelopePolygon,
   slaPolygon,
   checkSLA as checkSLACore,
+  checkRamp,
 } from '../core/envelopes.js';
 import { rampPlanFor as rampPlanCore, fmtHrs } from '../core/planner.js';
 import { checkDomain } from '../core/domain.js';
@@ -45,8 +46,9 @@ import {
   normalizeSensorLog,
 } from '../state/schema.js';
 import { driftFit } from '../core/driftfit.js';
-import { parseTrendCsv } from '../lib/trendcsv.js';
+import { parseTrendCsv, maxWindowedRate } from '../lib/trendcsv.js';
 import { SCENARIOS, refereeRun } from '../core/trainer.js';
+import { SV_TOL, svVerdict } from '../core/svverdict.js';
 import {
   LS_KEY_V1,
   LS_KEY_V3,
@@ -214,11 +216,14 @@ function normalizeCaps(profiles) {
 function applyElevation() {
   const ft = state.hall.elevFt ?? 0;
   state.pressure = pressureFromAltitude(ft);
+  // One decimal, not three: this is the STANDARD ATMOSPHERE at the site's
+  // elevation. Real barometric pressure swings ±2 kPa with weather, so three
+  // decimals asserted a precision the model does not have.
   const inHg = state.pressure * 0.2953;
   const pr = document.getElementById('pressure-readout');
-  if (pr) pr.innerHTML = `${state.pressure.toFixed(3)} kPa <span class="sub">(${inHg.toFixed(2)} inHg)</span>`;
+  if (pr) pr.innerHTML = `${state.pressure.toFixed(1)} kPa <span class="sub">(${inHg.toFixed(2)} inHg · standard atmosphere at elevation — weather swings ±2 kPa)</span>`;
   const fp = document.getElementById('fn-pressure');
-  if (fp) fp.textContent = `${state.pressure.toFixed(3)} kPa`;
+  if (fp) fp.textContent = `${state.pressure.toFixed(1)} kPa`;
   const chipLabel = document.getElementById('chip-label');
   if (chipLabel) {
     const site = state.hall.siteName ? `${state.hall.siteName} · ` : '';
@@ -456,40 +461,22 @@ document.querySelectorAll('#unit-toggle .unit-btn').forEach(btn => {
 //  them without drift; pressure-dependent methods run at the active site
 //  pressure, so an elevation change re-grades the sensor automatically.
 //
-//  Every method produces "true value ± reference uncertainty" and the
-//  verdict band WIDENS by that uncertainty — a check can never claim more
-//  confidence than its reference has. Bands are named constants, not
-//  magic numbers scattered through render code.
+//  Every method produces "true value ± reference uncertainty" and verdicts
+//  are GUARD-BANDED (ISO 14253-1): claiming PASS requires the error to be
+//  inside tolerance by at least the reference's uncertainty; when the
+//  reference's ±u straddles the limit, the honest verdict is "too close to
+//  call". Grading lives in src/core/svverdict.js, where it is unit-tested.
 // ════════════════════════════════════════════════════════════
-const SV_TOL = {
-  rhPass: 2, //     %RH — typical capacitive-sensor spec
-  rhMarginal: 5, // %RH — beyond this: recalibrate
-  tPassF: 0.9, //   °F (0.5 °C) — typical RTD/thermistor spec
-  tMarginalF: 1.8, // °F (1.0 °C)
-};
-
-/**
- * Uncertainty-aware verdict. |err| is graded against pass/marginal bands
- * widened by the reference's own uncertainty, and the band actually used is
- * reported so the operator sees WHY a verdict was reached.
- * @returns {{cls:string, word:string, band:number}|null} null when no reading
- */
-function svVerdict(err, pass, marginal, uRef = 0) {
-  if (err == null || !isFinite(err)) return null;
-  const passBand = pass + uRef;
-  const marginalBand = marginal + uRef;
-  const a = Math.abs(err);
-  if (a <= passBand) return { cls: 'sv-pass', word: 'PASS', band: passBand };
-  if (a <= marginalBand) return { cls: 'sv-marginal', word: 'MARGINAL', band: marginalBand };
-  return { cls: 'sv-fail', word: 'FAIL', band: marginalBand };
-}
 
 /** One line of verdict HTML for an RH check. */
 function svRhVerdictHtml(sensorRh, trueRh, uRef) {
   if (sensorRh == null) return '';
   const err = sensorRh - trueRh;
   const v = svVerdict(err, SV_TOL.rhPass, SV_TOL.rhMarginal, uRef);
-  return `<br>Sensor reads ${sensorRh.toFixed(1)}% → error <span class="${v.cls}">${err >= 0 ? '+' : ''}${err.toFixed(1)}% RH · ${v.word}</span> <span class="cap-hint">(±${v.band.toFixed(1)} band incl. reference ±${uRef.toFixed(1)})</span>`;
+  const hint = v.indet
+    ? `(reference ±${uRef.toFixed(1)}% straddles the ±${SV_TOL.rhPass} limit — use a tighter reference to decide)`
+    : `(decision band ±${v.band.toFixed(1)} after reference ±${uRef.toFixed(1)})`;
+  return `<br>Sensor reads ${sensorRh.toFixed(1)}% → error <span class="${v.cls}">${err >= 0 ? '+' : ''}${err.toFixed(1)}% RH · ${v.word}</span> <span class="cap-hint">${hint}</span>`;
 }
 
 /** One line of verdict HTML for a temperature check (all math in °F). */
@@ -498,7 +485,11 @@ function svTempVerdictHtml(sensorF, trueF, uRefF) {
   const errF = sensorF - trueF;
   const v = svVerdict(errF, SV_TOL.tPassF, SV_TOL.tMarginalF, uRefF);
   const disp = Math.round(dispDeltaT(errF) * 100) / 100;
-  return `<br>Sensor error <span class="${v.cls}">${errF >= 0 ? '+' : ''}${disp}${deltaLabel()} · ${v.word}</span> <span class="cap-hint">(±${(Math.round(dispDeltaT(v.band) * 100) / 100)}${deltaLabel()} band incl. reference)</span>`;
+  const dU = (f) => `${Math.round(dispDeltaT(f) * 100) / 100}${deltaLabel()}`;
+  const hint = v.indet
+    ? `(reference ±${dU(uRefF)} straddles the ±${dU(SV_TOL.tPassF)} limit — use a tighter reference to decide)`
+    : `(decision band ±${dU(v.band)} after reference ±${dU(uRefF)})`;
+  return `<br>Sensor error <span class="${v.cls}">${errF >= 0 ? '+' : ''}${disp}${deltaLabel()} · ${v.word}</span> <span class="cap-hint">${hint}</span>`;
 }
 
 const svState = {
@@ -651,15 +642,15 @@ const SV_METHODS = {
     const tBoilF = cToF(tBoilC);
     const uF = U_PRACTICAL_C * 1.8;
     if (note)
-      note.textContent = `Rolling boil, probe mid-water off the pot. At this site's ${state.pressure.toFixed(2)} kPa, pure water boils at ${svFmtT(tBoilF)} ${tLabel()} — not ${svFmtT(cToF(100))} ${tLabel()}. Impurities and superheat limit a field check to about ±${(Math.round(dispDeltaT(uF) * 10) / 10)}${deltaLabel()}.`;
+      note.textContent = `Rolling boil, probe mid-water off the pot. At this site's ${state.pressure.toFixed(1)} kPa, pure water boils at ${svFmtT(tBoilF)} ${tLabel()} — not ${svFmtT(cToF(100))} ${tLabel()}. Impurities and superheat limit a field check to about ±${(Math.round(dispDeltaT(uF) * 10) / 10)}${deltaLabel()}.`;
     if (svState.boilTF == null)
       return {
-        html: `Boiling point at this site: <span class="sv-big">${svFmtT(tBoilF)}${tLabel()}</span> <span class="cap-hint">(${state.pressure.toFixed(2)} kPa · Hyland–Wexler, steam-table checked)</span>. Enter the sensor's reading.`,
+        html: `Boiling point at this site: <span class="sv-big">${svFmtT(tBoilF)}${tLabel()}</span> <span class="cap-hint">(${state.pressure.toFixed(1)} kPa · Hyland–Wexler, steam-table checked)</span>. Enter the sensor's reading.`,
         summary: `boils at ${svFmtT(tBoilF)}${tLabel()} here`,
       };
     return {
       html:
-        `Reference <span class="sv-big">${svFmtT(tBoilF)}${tLabel()}</span> <span class="cap-hint">(boiling at ${state.pressure.toFixed(2)} kPa)</span>` +
+        `Reference <span class="sv-big">${svFmtT(tBoilF)}${tLabel()}</span> <span class="cap-hint">(boiling at ${state.pressure.toFixed(1)} kPa)</span>` +
         svTempVerdictHtml(svState.boilTF, tBoilF, uF),
       summary: 'boiling-point temp check',
       loggable: { quantity: 'temp', ref: tBoilF, u: uF, reading: svState.boilTF, err: svState.boilTF - tBoilF },
@@ -700,7 +691,7 @@ function renderSensorValidation() {
   const res = document.getElementById('sv-res');
   if (!res) return;
   const pEl = document.getElementById('sv-pressure');
-  if (pEl) pEl.textContent = `${state.pressure.toFixed(2)} kPa`;
+  if (pEl) pEl.textContent = `${state.pressure.toFixed(1)} kPa`;
 
   // Re-display temp boxes only when the unit actually changed — never rewrite
   // a box mid-typing (values are exact in °F underneath regardless).
@@ -779,12 +770,23 @@ function renderSensorLogbook() {
   let driftLine = `<span class="cap-hint">${scoped.length} check${scoped.length === 1 ? '' : 's'} — two or more spread over time unlock the drift trend.</span>`;
   if (fit) {
     const drift = `${fit.perMonth >= 0 ? '+' : ''}${fit.perMonth.toFixed(2)} ${unit}/month`;
-    const eta =
-      fit.daysToBand === 0
-        ? `<span class="sv-fail">outside the ±${band} band NOW — recalibrate</span>`
-        : fit.daysToBand != null
-          ? `~${Math.round(fit.daysToBand)} days to the ±${band} band`
-          : `not heading for the ±${band} band on this trend`;
+    // The ETA renders as a RANGE from the fit's own scatter (slope ± its
+    // standard error). A single number out of a noisy fit reads like a
+    // scheduling date; a range reads like what it is — a forecast.
+    let eta;
+    if (fit.daysToBand === 0) {
+      eta = `<span class="sv-fail">outside the ±${band} band NOW — recalibrate</span>`;
+    } else if (fit.n < 3) {
+      eta = `a third check unlocks the days-to-band forecast (two points fit any line exactly)`;
+    } else if (fit.daysToBand == null) {
+      eta = `not heading for the ±${band} band on this trend`;
+    } else if (fit.daysToBandLo != null && fit.daysToBandHi != null && Math.round(fit.daysToBandLo) !== Math.round(fit.daysToBandHi)) {
+      eta = `roughly ${Math.round(fit.daysToBandLo)}–${Math.round(fit.daysToBandHi)} days to the ±${band} band`;
+    } else if (fit.daysToBandLo != null && fit.daysToBandHi == null) {
+      eta = `${Math.round(fit.daysToBandLo)}+ days to the ±${band} band (trend too noisy to bound the far end)`;
+    } else {
+      eta = `~${Math.round(fit.daysToBand)} days to the ±${band} band`;
+    }
     driftLine = `Drift <strong>${drift}</strong> · ${eta} <span class="cap-hint">(linear extrapolation over ${fit.n} checks / ${Math.round(fit.spanDays)} days — a forecast, not a promise)</span>`;
   }
 
@@ -1305,10 +1307,14 @@ function drawChart() {
     ctx.lineWidth = 2;
     ctx.setLineDash([]);
     ctx.beginPath();
+    // Break the line at data gaps (> 3× the median sample interval): a
+    // six-hour comms dropout drawn as a straight line looks exactly like a
+    // measured, perfectly linear move — the one lie an overlay must not tell.
+    const gapMs = Math.max(3 * (actualTrail.medianStepMs || 0), 1);
     actualTrail.rows.forEach((r, i) => {
       const tcR = fToC(r.tempF);
       const [px, py] = xy(tcR, humidityRatioG(tcR, r.rh, p));
-      if (i === 0) ctx.moveTo(px, py);
+      if (i === 0 || r.time - actualTrail.rows[i - 1].time > gapMs) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
     });
     ctx.stroke();
@@ -2090,38 +2096,88 @@ function renderHallEditor() {
       trendFile.value = '';
       if (!f) return;
       const reader = new FileReader();
-      reader.onload = () => {
-        const res = parseTrendCsv(String(reader.result));
-        const out = document.getElementById('trend-res');
-        if (!res.ok) {
-          if (out) { out.style.display = ''; out.innerHTML = `<span class="calc-warn">${res.error}</span>`; }
-          toast('Could not read the trend file.', { kind: 'error' });
-          return;
-        }
-        actualTrail = { rows: res.rows, name: f.name };
-        state.visible.actual = true;
-        syncLegend();
+      reader.onload = () => applyTrendText(String(reader.result), f.name);
+      reader.readAsText(f);
+    });
 
-        const first = res.rows[0], last = res.rows[res.rows.length - 1];
-        const hrs = (last.time - first.time) / 3600000;
-        const ratePerHr = hrs > 0 ? (last.tempF - first.tempF) / hrs : 0;
-        const unitNote =
-          res.tempUnitSource === 'header'
-            ? `°${res.tempUnit} from the header`
-            : res.tempUnitSource === 'forced'
-              ? `°${res.tempUnit} (forced)`
-              : `°${res.tempUnit} guessed from the value range — if that's wrong the overlay will look wrong`;
-        if (out) {
-          out.style.display = '';
-          out.innerHTML =
-            `${res.rows.length} points over ${fmtHrs(hrs)} (${unitNote}${res.skipped ? `, ${res.skipped} bad row${res.skipped === 1 ? '' : 's'} skipped` : ''}). ` +
-            `Achieved <strong>${Math.abs(ratePerHr).toFixed(1)} °F/hr</strong> ` +
-            `${first.tempF.toFixed(1)}→${last.tempF.toFixed(1)}°F, ${first.rh.toFixed(0)}→${last.rh.toFixed(0)}%RH.` +
-            (hrs > 0
-              ? ` <button type="button" class="scn-btn" id="trend-to-pva" style="margin-left:6px">Log to calibration</button>`
-              : '');
-        }
-        document.getElementById('trend-to-pva')?.addEventListener('click', () => {
+    /** Leading/trailing minutes where the trend barely moves — dead time that
+     *  dilutes any wall-clock-based rate or efficiency figure. */
+    const idleSpans = (rows) => {
+      const still = (a, b) => Math.abs(b.tempF - a.tempF) < 0.5 && Math.abs(b.rh - a.rh) < 2;
+      let head = 0;
+      while (head < rows.length - 1 && still(rows[0], rows[head + 1])) head++;
+      let tail = 0;
+      const n = rows.length - 1;
+      while (tail < n && still(rows[n], rows[n - tail - 1])) tail++;
+      return {
+        headMin: (rows[head].time - rows[0].time) / 60000,
+        tailMin: (rows[n].time - rows[n - tail].time) / 60000,
+      };
+    };
+
+    // Parse + render, re-callable with a forced unit — the range heuristic
+    // used to warn "if that's wrong the overlay will look wrong" and then
+    // offer no way to fix it.
+    function applyTrendText(text, name, forceUnit) {
+      const res = parseTrendCsv(text, forceUnit ? { tempUnit: forceUnit } : {});
+      const out = document.getElementById('trend-res');
+      if (!res.ok) {
+        if (out) { out.style.display = ''; out.innerHTML = `<span class="calc-warn">${res.error}</span>`; }
+        toast('Could not read the trend file.', { kind: 'error' });
+        return;
+      }
+      actualTrail = { rows: res.rows, name, medianStepMs: res.medianStepMs, text };
+      state.visible.actual = true;
+      syncLegend();
+
+      const first = res.rows[0], last = res.rows[res.rows.length - 1];
+      const hrs = (last.time - first.time) / 3600000;
+      const ratePerHr = hrs > 0 ? (last.tempF - first.tempF) / hrs : 0;
+      const unitNote =
+        res.tempUnitSource === 'header'
+          ? `°${res.tempUnit} from the header`
+          : res.tempUnitSource === 'forced'
+            ? `°${res.tempUnit} (your override)`
+            : `°${res.tempUnit} guessed from the value range`;
+      const dateNote = res.dateFormatSource === 'assumed'
+        ? ' Dates read as month/day (nothing in the file proved the order — check the time span below).'
+        : res.dateFormat === 'dmy' ? ' Dates read as day/month (from the column).' : '';
+
+      // The number an SLA ramp limit is actually about: the fastest SUSTAINED
+      // rate, not the endpoint average that idle hours dilute.
+      const win = maxWindowedRate(res.rows, 15 * 60000, res.medianStepMs);
+      const sla = state.slaProfiles[state.activeSla];
+      let rampLine = '';
+      if (win && hrs > 0.25) {
+        const ramp = checkRamp(sla, win.tempFPerHr, win.rhPerHr);
+        const verdict = ramp.ok
+          ? (sla.maxDtHr != null || sla.maxDrhHr != null
+              ? ` <span class="sv-pass">within the SLA ramp limits</span>`
+              : '')
+          : ` <span class="sv-fail">FASTER than the SLA's ${ramp.kind === 'dtHr' ? `${dispDeltaT(ramp.bound).toFixed(0)}${deltaLabel()}/hr` : `${ramp.bound}%RH/hr`} limit</span>`;
+        rampLine =
+          `<br>Fastest sustained ramp (${Math.round(win.windowMs / 60000)}-min window): <strong>${dispDeltaT(win.tempFPerHr).toFixed(1)}${deltaLabel()}/hr</strong> · <strong>${win.rhPerHr.toFixed(1)}%RH/hr</strong>${verdict}.`;
+      }
+      const idle = idleSpans(res.rows);
+      const idleLine = idle.headMin >= 30 || idle.tailMin >= 30
+        ? `<br><span class="calc-warn">⚠ The trend sits nearly still for ${idle.headMin >= 30 ? `${Math.round(idle.headMin)} min at the start` : ''}${idle.headMin >= 30 && idle.tailMin >= 30 ? ' and ' : ''}${idle.tailMin >= 30 ? `${Math.round(idle.tailMin)} min at the end` : ''} — the average rate and any efficiency logged from it count that dead time.</span>`
+        : '';
+
+      if (out) {
+        out.style.display = '';
+        out.innerHTML =
+          `${res.rows.length} points over ${fmtHrs(hrs)} (${unitNote}${res.skipped ? `, ${res.skipped} bad row${res.skipped === 1 ? '' : 's'} skipped` : ''}).${dateNote} ` +
+          `Achieved <strong>${Math.abs(ratePerHr).toFixed(1)} °F/hr</strong> average ` +
+          `${first.tempF.toFixed(1)}→${last.tempF.toFixed(1)}°F, ${first.rh.toFixed(0)}→${last.rh.toFixed(0)}%RH.` +
+          rampLine + idleLine +
+          (hrs > 0
+            ? ` <button type="button" class="scn-btn" id="trend-to-pva" style="margin-left:6px">Log to calibration</button>`
+            : '') +
+          ` <span class="cap-hint" style="display:block;margin-top:4px">Temp unit: <button type="button" class="scn-btn" id="trend-unit-f">°F</button> <button type="button" class="scn-btn" id="trend-unit-c">°C</button> — tap to re-read the file if the guess is wrong.</span>`;
+      }
+      document.getElementById('trend-unit-f')?.addEventListener('click', () => applyTrendText(text, name, 'F'));
+      document.getElementById('trend-unit-c')?.addEventListener('click', () => applyTrendText(text, name, 'C'));
+      document.getElementById('trend-to-pva')?.addEventListener('click', () => {
           // Same entry shape as the stopwatch path, endpoints from the trail —
           // renderPva and the efficiency apply-button treat both identically.
           const plan = rampPlanCore({
@@ -2146,10 +2202,8 @@ function renderHallEditor() {
           toast('Trend logged to calibration.', { kind: 'ok' });
           renderPva(); update();
         });
-        update();
-      };
-      reader.readAsText(f);
-    });
+      update();
+    }
   }
 
   // ── Rate calculator: derive all four plant rates from equipment specs ──
@@ -3189,7 +3243,7 @@ function buildExportCanvas() {
   const sla = state.slaProfiles[state.activeSla];
   const U = tLabel();
   x.fillStyle = '#9db8d0'; x.font = '13px -apple-system,Segoe UI,sans-serif';
-  x.fillText(`${state.hall.name || 'Hall'}  ·  ${sla.name}  ·  ${state.hall.siteName || '—'}  ·  ${(state.hall.elevFt ?? 0).toLocaleString()} ft  ·  ${state.pressure.toFixed(2)} kPa  ·  eff ${Math.round(state.hall.effPct ?? 100)}%`, 28, 92);
+  x.fillText(`${state.hall.name || 'Hall'}  ·  ${sla.name}  ·  ${state.hall.siteName || '—'}  ·  ${(state.hall.elevFt ?? 0).toLocaleString()} ft  ·  ${state.pressure.toFixed(1)} kPa  ·  eff ${Math.round(state.hall.effPct ?? 100)}%`, 28, 92);
   x.fillStyle = '#e6edf3'; x.font = '600 15px -apple-system,Segoe UI,sans-serif';
   const cur = `${dispTs(state.aTemp)}${U} / ${Math.round(state.aRH)}%`;
   const tgt = `${dispTs(state.bTemp)}${U} / ${Math.round(state.bRH)}%`;
@@ -3254,7 +3308,7 @@ function buildPlacardCanvas() {
   x.fillText([hall.name, hall.siteName].filter(Boolean).join(' — ') || 'Hall', 24, 100);
   x.fillStyle = '#7d96ad'; x.font = '13px monospace';
   x.fillText(
-    `${Math.round(hall.elevFt ?? 0).toLocaleString()} ft · ${state.pressure.toFixed(2)} kPa site pressure — all numbers below are pressure-aware`,
+    `${Math.round(hall.elevFt ?? 0).toLocaleString()} ft · ${state.pressure.toFixed(1)} kPa (standard atmosphere at elevation) — dew-point cap evaluated at this pressure`,
     24, 122,
   );
 

@@ -11,9 +11,9 @@
  * curve, whose published validity is 0–200 °C — comfortably covering boiling
  * at any survivable site pressure. This is deliberately OUTSIDE the app's
  * CoolProp-validated core domain (−20…55 °C), so this module carries its own
- * oracle: `test/boilref.test.js` pins the inversion against standard IF-97
- * steam-table saturation points, where it agrees within 0.023 °C across
- * 60–101.325 kPa.
+ * oracle: `test/boilref.test.js` pins the inversion against IAPWS-IF97
+ * region-4 saturation points across the FULL declared 55–110 kPa window,
+ * where it agrees within 0.002 °C.
  *
  * Uncertainty, honestly stated: the EQUATION is good to ~±0.05 °C here, but a
  * field boiling check is limited by technique — dissolved solids raise the
@@ -24,7 +24,8 @@
 
 import { satPressureWater } from './psychro.js';
 
-/** Equation-level agreement with IF-97 steam tables over 60–101.325 kPa, °C. */
+/** Equation-level agreement with IF-97 over the full 55–110 kPa window, °C
+ *  (measured ≤0.002; stated conservatively). */
 export const U_EQUATION_C = 0.05;
 
 /** Field-technique uncertainty for a real boiling check, °C (impurities,
@@ -49,7 +50,9 @@ export function boilingPointC(pKpa) {
     const d = (satPressureWater(t + 1e-4) - satPressureWater(t - 1e-4)) / 2e-4;
     const step = f / d;
     t -= step;
-    if (Math.abs(step) < 1e-10) break;
+    if (Math.abs(step) < 1e-10) return t;
   }
-  return t;
+  // Reference values do not get to be approximately converged: if Newton ran
+  // out of iterations, say "no answer" rather than hand over whatever t held.
+  return null;
 }

@@ -12,6 +12,7 @@ import {
   lowerW,
   ashraeZone,
   checkSLA,
+  checkRamp,
 } from '../src/core/envelopes.js';
 import { humidityRatioG, dewPointFrom } from '../src/core/psychro.js';
 
@@ -183,6 +184,27 @@ describe('SLA polygons and compliance', () => {
     ]) {
       expect(checkSLA(noCap, 85, 75).ok).toBe(true);
     }
+  });
+
+  it('checkRamp grades measured rates against the SLA ramp limits', () => {
+    // These limits were printed on the door placard as DO NOT CROSS long
+    // before anything checked them — this pins the check that now exists.
+    const prof = { maxDtHr: 18, maxDrhHr: 20 };
+    expect(checkRamp(prof, 12, 15).ok).toBe(true);
+    expect(checkRamp(prof, 18, 20).ok).toBe(true); // inclusive at the limit
+    const t = checkRamp(prof, 25, 5);
+    expect(t).toEqual({
+      ok: false, kind: 'dtHr', bound: 18, actual: 25, unit: 'F/hr',
+      detail: 'temperature ramp too fast',
+    });
+    const h = checkRamp(prof, 5, 31);
+    expect(h.kind).toBe('drhHr');
+    expect(h.actual).toBe(31);
+    // Direction-free: a fast cool-down breaks the limit like a fast warm-up.
+    expect(checkRamp(prof, -25, 0).ok).toBe(false);
+    // Absent limits disable the check; absent measurements can't fail it.
+    expect(checkRamp({ maxDtHr: null, maxDrhHr: null }, 99, 99).ok).toBe(true);
+    expect(checkRamp(prof, null, null).ok).toBe(true);
   });
 
   it('boundary points are inclusive — exactly on a limit is still compliant', () => {
