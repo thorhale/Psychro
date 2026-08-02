@@ -237,9 +237,23 @@ export function normalizeSensorRegistry(raw) {
   return [...byName.values()].slice(-SENSOR_REG_MAX);
 }
 
+/** Highest save-file format this build knows how to read completely. */
+export const SAVE_FILE_VERSION = 1;
+
 export function validateSaveFile(data) {
+  const empty = { halls: [], slas: [], sites: [], scenarios: [], sensorLog: [], sensorRegistry: [] };
   if (data == null || typeof data !== 'object' || Array.isArray(data)) {
-    return { ok: false, error: 'Not a save file', halls: [], slas: [], sites: [], scenarios: [] };
+    return { ok: false, error: 'Not a save file', ...empty };
+  }
+  // A file from a NEWER build may carry fields this one silently ignores —
+  // and "Loaded: 3 halls" while quietly dropping the rest is the kind of
+  // half-import that costs someone their calibration history. Refuse loudly.
+  if (typeof data.version === 'number' && data.version > SAVE_FILE_VERSION) {
+    return {
+      ok: false,
+      error: `This save file was written by a newer version of the app (format ${data.version}; this build reads ${SAVE_FILE_VERSION}). Update the app, then import again — loading it here would silently drop whatever is new.`,
+      ...empty,
+    };
   }
   const anyPayload =
     Array.isArray(data.hallProfiles) ||
@@ -247,14 +261,7 @@ export function validateSaveFile(data) {
     Array.isArray(data.scenarios) ||
     Array.isArray(data.customSites);
   if (!anyPayload) {
-    return {
-      ok: false,
-      error: 'No planner data in this file',
-      halls: [],
-      slas: [],
-      sites: [],
-      scenarios: [],
-    };
+    return { ok: false, error: 'No planner data in this file', ...empty };
   }
 
   const halls = (Array.isArray(data.hallProfiles) ? data.hallProfiles : [])

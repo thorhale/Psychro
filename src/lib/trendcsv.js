@@ -134,7 +134,10 @@ export function parseTrendCsv(text, opts = {}) {
   if (missing.length)
     return {
       ok: false,
-      error: `Could not identify ${missing.join(', ')} in the header (${headers.join(' | ')}). Rename the columns to include e.g. "time", "temp", "rh".`,
+      // Deliberately NOT echoing the file's own header text back: a BMS export
+      // is untrusted input, and this string is rendered in the app. Name the
+      // columns we needed and the count we saw — enough to fix the export.
+      error: `Could not identify ${missing.join(', ')} among the ${headers.length} columns in the header row. Rename the columns to include e.g. "time", "temp", "rh".`,
     };
 
   // Date format is decided from the WHOLE column before any row parses, so

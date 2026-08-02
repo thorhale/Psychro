@@ -489,6 +489,58 @@ test.describe('operator companion', () => {
   });
 });
 
+test.describe('injection safety', () => {
+  // A crafted name in a colleague's save file, or a crafted header in a BMS
+  // export, must be inert TEXT — never markup, never script. Each test arms
+  // a tripwire on window and fails if the page ever executes the payload.
+  const PAYLOAD = '<img src=x onerror="window.__pwned=1">';
+
+  test('a hostile hall/SLA name in a save file renders as text', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    const save = JSON.stringify({
+      app: 'SDC Hall Environment Planner', kind: 'saveFile', version: 1,
+      hallProfiles: [{ name: 'Pwned Hall', siteName: PAYLOAD, canDehumidify: true, canHumidify: true }],
+      slaProfiles: [{ name: PAYLOAD, tMinF: 59, tMaxF: 89.6, rhMin: 8, rhMax: 80 }],
+    });
+    await page.setInputFiles('#save-file', {
+      name: 'evil.json', mimeType: 'application/json', buffer: Buffer.from(save),
+    });
+    await expect(page.locator('.ntf-toast')).toContainText('Loaded');
+    // Select the imported hall so its capability note renders the site name.
+    await page.locator('#hall-tabs button', { hasText: 'Pwned Hall' }).first().click();
+    await expect(page.locator('.cap-note')).toContainText('<img src=x');
+    expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
+    expect(await page.locator('img[src="x"]').count()).toBe(0);
+  });
+
+  test('a hostile CSV header cannot inject through the import error', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.setInputFiles('#trend-file', {
+      name: 'evil.csv', mimeType: 'text/csv',
+      buffer: Buffer.from(`${PAYLOAD},b,c\n1,2,3\n4,5,6\n`),
+    });
+    await expect(page.locator('#trend-res')).toContainText('Could not identify');
+    // The message names what was missing without quoting the file back.
+    await expect(page.locator('#trend-res')).not.toContainText('onerror');
+    expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
+    expect(await page.locator('#trend-res img').count()).toBe(0);
+  });
+
+  test('a hostile sensor label stays text in the logbook', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#sv-tab-ice').click();
+    await page.fill('#sv-ice-t', '32.2');
+    await page.dispatchEvent('#sv-ice-t', 'input');
+    await page.fill('#sv-sensor-label', PAYLOAD);
+    await page.locator('#sv-log').click();
+    await expect(page.locator('#svlog-sel')).toContainText('<img src=x');
+    expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
+  });
+});
+
 test.describe('sensor registry and recall', () => {
   test('a registered spec re-grades the live verdict against the sensor itself', async ({ page }) => {
     await page.goto('./');
