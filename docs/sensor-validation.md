@@ -31,10 +31,10 @@ with its own datasheet tolerance and every verdict for that sensor is graded
 against *its* number instead — a ±3 %RH hall transmitter stops being failed
 for meeting its own spec. The recalibrate band is then derived from the spec
 the same way the defaults relate (×2.5 for RH, ×2 for temperature). One
-consequence: the "can never certify a PASS" note below is true at the ±0.9 °F
-default, but a sensor registered at a looser spec can pass a boiling check.
+consequence: the note below is true at the ±0.9 °F default, but a sensor
+registered at a looser spec can pass a boiling check.
 
-One consequence worth knowing: the boiling-point method's practical
+The boiling-point method's practical
 uncertainty (±0.9 °F) equals the temperature tolerance, so it can never issue
 a confident PASS — it is a *gross-error* check, good for catching a sensor
 that is degrees off, not tenths. The ice bath (±0.1 °F) is the method that
@@ -127,8 +127,8 @@ already knows — at 5,000 ft water boils near 203 °F, not 212 °F, and a check
 that forgets this fails good sensors.
 **Physics:** Newton inversion of the Hyland–Wexler saturation curve
 (published validity 0–200 °C), oracle-tested in `test/boilref.test.js`
-against IF-97 steam-table points — agreement within 0.023 °C over
-60–101.325 kPa. This math sits outside the app's CoolProp-validated core
+against IAPWS-IF97 saturation points across the full declared 55–110 kPa
+window — agreement within 0.002 °C. This math sits outside the app's CoolProp-validated core
 domain and therefore carries its own steam-table oracle.
 **Uncertainty used:** ±0.9 °F practical — dissolved solids raise the boiling
 point, pots superheat near the element, and a probe touching metal reads the

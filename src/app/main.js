@@ -984,9 +984,9 @@ function renderSensorLogbook() {
   const showSpecT = meta?.specTF != null ? Math.round(dispDeltaT(meta.specTF) * 100) / 100 : '';
   const regHtml =
     `<div class="sv-grid" style="margin-top:8px">` +
-    `<div class="sla-field"><label>Its RH spec ± % <span class="cap-hint">from its datasheet</span></label><input type="number" inputmode="decimal" id="svreg-rh" step="0.1" min="0.1" value="${meta?.specRh ?? ''}" placeholder="default ±${SV_TOL.rhPass}"></div>` +
-    `<div class="sla-field"><label>Its temp spec ± ${dLbl}</label><input type="number" inputmode="decimal" id="svreg-t" step="0.1" min="0.1" value="${showSpecT}" placeholder="default ±${Math.round(dispDeltaT(SV_TOL.tPassF) * 100) / 100}"></div>` +
-    `<div class="sla-field"><label>Check every (days)</label><input type="number" inputmode="numeric" id="svreg-days" step="1" min="1" value="${meta?.calIntervalDays ?? ''}" placeholder="e.g. 90"></div>` +
+    `<div class="sla-field"><label for="svreg-rh">Its RH spec ± % <span class="cap-hint">from its datasheet</span></label><input type="number" inputmode="decimal" id="svreg-rh" step="0.1" min="0.1" value="${meta?.specRh ?? ''}" placeholder="default ±${SV_TOL.rhPass}"></div>` +
+    `<div class="sla-field"><label for="svreg-t">Its temp spec ± ${dLbl}</label><input type="number" inputmode="decimal" id="svreg-t" step="0.1" min="0.1" value="${showSpecT}" placeholder="default ±${Math.round(dispDeltaT(SV_TOL.tPassF) * 100) / 100}"></div>` +
+    `<div class="sla-field"><label for="svreg-days">Check every (days)</label><input type="number" inputmode="numeric" id="svreg-days" step="1" min="1" value="${meta?.calIntervalDays ?? ''}" placeholder="e.g. 90"></div>` +
     `</div>` +
     `<div class="cap-hint">A registered spec replaces the generic tolerance in this sensor's verdicts; an interval turns the logbook into a recall list.</div>`;
 
@@ -1287,9 +1287,19 @@ function drawChart() {
   const dispW = canvas.parentElement.clientWidth || 800;
   const dpr = Math.min(2, window.devicePixelRatio||1);
   const W = dispW, H = Math.round(W*0.62);
-  canvas.width = W*dpr; canvas.height = H*dpr;
+  // Assigning width/height reallocates the backing store, so only do it when
+  // the size really changed — drawChart runs on every input event and every
+  // animation frame. That assignment also used to reset the transform and
+  // clear the bitmap for free, so when it is skipped both must be done
+  // explicitly: setTransform (not scale, which would compound each frame)
+  // and an explicit clear.
+  const bw = Math.round(W*dpr), bh = Math.round(H*dpr);
+  const resized = canvas.width !== bw || canvas.height !== bh;
+  if (resized) { canvas.width = bw; canvas.height = bh; }
   canvas.style.width = W+'px'; canvas.style.height = H+'px';
-  const ctx = canvas.getContext('2d'); ctx.scale(dpr,dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!resized) ctx.clearRect(0, 0, W, H);
   const pad = {l:52,r:58,t:20,b:42};
   lastGeom = { W, H, pad };
   const xy = (tc,hr) => toXY(tc,hr,W,H,pad);
@@ -2068,16 +2078,16 @@ function renderHallEditor() {
 
   hed.innerHTML = `
     <div class="sla-field">
-      <label>Hall name</label>
+      <label for="hall-name">Hall name</label>
       <input type="text" id="hall-name" value="${(state.hall.name||'').replace(/"/g,'&quot;')}" placeholder="e.g. Hall 2">
     </div>
     <div class="sla-field">
-      <label>Building</label>
+      <label for="hall-building">Building</label>
       <input type="text" id="hall-building" value="${(state.hall.building||'').replace(/"/g,'&quot;')}" placeholder="e.g. DFW VII or Building A">
     </div>
-    <div class="sla-field"><label>Site / location <span class="cap-hint">set by the Location picker above</span></label><input type="text" id="hall-site" value="${(state.hall.siteName||'').replace(/"/g,'&quot;')}" placeholder="e.g. Goodyear, AZ" ></div>
-    <div class="sla-field"><label>Elevation ft <span class="cap-hint">preset from location; fine-tune here</span></label><input type="number" id="hall-elev" value="${state.hall.elevFt ?? 0}" step="10" min="-15000" max="20000" ></div>
-    <div class="sla-field"><label>Measured pressure kPa <span class="cap-hint">optional — a barometer beats the elevation estimate</span></label><input type="number" inputmode="decimal" id="hall-baro" value="${state.hall.baroKpa ?? ''}" step="0.1" min="55" max="110" placeholder="blank = from elevation"></div>
+    <div class="sla-field"><label for="hall-site">Site / location <span class="cap-hint">set by the Location picker above</span></label><input type="text" id="hall-site" value="${(state.hall.siteName||'').replace(/"/g,'&quot;')}" placeholder="e.g. Goodyear, AZ" ></div>
+    <div class="sla-field"><label for="hall-elev">Elevation ft <span class="cap-hint">preset from location; fine-tune here</span></label><input type="number" id="hall-elev" value="${state.hall.elevFt ?? 0}" step="10" min="-15000" max="20000" ></div>
+    <div class="sla-field"><label for="hall-baro">Measured pressure kPa <span class="cap-hint">optional — a barometer beats the elevation estimate</span></label><input type="number" inputmode="decimal" id="hall-baro" value="${state.hall.baroKpa ?? ''}" step="0.1" min="55" max="110" placeholder="blank = from elevation"></div>
     <div class="sla-caps">
       <div class="sla-caps-label">Plant capability &amp; rates — what this hall can actually do</div>
       <div class="cap-explain">Temperature rates: use commissioning-observed °F/hr, or derive a physics estimate below (IT load, excess sensible capacity, thermal mass). Moisture is first-principles: hall air mass × ΔW ÷ equipment lb/hr. Enter NET capacity (nameplate minus steady makeup-air latent load). Blank = not plant-limited; the SLA ramp limit still governs.</div>
@@ -2894,16 +2904,16 @@ function renderSlaEditor() {
   const showDT = (dF) => (dF == null ? '' : (Math.round(dispDeltaT(dF) * 10) / 10).toString());
   ed.innerHTML = `
     <div class="sla-field name-field">
-      <label>Profile name</label>
+      <label for="sla-name">Profile name</label>
       <input type="text" id="sla-name" value="${sla.name.replace(/"/g,'&quot;')}" ${lock}>
     </div>
-    <div class="sla-field"><label>Temp min <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-tmin" value="${showT(sla.tMinF)}" step="0.5" ${lock}></div>
-    <div class="sla-field"><label>Temp max <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-tmax" value="${showT(sla.tMaxF)}" step="0.5" ${lock}></div>
-    <div class="sla-field"><label>RH min %</label><input type="number" id="sla-rhmin" value="${sla.rhMin}" step="1" ${lock}></div>
-    <div class="sla-field"><label>RH max %</label><input type="number" id="sla-rhmax" value="${sla.rhMax}" step="1" ${lock}></div>
-    <div class="sla-field"><label>Dew pt cap <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-dpmax" value="${showT(sla.dpMaxF != null && sla.dpMaxF !== '' ? Number(sla.dpMaxF) : null)}" step="0.5" placeholder="none" ${lock}></div>
-    <div class="sla-field"><label>Max ΔT /hr ${deltaLabel()}</label><input type="number" id="sla-dthr" value="${showDT(sla.maxDtHr)}" step="0.5" placeholder="none" ${lock}></div>
-    <div class="sla-field"><label>Max ΔRH /hr %</label><input type="number" id="sla-drhhr" value="${sla.maxDrhHr ?? ''}" step="1" placeholder="none" ${lock}></div>
+    <div class="sla-field"><label for="sla-tmin">Temp min <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-tmin" value="${showT(sla.tMinF)}" step="0.5" ${lock}></div>
+    <div class="sla-field"><label for="sla-tmax">Temp max <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-tmax" value="${showT(sla.tMaxF)}" step="0.5" ${lock}></div>
+    <div class="sla-field"><label for="sla-rhmin">RH min %</label><input type="number" id="sla-rhmin" value="${sla.rhMin}" step="1" ${lock}></div>
+    <div class="sla-field"><label for="sla-rhmax">RH max %</label><input type="number" id="sla-rhmax" value="${sla.rhMax}" step="1" ${lock}></div>
+    <div class="sla-field"><label for="sla-dpmax">Dew pt cap <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-dpmax" value="${showT(sla.dpMaxF != null && sla.dpMaxF !== '' ? Number(sla.dpMaxF) : null)}" step="0.5" placeholder="none" ${lock}></div>
+    <div class="sla-field"><label for="sla-dthr">Max ΔT /hr ${deltaLabel()}</label><input type="number" id="sla-dthr" value="${showDT(sla.maxDtHr)}" step="0.5" placeholder="none" ${lock}></div>
+    <div class="sla-field"><label for="sla-drhhr">Max ΔRH /hr %</label><input type="number" id="sla-drhhr" value="${sla.maxDrhHr ?? ''}" step="1" placeholder="none" ${lock}></div>
   `;
   if (!sla.locked) {
     // conv: display value → canonical °F (absolute or delta); identity for RH.
@@ -2990,9 +3000,30 @@ document.querySelectorAll('#legend .leg-item').forEach(btn => {
 //  Quota failures surface as a toast (see persistJSON); the export/
 //  import path is always available as the reliable fallback.
 // ════════════════════════════════════════════════════════════
-function saveProfiles() {
+// Persisting is debounced: update() runs on every `input` event, so a slider
+// drag used to issue ~60 synchronous JSON.stringify + localStorage writes per
+// second (every hall, every SLA, every logged result, each frame). The work
+// is identical, it just stops happening between keystrokes. `pagehide` and
+// `visibilitychange` flush, so nothing is lost to a closed tab or a
+// backgrounded phone.
+let saveTimer = 0;
+function flushProfiles() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = 0;
   persistJSON(LS_KEY_V4, buildStoredState(state));
 }
+function saveProfiles() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = 0;
+    persistJSON(LS_KEY_V4, buildStoredState(state));
+  }, 400);
+}
+window.addEventListener('pagehide', flushProfiles);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushProfiles();
+});
 
 /**
  * Restore persisted profiles. Parsing and cross-version migration live in
@@ -3251,6 +3282,30 @@ function centerView() {
 
   // Double-click reset
   canvas.addEventListener('dblclick', (e)=>{ e.preventDefault(); resetView(); drawChart(); });
+
+  // Keyboard: the canvas has always been in the tab order, but every
+  // interaction (pan, zoom, inspect) was pointer-only — so a keyboard user
+  // tabbed into a dead stop. Arrows pan by a tenth of the view, +/- zoom
+  // about the centre, 0 resets. The aria-label advertises exactly this.
+  canvas.addEventListener('keydown', (e) => {
+    const panBy = (fx, fy) => {
+      const dT = (view.tMax - view.tMin) * 0.1 * fx;
+      const dH = (view.hrMax - view.hrMin) * 0.1 * fy;
+      view.tMin += dT; view.tMax += dT; view.hrMin += dH; view.hrMax += dH;
+    };
+    switch (e.key) {
+      case 'ArrowLeft': panBy(-1, 0); break;
+      case 'ArrowRight': panBy(1, 0); break;
+      case 'ArrowUp': panBy(0, 1); break;
+      case 'ArrowDown': panBy(0, -1); break;
+      case '+': case '=': zoomCenter(0.8); return e.preventDefault();
+      case '-': case '_': zoomCenter(1 / 0.8); return e.preventDefault();
+      case '0': resetView(); break;
+      default: return;
+    }
+    e.preventDefault();
+    drawChart();
+  });
 
   // Touch: pinch zoom + one-finger pan; a still tap pins the inspector.
   let pinchDist=0, pinchMid=null, touchPan=null;

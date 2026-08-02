@@ -11,6 +11,46 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — a way in for someone who has never used this before
+
+- **"Start here" card**: what this tool is for, and the four steps in order —
+  describe the hall, set the contract, plan the move, check your instruments.
+  An audit found the app had no first-run guidance of any kind.
+- **Plain-English glossary**: every derived number the app prints — humidity
+  ratio, dew point, wet bulb, enthalpy, SHR, the ASHRAE classes, site
+  pressure, and the guard band on sensor verdicts — explained without jargon.
+- **`docs/OPERATOR-GUIDE.md`**: a walkthrough for the person in the hall with
+  a phone, linked from the app footer. The existing docs were all written for
+  developers or for store submission.
+- **The reference docs the app cites are now published with it.** Four places
+  on screen pointed at `docs/*.md`, but only `dist/` is deployed — so on the
+  live site and in both native shells those were 404s.
+
+### Changed — accessibility, performance, offline
+
+- **The chart is operable from the keyboard.** It had always been in the tab
+  order, but every interaction was pointer-only, so a keyboard user tabbed
+  into a dead stop. Arrows pan, `+`/`−` zoom, `0` resets — and the label says
+  so.
+- **Sensor verdicts announce themselves** to screen readers (`role="status"`,
+  polite live region). It was the one dynamic region in the app that didn't.
+- **Every field label is bound to its input** — around 40 numeric fields
+  announced as unlabelled, and tapping a label never focused its field, which
+  matters most on a phone.
+- **The logbook's pass/fail column carries a word**, not just a colour.
+- **Typing no longer writes to storage on every keystroke.** `update()` runs
+  on every input event and saved the entire profile set synchronously, so a
+  slider drag issued ~60 storage writes per second; saves are now debounced
+  and flushed when the page is hidden or closed. The chart also stops
+  reallocating its backing bitmap on every frame.
+- **The offline download actually works offline.** The install banner
+  advertises a take-it-with-you file that was never precached, so the one
+  affordance that promised offline use was the one that 404'd without a
+  network.
+- **Manifest completeness**: a properly padded maskable icon (the previous one
+  reused unpadded art and lost its edges to Android's icon masks), install
+  screenshots, and an explicit app id.
+
 ### Fixed — seams and inconsistencies in the last round's work (round 2)
 
 - **The logbook and the live verdict now use one grader.** History rows were
