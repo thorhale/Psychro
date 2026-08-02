@@ -36,13 +36,13 @@ blockworld/           independent bonus voxel game (untouched by the build)
 ```bash
 npm ci
 npm run dev            # live-reload dev server
-npm test               # 233 tests: oracle, invariants, consistency, assets, schema, platform
+npm test               # 236 tests: oracle, invariants, consistency, assets, schema, platform
 npm run lint
 npm run typecheck
 npm run analyze        # per-property accuracy table vs CoolProp
 npm run build
 npm run verify:bundle  # 46 artifact-integrity checks
-npm run e2e            # 142 Playwright tests across all three artifacts
+npm run e2e            # 146 Playwright tests across all three artifacts
 ```
 
 `npm run e2e` deliberately tests shipped artifacts, never the dev server. It
@@ -118,10 +118,10 @@ writes — export a save file when you see that warning.
 
 ## Validation
 
-- **CI on every push**: lint, typecheck, 233 tests (CoolProp oracle, physical
+- **CI on every push**: lint, typecheck, 236 tests (CoolProp oracle, physical
   invariants over seeded-random states, cross-surface consistency, asset layout,
   storage migration, platform adapters), the accuracy report, 46 bundle-integrity
-  checks, and 142 Playwright tests covering all three artifacts — the raw-served
+  checks, and 146 Playwright tests covering all three artifacts — the raw-served
   module tree, the deployed single-file `dist/`, and `StreamHallPlanner.html`
   opened over `file://` — including an offline boot and five chart goldens.
 - **In-app**: the footer self-test badge re-runs a 39-case validation from the

@@ -262,6 +262,40 @@ describe('sensor registry schema', () => {
   });
 });
 
+describe('per-hall working conditions', () => {
+  it('keeps a complete condition set and rejects a partial one', () => {
+    const good = { aTemp: 71, aRH: 44, bTemp: 75, bRH: 38 };
+    expect(normalizeHall({ cond: good }).cond).toEqual(good);
+    // A hall that has never been worked on has no point of its own — null,
+    // which is what tells the UI to seed it from the screen on first visit.
+    expect(normalizeHall({}).cond).toBeNull();
+    for (const bad of [
+      { aTemp: 71, aRH: 44, bTemp: 75 }, //        missing a field
+      { aTemp: 'warm', aRH: 44, bTemp: 75, bRH: 38 },
+      { aTemp: NaN, aRH: 44, bTemp: 75, bRH: 38 },
+      'nope',
+      [],
+    ]) {
+      expect(normalizeHall({ cond: bad }).cond, JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  it('clamps humidity but leaves temperature to the app\'s own limits', () => {
+    const c = normalizeHall({ cond: { aTemp: 71, aRH: 300, bTemp: 75, bRH: -20 } }).cond;
+    expect(c.aRH).toBe(100);
+    expect(c.bRH).toBe(0);
+    expect(c.aTemp).toBe(71);
+  });
+
+  it('rides a save file so a colleague gets your halls AND their set-points', () => {
+    const v = validateSaveFile({
+      hallProfiles: [{ name: 'H1', cond: { aTemp: 68, aRH: 45, bTemp: 80, bRH: 30 } }],
+    });
+    expect(v.ok).toBe(true);
+    expect(v.halls[0].cond.bTemp).toBe(80);
+  });
+});
+
 describe('measured barometer override', () => {
   it('normalizeHall keeps a plausible baroKpa and clears everything else', () => {
     expect(normalizeHall({ baroKpa: 97.6 }).baroKpa).toBe(97.6);

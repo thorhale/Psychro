@@ -403,6 +403,18 @@
   #onboard-restore { background:none; border:none; color:var(--muted); font-size:.7rem;
     cursor:pointer; font-family:var(--sans); padding:2px 0; text-decoration:underline; }
   #onboard-restore:hover { color:var(--accent2); }
+  /* All-halls overview: one tappable row per hall. */
+  .hall-row { display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:center;
+    width:100%; text-align:left; padding:10px 12px; margin-bottom:6px; border-radius:7px;
+    border:1px solid var(--border); background:var(--bg); color:var(--text);
+    font-family:var(--sans); font-size:.78rem; cursor:pointer; transition:all .12s; }
+  .hall-row:hover { border-color:var(--accent2); }
+  .hall-row.is-active { border-color:var(--stream-teal); background:rgba(0,169,206,.07); }
+  .hall-row .hr-name { font-weight:700; }
+  .hall-row .hr-meta { color:var(--muted); font-size:.68rem; font-family:var(--mono); }
+  .hall-row .hr-cond { font-family:var(--mono); color:var(--muted); font-size:.72rem; white-space:nowrap; }
+  @media (max-width:560px) { .hall-row { grid-template-columns:1fr auto; }
+    .hall-row .hr-cond { grid-column:1 / -1; } }
   .start-steps { margin:10px 0 0 0; padding-left:20px; color:var(--text); font-size:.82rem; line-height:1.65; }
   .start-steps li { margin-bottom:8px; }
   .gloss { margin:0; font-size:.82rem; line-height:1.6; }
@@ -514,6 +526,15 @@
 
 <div class="layout">
 <div class="col-left">
+
+<!-- ALL HALLS — every hall's status at a glance, one row each -->
+<details class="card sect" id="all-halls">
+  <summary><span class="sect-title">All halls</span><span class="sect-sub" id="allhalls-sub">—</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+    <div class="calc-intro">Every hall you have set up, each judged against its own elevation and the active customer SLA. Tap a row to switch to that hall.</div>
+    <div id="allhalls-body"></div>
+  </div>
+</details>
 
 <!-- DATA HALL — the physical facility (site, elevation, volume, plant) -->
 <details class="card sect">

@@ -755,6 +755,57 @@ test.describe('accessibility and onboarding', () => {
   });
 });
 
+test.describe('multiple halls', () => {
+  test('each hall keeps its own working conditions', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // Hall 1 is working a warm move.
+    await page.fill('#a-temp', '75');
+    await page.dispatchEvent('#a-temp', 'input');
+    await page.locator('#a-temp').blur();
+
+    await page.locator('#hall-add').click(); // creates and switches to Hall 2
+    await page.fill('#a-temp', '64');
+    await page.dispatchEvent('#a-temp', 'input');
+    await page.locator('#a-temp').blur();
+
+    // Back to Hall 1: its own point, not Hall 2's.
+    await page.locator('#hall-tabs button').first().click();
+    await expect(page.locator('#a-temp')).toHaveValue('75');
+    await page.locator('#hall-tabs button').nth(1).click();
+    await expect(page.locator('#a-temp')).toHaveValue('64');
+
+    // And it survives a reload — the point belongs to the hall, durably.
+    await page.reload();
+    await expandAll(page);
+    await expect(page.locator('#a-temp')).toHaveValue('64');
+  });
+
+  test('the all-halls overview grades every hall and switches on tap', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.fill('#a-temp', '70');
+    await page.dispatchEvent('#a-temp', 'input');
+    await page.locator('#a-temp').blur();
+    await page.locator('#hall-add').click();
+    // Drive Hall 2 outside the Base SLA (ceiling 95 °F).
+    await page.fill('#a-temp', '99');
+    await page.dispatchEvent('#a-temp', 'input');
+    await page.locator('#a-temp').blur();
+
+    const rows = page.locator('#allhalls-body .hall-row');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0)).toContainText('in SLA');
+    await expect(rows.nth(1)).toContainText('above'); //   names the broken bound
+    await expect(page.locator('#allhalls-sub')).toContainText('1 outside');
+
+    // Tapping the first row switches to it, bringing its own point along.
+    await rows.nth(0).click();
+    await expect(page.locator('#a-temp')).toHaveValue('70');
+    await expect(page.locator('#allhalls-body .hall-row').nth(0)).toHaveClass(/is-active/);
+  });
+});
+
 test.describe('field usability', () => {
   test.use({ hasTouch: true });
 

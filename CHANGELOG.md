@@ -11,6 +11,21 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — every hall keeps its own working point, and an all-halls overview
+
+- **Each hall remembers the conditions you were working on in it.** Hall
+  profiles stored the building — elevation, volume, plant rates — but the
+  temperature and humidity you were planning were global, so switching to
+  Hall 2 showed Hall 1's numbers and you re-typed them every time. The point
+  now belongs to the hall, survives a reload, and rides along in a save file.
+- **New "All halls" card**: one row per hall showing its site, elevation and
+  site pressure, the move it is set up for, and whether that point is inside
+  the active SLA — each judged **at its own pressure**, which is the only
+  place the app shows that the same temperature and humidity is not the same
+  dew point in Denver as in Goodyear. Rows flag halls with no plant rates
+  entered, the summary counts anything outside contract while the card is
+  collapsed, and tapping a row switches to that hall.
+
 ### Changed — UI polish
 
 - **The onboarding no longer taxes returning users.** The Start-here guide and

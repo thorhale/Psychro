@@ -210,6 +210,39 @@ Object.defineProperty(state, 'hall', {
   get() { return this.hallProfiles[this.activeHall] || this.hallProfiles[0]; },
   set(h) { this.hallProfiles[Math.min(this.activeHall, this.hallProfiles.length - 1)] = h; },
 });
+
+/** Snapshot the working point onto the hall it belongs to. */
+function stashHallConditions(hallIndex = state.activeHall) {
+  const h = state.hallProfiles[hallIndex];
+  if (!h) return;
+  h.cond = { aTemp: state.aTemp, aRH: state.aRH, bTemp: state.bTemp, bRH: state.bRH };
+}
+
+/**
+ * Change the active hall, carrying each hall's own working point with it.
+ * Every switch goes through here — tabs, the overview, add, duplicate,
+ * delete — because a caller that forgets the stash silently loses a hall's
+ * set-points to whichever hall was open before it.
+ */
+function switchHall(i) {
+  stashHallConditions(); //  the point belongs to the hall you are leaving
+  state.activeHall = Math.max(0, Math.min(i, state.hallProfiles.length - 1));
+  restoreHallConditions(); // …and a hall never worked on seeds itself
+  clearActualTrail(); //     a measured trail belongs to one hall
+  applyElevation();
+}
+
+/** Load a hall's own working point, seeding it the first time it is opened. */
+function restoreHallConditions() {
+  const c = state.hall?.cond;
+  if (c) {
+    state.aTemp = c.aTemp; state.aRH = c.aRH;
+    state.bTemp = c.bTemp; state.bRH = c.bRH;
+  } else {
+    stashHallConditions(); // first visit: adopt what is on screen
+  }
+}
+
 // Convenience: the active profile's elevation is the live site elevation.
 
 // Capability flags control DEGREES OF FREEDOM, not slider bounds. Temperature
@@ -2051,6 +2084,7 @@ function update() {
   refreshHallSummary();
   renderSensorValidation();  // re-grade at the new unit / site pressure
   renderTrainingBrief(); //      keep the brief's start temp in the active unit
+  renderAllHalls(); //           every hall's status follows the live point
   renderDomainWarnings();
   if (typeof saveProfiles === 'function') saveProfiles();
 }
@@ -2736,8 +2770,8 @@ function renderHallTabs() {
     btn.textContent = (!v.loc && loc ? loc + ' · ' : '')
       + (!v.bld && bld ? bld + ' · ' : '') + (h.name || `Hall ${i + 1}`);
     btn.onclick = () => {
-      state.activeHall = i;
-      applyElevation();            // pressure follows the newly active hall
+      if (i === state.activeHall) return;
+      switchHall(i);
       renderHallTabs(); renderHallEditor(); syncAllControls(); update();
     };
     tabs.appendChild(btn);
@@ -2816,8 +2850,8 @@ document.getElementById('hall-add').addEventListener('click', () => {
     siteName: v.loc || '', building: v.bld || '',
     elevFt: sib ? sib.elevFt : (site ? site.elevFt : 0),
   }));
-  state.activeHall = state.hallProfiles.length - 1;
-  applyElevation(); renderHallTabs(); renderHallEditor(); update();
+  switchHall(state.hallProfiles.length - 1);
+  renderHallTabs(); renderHallEditor(); update();
 });
 
 document.getElementById('hall-dup').addEventListener('click', () => {
@@ -2825,8 +2859,8 @@ document.getElementById('hall-dup').addEventListener('click', () => {
   copy.name = `${copy.name || 'Hall'} (copy)`;
   copy.results = [];   // logged results belong to the physical hall they came from
   state.hallProfiles.push(normalizeHall(copy));
-  state.activeHall = state.hallProfiles.length - 1;
-  applyElevation(); renderHallTabs(); renderHallEditor(); update();
+  switchHall(state.hallProfiles.length - 1);
+  renderHallTabs(); renderHallEditor(); update();
 });
 
 document.getElementById('hall-del').addEventListener('click', async () => {
@@ -2840,7 +2874,8 @@ document.getElementById('hall-del').addEventListener('click', async () => {
   if (!ok) return;
   state.hallProfiles.splice(state.activeHall, 1);
   state.activeHall = Math.max(0, state.activeHall - 1);
-  applyElevation(); renderHallTabs(); renderHallEditor(); update();
+  restoreHallConditions(); // the deleted hall's point went with it
+  applyElevation(); renderHallTabs(); renderHallEditor(); syncAllControls(); update();
 });
 
 document.getElementById('hall-export').addEventListener('click', () => {
@@ -4091,6 +4126,77 @@ document.getElementById('playback-toggle')?.addEventListener('click', function (
 });
 
 // ════════════════════════════════════════════════════════════
+//  ALL HALLS — every hall's status at a glance
+// ════════════════════════════════════════════════════════════
+// One row per hall, each judged at ITS OWN elevation against the active SLA.
+// Halls differ in pressure, so the same temperature and humidity is not the
+// same dew point in Denver as in Goodyear — this is the only surface that
+// shows that side by side.
+
+function renderAllHalls() {
+  const host = document.getElementById('allhalls-body');
+  const sub = document.getElementById('allhalls-sub');
+  if (!host) return;
+  const sla = state.slaProfiles[state.activeSla];
+  let breaches = 0;
+  let unplanned = 0;
+
+  const rows = state.hallProfiles.map((h, i) => {
+    const active = i === state.activeHall;
+    // The active hall's live point may not be stashed yet; use what is on screen.
+    const c = active
+      ? { aTemp: state.aTemp, aRH: state.aRH, bTemp: state.bTemp, bRH: state.bRH }
+      : h.cond;
+    const p = h.baroKpa != null ? h.baroKpa : pressureFromAltitude(h.elevFt ?? 0);
+    const rates = ['rateCoolF', 'rateWarmF'].some((k) => h[k] > 0);
+    if (!rates) unplanned++;
+
+    let status;
+    if (!c) {
+      status = '<span class="cap-hint">not set up yet</span>';
+    } else {
+      const chk = checkSLACore(sla, c.aTemp, c.aRH);
+      if (!chk.ok) breaches++;
+      status = chk.ok
+        ? '<span class="badge badge-ok">✓ in SLA</span>'
+        : `<span class="badge badge-bad">✗ ${escHtml(fmtSlaReason(chk))}</span>`;
+    }
+
+    const cond = c
+      ? `${dispTs(c.aTemp)}${tLabel()} · ${Math.round(c.aRH)}%  →  ${dispTs(c.bTemp)}${tLabel()} · ${Math.round(c.bRH)}%`
+      : '—';
+    const where = [h.siteName, h.building].filter(Boolean).join(' · ');
+    return (
+      `<button type="button" class="hall-row${active ? ' is-active' : ''}" data-hall="${i}">` +
+      `<span><span class="hr-name">${escHtml(h.name || `Hall ${i + 1}`)}</span>` +
+      `${where ? `<br><span class="hr-meta">${escHtml(where)}</span>` : ''}` +
+      `<br><span class="hr-meta">${Math.round(h.elevFt ?? 0).toLocaleString()} ft · ${p.toFixed(1)} kPa` +
+      `${rates ? '' : ' · no plant rates'}</span></span>` +
+      `<span class="hr-cond">${cond}</span>${status}</button>`
+    );
+  });
+
+  host.innerHTML = rows.join('') ||
+    '<div class="sv-hint">No halls yet — add one in the Data Hall card.</div>';
+  host.querySelectorAll('[data-hall]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const i = +b.dataset.hall;
+      if (i === state.activeHall) return;
+      switchHall(i);
+      renderHallTabs(); renderHallEditor(); syncAllControls(); update();
+    }),
+  );
+
+  if (sub) {
+    const n = state.hallProfiles.length;
+    sub.textContent =
+      `${n} hall${n === 1 ? '' : 's'}` +
+      (breaches ? ` · ⚠ ${breaches} outside ${sla.name}` : ' · all inside SLA') +
+      (unplanned ? ` · ${unplanned} missing plant rates` : '');
+  }
+}
+
+// ════════════════════════════════════════════════════════════
 //  ONBOARDING — first-run guidance that does not tax returning users
 // ════════════════════════════════════════════════════════════
 // The Start-here card sits above the tool, which is right for a first visit
@@ -4345,6 +4451,10 @@ async function boot() {
 normalizeCaps(state.slaProfiles);  // default capability flags OFF on preloaded profiles
 loadCustomSites();                 // restore user-added cities
 loadProfiles();                  // restore persisted profiles if available (re-normalizes)
+// The working point is stored ON the active hall, so it comes back with it.
+// (Only the hall profiles persist; the top-level A/B state does not, which is
+// why this restore has to happen explicitly and before the first render.)
+restoreHallConditions();
 applyElevation();
 // Ensure TARGET starts physically on CURRENT's moisture line, then sync controls.
 state.bRH = clampRH(rhFromW_F(state.bTemp, currentW()));
