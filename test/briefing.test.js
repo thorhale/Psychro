@@ -106,18 +106,35 @@ describe('briefing generator', () => {
     const text = buildBriefing(
       makeParams({
         hourly: [
-          { tempF: 70.5, rh: 44 },
-          { tempF: 73, rh: 41.6 },
-          { tempF: 75, rh: 35 },
+          { atHr: 1, tempF: 70.5, rh: 44 },
+          { atHr: 2, tempF: 73, rh: 41.6 },
+          { atHr: 3, tempF: 75, rh: 35 },
         ],
       }),
     );
-    expect(text).toContain('Hourly set-points:');
-    expect(text).toContain('Hour 1: 70.5 °F / 44% RH');
-    expect(text).toContain('Hour 2: 73 °F / 42% RH');
-    expect(text).toContain('Hour 3 (arrival): 75 °F / 35% RH');
+    expect(text).toContain('Set-point ladder (elapsed from start):');
+    expect(text).toContain('+1 h: 70.5 °F / 44% RH');
+    expect(text).toContain('+2 h: 73 °F / 42% RH');
+    expect(text).toContain('+3 h (arrival): 75 °F / 35% RH');
     // No ladder requested → no header.
-    expect(buildBriefing(makeParams())).not.toContain('Hourly set-points');
+    expect(buildBriefing(makeParams())).not.toContain('Set-point ladder');
+  });
+
+  it('a long move states each rung\'s real elapsed hour, not its index', () => {
+    // 12 rungs over 40 hours are ~3.3 h apart; numbering them 1..12 announced
+    // a two-day ramp as arriving at hour 12.
+    const text = buildBriefing(
+      makeParams({
+        hourly: [
+          { atHr: 3.3, tempF: 69, rh: 44 },
+          { atHr: 20, tempF: 72, rh: 40 },
+          { atHr: 40, tempF: 75, rh: 35 },
+        ],
+      }),
+    );
+    expect(text).toContain('+3.3 h:');
+    expect(text).toContain('+20 h:');
+    expect(text).toContain('+40 h (arrival):');
   });
 
   it('stamps the generation time the caller passes — and stays deterministic', () => {

@@ -31,8 +31,10 @@ import { specificVolume } from './psychro.js';
  *   v1: instant plant, no server heat, stability = "didn't breach".
  *   v2: first-order plant lag; an UNCOMMANDED hall eats the full IT load;
  *       stabilized requires a genuinely settled tail (temp AND humidity).
+ *   v3: the stability bonus requires surviving the run — a breached hall that
+ *       happened to settle afterwards was collecting it silently.
  */
-export const TRAINER_VERSION = 2;
+export const TRAINER_VERSION = 3;
 
 /**
  * Always-on server heat, °F/hr, felt by an UNCOMMANDED hall. While a target
@@ -103,8 +105,16 @@ export const SCENARIOS = [
   {
     id: 'cold-snap',
     title: 'Economizer cold snap',
+    // The brief must match what the referee actually does. v1's promise of a
+    // "low-temperature edge" threat is false under v2: the servers (+4 °F/hr
+    // on an uncommanded hall) more than cover a 3.2 °F/hr cold draught, so an
+    // idle hall WARMS. Raising the fault past the IT load would make the
+    // drill unwinnable rather than harder — the training hall's warming rate
+    // is 4 °F/hr, so a >4 °F/hr cold fault cannot be held by any target. The
+    // real, teachable trap is the one the physics produces: outdoor air that
+    // cannot chill this hall still strips the water out of it.
     brief:
-      'The economizer is pulling in winter air: cold AND dry. Temperature and dew point are both falling — mind the RH floor and the low-temperature edge at once.',
+      'The economizer is pulling in winter air: cold and very dry. The servers will cover the cold — this hall does not get colder, it gets DRIER. Watch the RH floor, and remember that warming air without adding water drives RH down further.',
     start: { tempF: 70, rh: 42 },
     fault: { dTempFPerHr: -3.2, dWaterLbPerHr: -25 },
     jitter: 0.15,
@@ -225,7 +235,12 @@ export function refereeRun(p) {
     spread((s) => s.tempF) < 0.75 &&
     spread((s) => s.rh) < 3;
 
-  // Score: a point per SLA-minute, a stability bonus worth half an hour.
-  const score = minutesInSla + (stabilized ? 30 : 0);
+  // Score: a point per SLA-minute, plus a stability bonus worth half an hour
+  // — but only for a run that never breached. A hall that blew the dew-point
+  // cap at minute 68 and settled afterwards was quietly collecting 30 points
+  // the result panel never explained (it only ever printed the bonus for
+  // unbreached runs), so the score and its own caption disagreed.
+  const survived = breachedAtMin === null;
+  const score = minutesInSla + (stabilized && survived ? 30 : 0);
   return { minutesInSla, totalMinutes, breachedAtMin, breachDetail, stabilized, score, trail };
 }

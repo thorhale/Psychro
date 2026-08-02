@@ -568,7 +568,7 @@ let ladderLastSpoken = '';
  *  retyping a digit doesn't chant. Only while ladder mode is on. */
 function ladderSpeak(resEl) {
   if (!ladderOn || !('speechSynthesis' in window)) return;
-  const v = resEl.querySelector('.sv-pass, .sv-marginal, .sv-fail');
+  const v = resEl.querySelector('.sv-pass, .sv-marginal, .sv-fail, .sv-indet');
   if (!v) return;
   const text = v.textContent.trim();
   if (!text || text === ladderLastSpoken) return;
@@ -872,43 +872,52 @@ let svlogShowAll = false;
 
 /** One quantity's history table + drift line for the selected sensor. */
 function svlogSection(scoped, qty, meta) {
-  const unit = qty === 'rh' ? '%RH' : '°F';
-  const band =
-    qty === 'rh'
-      ? (meta?.specRh != null ? meta.specRh * 2.5 : SV_TOL.rhMarginal)
-      : (meta?.specTF != null ? meta.specTF * 2 : SV_TOL.tMarginalF);
+  const isRh = qty === 'rh';
+  // Temperature history is stored canonically in °F but must READ in the
+  // operator's unit — the spec editor directly above this table already does.
+  const unit = isRh ? '%RH' : deltaLabel();
+  const val = (f) => (isRh ? f : dispDeltaT(f));
+  const pass = isRh ? (meta?.specRh ?? SV_TOL.rhPass) : (meta?.specTF ?? SV_TOL.tPassF);
+  const band = isRh
+    ? (meta?.specRh != null ? meta.specRh * 2.5 : SV_TOL.rhMarginal)
+    : (meta?.specTF != null ? meta.specTF * 2 : SV_TOL.tMarginalF);
 
   const shown = svlogShowAll ? scoped : scoped.slice(-8);
   const rows = shown
-    .map(
-      (e) =>
-        `<tr><td>${new Date(e.date).toLocaleDateString()}</td><td>${e.method}</td>` +
-        `<td>${e.ref.toFixed(1)} ± ${e.u.toFixed(1)}</td><td>${e.reading.toFixed(1)}</td>` +
-        `<td style="color:${Math.abs(e.err) <= band ? 'var(--ok)' : 'var(--danger)'}">${e.err >= 0 ? '+' : ''}${e.err.toFixed(2)}</td>` +
-        `<td class="cap-hint">${[e.hallName, e.tech].filter(Boolean).map(escHtml).join(' · ') || '—'}</td></tr>`,
-    )
+    .map((e) => {
+      // ONE grader for the whole app: the row and the live verdict line that
+      // produced it must never disagree. Colour alone is not a signal — the
+      // verdict word rides along for anyone who cannot see the difference.
+      const v = svVerdict(e.err, pass, band, e.u) || { cls: '', word: '—' };
+      return (
+        `<tr><td>${new Date(e.date).toLocaleDateString()}</td><td>${escHtml(e.method)}</td>` +
+        `<td>${val(e.ref).toFixed(1)} ± ${val(e.u).toFixed(1)}</td><td>${val(e.reading).toFixed(1)}</td>` +
+        `<td class="${v.cls}">${e.err >= 0 ? '+' : ''}${val(e.err).toFixed(2)} ${v.word}</td>` +
+        `<td class="cap-hint">${[e.hallName, e.tech].filter(Boolean).map(escHtml).join(' · ') || '—'}</td></tr>`
+      );
+    })
     .join('');
 
   const fit = driftFit(scoped, band);
   let driftLine = `<span class="cap-hint">${scoped.length} check${scoped.length === 1 ? '' : 's'} — two or more spread over time unlock the drift trend.</span>`;
   if (fit) {
-    const drift = `${fit.perMonth >= 0 ? '+' : ''}${fit.perMonth.toFixed(2)} ${unit}/month`;
+    const drift = `${fit.perMonth >= 0 ? '+' : ''}${val(fit.perMonth).toFixed(2)} ${unit}/month`;
     // The ETA renders as a RANGE from the fit's own scatter (slope ± its
     // standard error). A single number out of a noisy fit reads like a
     // scheduling date; a range reads like what it is — a forecast.
     let eta;
     if (fit.daysToBand === 0) {
-      eta = `<span class="sv-fail">outside the ±${band} band NOW — recalibrate</span>`;
+      eta = `<span class="sv-fail">outside the ±${val(band).toFixed(1)} ${unit} band NOW — recalibrate</span>`;
     } else if (fit.n < 3) {
       eta = `a third check unlocks the days-to-band forecast (two points fit any line exactly)`;
     } else if (fit.daysToBand == null) {
-      eta = `not heading for the ±${band} band on this trend`;
+      eta = `not heading for the ±${val(band).toFixed(1)} ${unit} band on this trend`;
     } else if (fit.daysToBandLo != null && fit.daysToBandHi != null && Math.round(fit.daysToBandLo) !== Math.round(fit.daysToBandHi)) {
-      eta = `roughly ${Math.round(fit.daysToBandLo)}–${Math.round(fit.daysToBandHi)} days to the ±${band} band`;
+      eta = `roughly ${Math.round(fit.daysToBandLo)}–${Math.round(fit.daysToBandHi)} days to the ±${val(band).toFixed(1)} ${unit} band`;
     } else if (fit.daysToBandLo != null && fit.daysToBandHi == null) {
-      eta = `${Math.round(fit.daysToBandLo)}+ days to the ±${band} band (trend too noisy to bound the far end)`;
+      eta = `${Math.round(fit.daysToBandLo)}+ days to the ±${val(band).toFixed(1)} ${unit} band (trend too noisy to bound the far end)`;
     } else {
-      eta = `~${Math.round(fit.daysToBand)} days to the ±${band} band`;
+      eta = `~${Math.round(fit.daysToBand)} days to the ±${val(band).toFixed(1)} ${unit} band`;
     }
     driftLine = `Drift <strong>${drift}</strong> · ${eta} <span class="cap-hint">(linear extrapolation over ${fit.n} checks / ${Math.round(fit.spanDays)} days — a forecast, not a promise)</span>`;
   }
@@ -924,14 +933,26 @@ function svlogSection(scoped, qty, meta) {
 function renderSensorLogbook() {
   const host = document.getElementById('sv-logbook');
   if (!host) return;
-  const sensors = [...new Set(sensorLog.map((e) => e.sensor))].sort();
+  // Union of logged AND registered names: a sensor that arrived via a save
+  // file (or whose history was deleted) was unreachable in this dropdown
+  // while svDueCounts kept reporting it overdue forever.
+  const sensors = [...new Set([
+    ...sensorLog.map((e) => e.sensor),
+    ...sensorRegistry.map((m) => m.name),
+  ])].sort();
   if (!sensors.length) {
     host.innerHTML =
       '<div class="sv-hint">No checks logged yet. Run any method with a sensor reading, name the sensor, and press “＋ Log check” — history turns single verdicts into a drift trend.</div>';
     return;
   }
   const sel = document.getElementById('svlog-sel');
-  const selected = sensors.includes(sel?.value) ? sel.value : sensors[0];
+  // The sensor named in the label box wins: the spec editor below must edit
+  // the SAME instrument the verdict above is grading. Otherwise typing a spec
+  // silently retuned whichever sensor happened to sort first alphabetically.
+  const typed = document.getElementById('sv-sensor-label')?.value.trim();
+  const selected = sensors.includes(typed)
+    ? typed
+    : sensors.includes(sel?.value) ? sel.value : sensors[0];
   const entries = sensorLog.filter((e) => e.sensor === selected);
   const meta = sensorMetaFor(selected);
 
@@ -942,7 +963,8 @@ function renderSensorLogbook() {
     .map((q) => ({ q, scoped: entries.filter((e) => e.quantity === q) }))
     .filter((s) => s.scoped.length)
     .map((s) => svlogSection(s.scoped, s.q, meta))
-    .join('');
+    .join('') ||
+    '<div class="sv-hint">Registered, but never checked. Run a method above with this exact sensor name to start its history.</div>';
 
   // Calibration recall for this sensor.
   let dueLine = '';
@@ -983,6 +1005,7 @@ function renderSensorLogbook() {
       const v = parseFloat(this.value);
       upsertSensorMeta(selected, { [key]: isNaN(v) || v <= 0 ? null : conv(v) });
       renderSensorValidation(); // grades + due counts follow the registry live
+      renderSensorLogbook(); //    bands in the table follow the new spec too
     });
   };
   regWire('svreg-rh', 'specRh', (v) => v);
@@ -1015,12 +1038,14 @@ function renderSensorLogbook() {
     sensorLog = sensorLog.filter((e) => e.sensor !== selected);
     persistSensorLog();
     renderSensorLogbook();
+    renderSensorValidation(); // the overdue tally just changed
   });
 }
 
 // Naming a registered sensor re-grades the live verdict against ITS spec.
 document.getElementById('sv-sensor-label')?.addEventListener('input', () => {
   renderSensorValidation();
+  renderSensorLogbook(); // follow the named sensor's history and spec editor
 });
 
 document.getElementById('sv-log')?.addEventListener('click', () => {
@@ -2039,6 +2064,7 @@ function renderSlaTabs() {
 function renderHallEditor() {
   const hed = document.getElementById('hall-editor');
   if (!hed) return;
+  syncActualTrailToHall(); // A's measured trajectory is not B's
 
   hed.innerHTML = `
     <div class="sla-field">
@@ -2362,7 +2388,7 @@ function renderHallEditor() {
         toast('Could not read the trend file.', { kind: 'error' });
         return;
       }
-      actualTrail = { rows: res.rows, name, medianStepMs: res.medianStepMs, text };
+      actualTrail = { rows: res.rows, name, medianStepMs: res.medianStepMs, text, forcedUnit: forceUnit || null, hall: state.activeHall };
       state.visible.actual = true;
       syncLegend();
 
@@ -2390,7 +2416,7 @@ function renderHallEditor() {
           ? (sla.maxDtHr != null || sla.maxDrhHr != null
               ? ` <span class="sv-pass">within the SLA ramp limits</span>`
               : '')
-          : ` <span class="sv-fail">FASTER than the SLA's ${ramp.kind === 'dtHr' ? `${dispDeltaT(ramp.bound).toFixed(0)}${deltaLabel()}/hr` : `${ramp.bound}%RH/hr`} limit</span>`;
+          : ` <span class="sv-fail">FASTER than the SLA's ${ramp.kind === 'dtHr' ? `${(Math.round(dispDeltaT(ramp.bound) * 10) / 10)}${deltaLabel()}/hr` : `${ramp.bound}%RH/hr`} limit</span>`;
         rampLine =
           `<br>Fastest sustained ramp (${Math.round(win.windowMs / 60000)}-min window): <strong>${dispDeltaT(win.tempFPerHr).toFixed(1)}${deltaLabel()}/hr</strong> · <strong>${win.rhPerHr.toFixed(1)}%RH/hr</strong>${verdict}.`;
       }
@@ -2403,8 +2429,8 @@ function renderHallEditor() {
         out.style.display = '';
         out.innerHTML =
           `${res.rows.length} points over ${fmtHrs(hrs)} (${unitNote}${res.skipped ? `, ${res.skipped} bad row${res.skipped === 1 ? '' : 's'} skipped` : ''}).${dateNote} ` +
-          `Achieved <strong>${Math.abs(ratePerHr).toFixed(1)} °F/hr</strong> average ` +
-          `${first.tempF.toFixed(1)}→${last.tempF.toFixed(1)}°F, ${first.rh.toFixed(0)}→${last.rh.toFixed(0)}%RH.` +
+          `Achieved <strong>${Math.abs(dispDeltaT(ratePerHr)).toFixed(1)}${deltaLabel()}/hr</strong> average ` +
+          `${dispTs(first.tempF)}→${dispTs(last.tempF)} ${tLabel()}, ${first.rh.toFixed(0)}→${last.rh.toFixed(0)}%RH.` +
           rampLine + idleLine +
           (hrs > 0
             ? ` <button type="button" class="scn-btn" id="trend-to-pva" style="margin-left:6px">Log to calibration</button>`
@@ -2440,6 +2466,14 @@ function renderHallEditor() {
         });
       update();
     }
+
+    // This panel lives inside renderHallEditor's innerHTML, so any unrelated
+    // edit to the card (a capability checkbox, applying a calibrated
+    // efficiency, switching halls) used to wipe the import result — leaving
+    // the trail drawn on the chart with no unit toggle and no way to log it.
+    // Redraw from the retained file text instead of making the operator
+    // re-import.
+    if (actualTrail?.text) applyTrendText(actualTrail.text, actualTrail.name, actualTrail.forcedUnit);
   }
 
   // ── Rate calculator: derive all four plant rates from equipment specs ──
@@ -3251,6 +3285,14 @@ function centerView() {
     }
   },{passive:false});
   canvas.addEventListener('touchend',(e)=>{
+    if(e.touches.length===1){
+      // Lifting one finger out of a pinch: re-seed the pan origin from the
+      // finger still down, or the next move pans by the whole distance from
+      // where the FIRST finger originally landed and the chart jumps.
+      const r=canvas.getBoundingClientRect();
+      touchPan=[e.touches[0].clientX-r.left, e.touches[0].clientY-r.top];
+      pinchDist=0; pinchMid=null; tapStart=null;
+    }
     if(e.touches.length===0){
       // A tap that never really moved: toggle the pinned inspector at that
       // spot. preventDefault stops the browser's synthetic mousedown/mouseup
@@ -3605,7 +3647,7 @@ function buildPlacardCanvas() {
   x.fillText([hall.name, hall.siteName].filter(Boolean).join(' — ') || 'Hall', 24, 100);
   x.fillStyle = '#41576b'; x.font = '13px monospace';
   x.fillText(
-    `${Math.round(hall.elevFt ?? 0).toLocaleString()} ft · ${state.pressure.toFixed(1)} kPa (standard atmosphere at elevation) — dew-point cap evaluated at this pressure`,
+    `${Math.round(hall.elevFt ?? 0).toLocaleString()} ft · ${pressureBasisText()} — dew-point cap evaluated at this pressure`,
     24, 122,
   );
 
@@ -3751,6 +3793,18 @@ function exportPdfJpeg(canvas, opts = {}) {
 //  SHARE: deep links, QR codes, one-tap briefing
 // ════════════════════════════════════════════════════════════
 
+/**
+ * How this site's pressure was arrived at, in words — for artifacts that
+ * leave the app. A measured barometer reading and a standard-atmosphere
+ * estimate are different claims, and a laminated door placard must not
+ * print the second while the app is using the first.
+ */
+function pressureBasisText() {
+  return state.hall?.baroKpa != null
+    ? `${state.pressure.toFixed(1)} kPa (measured on site)`
+    : `${state.pressure.toFixed(1)} kPa (standard atmosphere at elevation, ±2 kPa)`;
+}
+
 /** The current A→B setup as a shareable absolute URL. */
 function currentShareUrl() {
   const hash = encodeStateHash({
@@ -3817,13 +3871,18 @@ function briefingHourly(plan) {
   const tcA = fToC(state.aTemp), tcB = fToC(state.bTemp);
   const wA = humidityRatioG(tcA, state.aRH, p) / 1000;
   const wB = humidityRatioG(tcB, state.bRH, p) / 1000;
+  // At most 12 rungs, but each one carries its REAL clock hour: a 40-hour
+  // move sampled every ~3.6 h used to print "Hour 12 (arrival)" — announcing
+  // a two-day ramp as arriving before lunch.
   const rungs = Math.min(12, Math.ceil(plan.hours));
+  const step = plan.hours / rungs;
   const out = [];
   for (let i = 1; i <= rungs; i++) {
-    const f = Math.min(1, (i === rungs ? plan.hours : i) / plan.hours);
+    const atHr = i === rungs ? plan.hours : i * step;
+    const f = Math.min(1, atHr / plan.hours);
     const tc = tcA + (tcB - tcA) * f;
     const w = wA + (wB - wA) * f;
-    out.push({ tempF: cToF(tc), rh: Math.min(100, Math.max(0, rhFromW(tc, w, p))) });
+    out.push({ atHr, tempF: cToF(tc), rh: Math.min(100, Math.max(0, rhFromW(tc, w, p))) });
   }
   return out;
 }
@@ -3845,6 +3904,7 @@ document.getElementById('copy-briefing')?.addEventListener('click', () => {
     fmtDT: (fd) => `${Math.round(dispDeltaT(fd) * 10) / 10}${deltaLabel()}`,
     fmtHrs,
     hourly: briefingHourly(plan),
+    pressureBasis: pressureBasisText(),
     generatedAt: new Date(),
   });
   copyText(text, 'Briefing');
@@ -3882,6 +3942,26 @@ const playback = { f: 0, playing: false, raf: 0 };
  *  Session-scoped on purpose: a trail belongs to the move it recorded, not to
  *  every future session — the durable record is the calibration entry. */
 let actualTrail = null;
+
+/** Drop the imported trail and its legend layer.
+ *  A trail records ONE move in ONE hall: left on screen across a hall switch
+ *  it was re-projected onto the new hall's pressure axis, still labelled
+ *  "Actual", with the panel that named its source file gone. */
+function clearActualTrail() {
+  if (!actualTrail) return;
+  actualTrail = null;
+  state.visible.actual = false;
+  const out = document.getElementById('trend-res');
+  if (out) { out.style.display = 'none'; out.textContent = ''; }
+  syncLegend();
+}
+
+/** Clear the trail if the active hall is no longer the one it was imported
+ *  for. Checked centrally rather than at each switch site, because halls also
+ *  change via "add hall", delete, and the location/building filters. */
+function syncActualTrailToHall() {
+  if (actualTrail && actualTrail.hall !== state.activeHall) clearActualTrail();
+}
 
 function playbackReadout() {
   const info = document.getElementById('playback-info');
@@ -4187,11 +4267,14 @@ renderSlaEditor();
 renderHallTabs();
 renderHallEditor();
 syncLegend();
+// Before the first update(): its renderSensorValidation() computes the
+// overdue tally, which read an empty registry and hid the warning until the
+// operator happened to touch an unrelated control.
+loadSensorLog();
+loadSensorRegistry();
 update();
 loadScenarios();
 renderScenarios();
-loadSensorLog();
-loadSensorRegistry();
 renderSensorLogbook();
 // A deep link wins over stored state — the person clicked it on purpose.
 if (applyStateFromUrl()) update();

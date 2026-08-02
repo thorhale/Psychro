@@ -13,7 +13,8 @@ looks good. Concretely, with tolerance `tol` and reference uncertainty `u`:
 - **TOO CLOSE TO CALL** — |error| within ±u of the tolerance limit: the
   reference isn't accurate enough to decide. Repeat the check with a tighter
   reference (a salt jar or ice bath instead of a field instrument).
-- **MARGINAL** — confidently past the tolerance, inside the recalibrate band
+- **MARGINAL** — confidently past the tolerance, up to the recalibrate band
+  widened by `u` (recalibrate + `u`)
 - **FAIL** — |error| > recalibrate band + u (confidently out, even granting
   the reference its full uncertainty)
 
@@ -24,6 +25,14 @@ backwards, and this rule replaces it.)
 
 Tolerances: RH ±2 % (recalibrate at ±5 %) — typical capacitive-sensor spec;
 temperature ±0.9 °F / 0.5 °C (recalibrate at ±1.8 °F / 1 °C).
+
+**Per-sensor specs override these defaults.** Register a sensor in the logbook
+with its own datasheet tolerance and every verdict for that sensor is graded
+against *its* number instead — a ±3 %RH hall transmitter stops being failed
+for meeting its own spec. The recalibrate band is then derived from the spec
+the same way the defaults relate (×2.5 for RH, ×2 for temperature). One
+consequence: the "can never certify a PASS" note below is true at the ±0.9 °F
+default, but a sensor registered at a looser spec can pass a boiling check.
 
 One consequence worth knowing: the boiling-point method's practical
 uncertainty (±0.9 °F) equals the temperature tolerance, so it can never issue
