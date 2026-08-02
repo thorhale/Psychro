@@ -47,6 +47,7 @@ import {
   normalizeSensorRegistry,
 } from '../state/schema.js';
 import { driftFit } from '../core/driftfit.js';
+import { evapMediaOutput, effectivenessFromOutput } from '../core/evapmedia.js';
 import { parseTrendCsv, maxWindowedRate } from '../lib/trendcsv.js';
 import { SCENARIOS, refereeRun, TRAINER_VERSION } from '../core/trainer.js';
 import { SV_TOL, svVerdict } from '../core/svverdict.js';
@@ -2203,7 +2204,24 @@ function renderHallEditor() {
           <div class="calc-res" id="dh-res">—</div>
 
           <div class="calc-method mt">Humidify <span class="cap-hint">evap · ultrasonic · fog · steam</span></div>
-          <div class="calc-grid">
+          <div class="calc-grid2" style="margin-bottom:8px">
+            <select id="hc-type" class="sla-select calc-sel">
+              <option value="rated"${((state.hall.calc||{}).hType??'rated')==='rated'?' selected':''}>Rated output (steam, ultrasonic, fog)</option>
+              <option value="evap"${(state.hall.calc||{}).hType==='evap'?' selected':''}>Wetted media — compute from airflow</option>
+            </select>
+          </div>
+          <div id="hc-evap" style="display:none">
+            <div class="calc-grid2">
+              <input type="number" inputmode="decimal" id="hc-cfm" class="cap-rate" value="${(state.hall.calc||{}).hCfm ?? ''}" placeholder="airflow across media CFM" min="0" step="500">
+              <input type="number" inputmode="decimal" id="hc-eff" class="cap-rate" value="${(state.hall.calc||{}).hEff ?? ''}" placeholder="saturation eff. %" min="1" max="100" step="1">
+            </div>
+            <div class="calc-hint2">Saturation effectiveness comes from your media's own data — the fraction of the theoretical maximum it actually achieves. <strong>This is the number mineral scale destroys:</strong> as deposits block wetted surface and channel air past it, effectiveness falls and so does capacity. Re-enter it as the media fouls, or measure it below.</div>
+            <div class="calc-grid2" style="margin-top:8px">
+              <input type="number" inputmode="decimal" id="hc-meas" class="cap-rate" value="${(state.hall.calc||{}).hMeas ?? ''}" placeholder="measured output lb/hr (optional)" min="0" step="1">
+              <span class="calc-inline-note">↳ back-calculates the effectiveness you are really getting</span>
+            </div>
+          </div>
+          <div class="calc-grid" id="hc-rated">
             <input type="number" id="hc-qty" class="cap-rate" value="${(state.hall.calc||{}).hQty ?? ''}" placeholder="units" min="0" step="1">
             <span class="calc-x">×</span>
             <input type="number" id="hc-each" class="cap-rate" value="${(state.hall.calc||{}).hEach ?? ''}" placeholder="output ea." min="0" step="1">
@@ -2560,6 +2578,13 @@ function renderHallEditor() {
     cs.dhLQty = num('dh-lqty'); cs.dhLat = num('dh-lat'); cs.dhLatUnit = g('dh-latunit')?.value || 'ton';
     cs.cfm = num('dc-cfm'); cs.dp = num('dc-dp');
     cs.hQty = num('hc-qty'); cs.hEach = num('hc-each'); cs.hUnit = g('hc-unit')?.value || 'lbhr';
+    cs.hType = g('hc-type')?.value || 'rated';
+    cs.hCfm = num('hc-cfm'); cs.hEff = num('hc-eff'); cs.hMeas = num('hc-meas');
+
+    // Show the humidifier pane that matches the chosen type.
+    const evapPane = g('hc-evap'), ratedPane = g('hc-rated');
+    if (evapPane) evapPane.style.display = cs.hType === 'evap' ? '' : 'none';
+    if (ratedPane) ratedPane.style.display = cs.hType === 'evap' ? 'none' : '';
 
     // show the active dehum pane
     ['dh-lbhr','dh-latent','dh-coil'].forEach(id => { const el = g(id); if (el) el.style.display = 'none'; });
@@ -2635,7 +2660,38 @@ function renderHallEditor() {
     // Humidify — water output → lb/hr (evap/ultrasonic/fog/steam all rated this way)
     const hc = g('hc-res');
     if (hc) {
-      if (cs.hQty > 0 && cs.hEach > 0) {
+      if (cs.hType === 'evap') {
+        // Wetted media: output is not a nameplate, it is a function of the air
+        // entering the media RIGHT NOW. Evaluated at the Current point and the
+        // site's pressure, so the answer moves with the hall.
+        const measEff = cs.hMeas > 0
+          ? effectivenessFromOutput({
+              cfm: cs.hCfm, tempF: state.aTemp, rh: state.aRH,
+              lbPerHr: cs.hMeas, pressure: state.pressure,
+            })
+          : null;
+        const effUsed = measEff ?? cs.hEff;
+        const r = evapMediaOutput({
+          cfm: cs.hCfm, tempF: state.aTemp, rh: state.aRH,
+          effPct: effUsed, pressure: state.pressure,
+        });
+        if (!(cs.hCfm > 0)) {
+          hc.innerHTML = '<span class="calc-warn">Enter the airflow across the media.</span>';
+        } else if (!r) {
+          hc.innerHTML = measEff === null && cs.hMeas > 0
+            ? '<span class="calc-warn">At the Current condition this air cannot absorb water, so no effectiveness can be inferred from a measurement.</span>'
+            : '<span class="calc-warn">Enter the media\'s saturation effectiveness (or a measured output).</span>';
+        } else {
+          const measNote = measEff != null
+            ? ` <span class="cap-hint">— measured output implies <strong>${measEff.toFixed(0)}%</strong> effectiveness${cs.hEff > 0 ? `, against ${cs.hEff.toFixed(0)}% entered${measEff < cs.hEff * 0.95 ? ' — media is losing capacity' : ''}` : ''}</span>`
+            : '';
+          hc.innerHTML =
+            `At the Current point (${dispTs(state.aTemp)}${tLabel()} / ${Math.round(state.aRH)}% RH, wet bulb ${dispTs(r.twbF)}${tLabel()}): ` +
+            `<strong>${r.lbPerHr.toFixed(1)} lb/hr</strong>${measNote}` +
+            ` <button class="calc-apply" data-rk="rateHumLb" data-rv="${r.lbPerHr.toFixed(1)}">Apply</button>` +
+            `<div class="cap-hint">Air leaves at ${dispTs(r.leavingTempF)}${tLabel()} — evaporative humidification also cools, by ${(Math.round(dispDeltaT(state.aTemp - r.leavingTempF) * 10) / 10)}${deltaLabel()} here. Output falls as the hall gets damper: this figure is for the condition above, not a fixed rating.</div>`;
+        }
+      } else if (cs.hQty > 0 && cs.hEach > 0) {
         const lbhr = waterToLbHr(cs.hQty * cs.hEach, cs.hUnit);
         hc.innerHTML = `= <strong>${lbhr.toFixed(1)} lb/hr</strong> <button class="calc-apply" data-rk="rateHumLb" data-rv="${lbhr.toFixed(1)}">Apply</button>`;
       } else hc.textContent = '—';
@@ -2651,7 +2707,8 @@ function renderHallEditor() {
   }
   ['rc-it','rc-mass','cc-units','cc-cap','cc-capunit','wc-reheat',
    'dh-type','dh-qty','dh-each','dh-unit','dh-lqty','dh-lat','dh-latunit',
-   'dc-cfm','dc-dp','hc-qty','hc-each','hc-unit'].forEach(id => {
+   'dc-cfm','dc-dp','hc-qty','hc-each','hc-unit',
+   'hc-type','hc-cfm','hc-eff','hc-meas'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { const ev = el.tagName === 'SELECT' ? 'change' : 'input'; el.addEventListener(ev, runRateCalc); }
   });

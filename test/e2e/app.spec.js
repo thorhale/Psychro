@@ -806,6 +806,68 @@ test.describe('multiple halls', () => {
   });
 });
 
+test.describe('evaporative humidifier capacity', () => {
+  test('computes output from airflow and effectiveness, and warns what is missing', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#hc-type').selectOption('evap');
+    await expect(page.locator('#hc-res')).toContainText('airflow across the media');
+
+    await page.fill('#hc-cfm', '10000');
+    await page.dispatchEvent('#hc-cfm', 'input');
+    await expect(page.locator('#hc-res')).toContainText('saturation effectiveness');
+
+    await page.fill('#hc-eff', '90');
+    await page.dispatchEvent('#hc-eff', 'input');
+    // A real number at the Current point, not a nameplate.
+    await expect(page.locator('#hc-res')).toContainText('lb/hr');
+    await expect(page.locator('#hc-res')).toContainText('Current point');
+    // Evaporative humidification cools — the readout says so.
+    await expect(page.locator('#hc-res')).toContainText('also cools');
+  });
+
+  test('fouled media shows up as lost capacity', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#hc-type').selectOption('evap');
+    await page.fill('#hc-cfm', '10000');
+    await page.dispatchEvent('#hc-cfm', 'input');
+    await page.fill('#hc-eff', '90');
+    await page.dispatchEvent('#hc-eff', 'input');
+    const clean = await page.locator('#hc-res').textContent();
+    const cleanLb = Number(clean.match(/([\d.]+) lb\/hr/)[1]);
+
+    // Scale has taken a third of the media's effectiveness.
+    await page.fill('#hc-eff', '60');
+    await page.dispatchEvent('#hc-eff', 'input');
+    const fouled = await page.locator('#hc-res').textContent();
+    const fouledLb = Number(fouled.match(/([\d.]+) lb\/hr/)[1]);
+    expect(fouledLb).toBeLessThan(cleanLb);
+    expect(fouledLb / cleanLb).toBeCloseTo(60 / 90, 2);
+
+    // And a measured output back-calculates what you are really achieving.
+    await page.fill('#hc-eff', '90');
+    await page.dispatchEvent('#hc-eff', 'input');
+    await page.fill('#hc-meas', String(Math.round(cleanLb * (2 / 3))));
+    await page.dispatchEvent('#hc-meas', 'input');
+    await expect(page.locator('#hc-res')).toContainText('implies');
+    await expect(page.locator('#hc-res')).toContainText('losing capacity');
+  });
+
+  test('applying the computed rate fills the hall\'s humidify capacity', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#hc-type').selectOption('evap');
+    await page.fill('#hc-cfm', '10000');
+    await page.dispatchEvent('#hc-cfm', 'input');
+    await page.fill('#hc-eff', '85');
+    await page.dispatchEvent('#hc-eff', 'input');
+    await page.locator('#hc-res .calc-apply').click();
+    await expect(page.locator('#rate-hum')).not.toHaveValue('');
+    await expect(page.locator('#cap-hum')).toBeChecked();
+  });
+});
+
 test.describe('field usability', () => {
   test.use({ hasTouch: true });
 

@@ -11,6 +11,25 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — evaporative humidifier capacity, and the mineral scaling that erodes it
+
+- **Wetted-media humidifiers are now computed, not typed.** A nameplate lb/hr
+  is a fiction for evaporative media: the same unit puts out very different
+  amounts of water depending on how thirsty the entering air is (~187 lb/hr at
+  75 °F/20 % against ~108 lb/hr at 68 °F/45 %, same airflow and media). The
+  Data Hall calculator now derives output from airflow across the media, the
+  media's saturation effectiveness, and the hall's live condition and pressure,
+  using the same validated psychrometrics as everything else.
+- **Mineral scaling has a number now.** Saturation effectiveness is exactly
+  what deposits destroy — they block wetted surface and channel air past it —
+  so it is an operator-set parameter, lowered as media fouls. Enter a
+  *measured* output instead and the app back-calculates the effectiveness you
+  are really achieving and flags it against the clean figure, turning "the
+  humidifier seems weak" into "we are at 62 % of a commissioned 90 %".
+- The readout also states that evaporative humidification **cools** the air it
+  humidifies, and by how much at the current condition — a load the plan
+  should not be surprised by.
+
 ### Added — every hall keeps its own working point, and an all-halls overview
 
 - **Each hall remembers the conditions you were working on in it.** Hall
