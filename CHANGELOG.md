@@ -11,6 +11,37 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — sensor registry, calibration recall, audit-ready logbook
+
+- **Sensor registry**: each instrument can now record its OWN datasheet spec
+  (±%RH, ±temp) and calibration cadence. A registered spec replaces the
+  generic tolerance in that sensor's verdicts — a ±3 %RH hall transmitter is
+  no longer failed for meeting its own spec, and a ±1 %RH reference probe is
+  no longer passed while out of its. Persisted, mirrored to native storage,
+  and carried by save-file export/import (incoming specs win, so a
+  colleague's fresher datasheet numbers replace stale ones).
+- **Calibration recall**: give a sensor a check-every-N-days cadence and the
+  logbook becomes a recall list — "next check due in 12 days" per sensor,
+  and an "⚠ N sensors overdue" note on the card's collapsed summary so the
+  reminder is visible without opening anything.
+- **Audit-ready log entries**: each logged check now records the hall, the
+  site, and the technician's initials — the first three questions a customer
+  QA review asks of a calibration record. Old save files stay valid; the
+  fields are optional.
+- **The whole logbook exports as CSV** (named `sensor-logbook_<hall>_<date>`)
+  for QA packs and spreadsheets, and a sensor's temperature and humidity
+  histories are now shown side by side — logging one ice-point check used to
+  hide a sensor's entire RH history.
+- **The briefing became a work order**: a generated-at timestamp and an
+  hour-by-hour set-point ladder ("Hour 3: 72 °F / 41% RH") computed with the
+  same pacing the chart's tick marks show — the ticket and the chart cannot
+  disagree about hour three.
+- **Measured barometer override**: a hall with a barometer can enter the real
+  site pressure (55–110 kPa); it replaces the ±2 kPa elevation estimate
+  everywhere, the readout says "measured on site", and clearing the field
+  falls back to the elevation model. Out-of-range entries are cleared, never
+  silently clamped into a different wrong value.
+
 ### Changed — field usability on the hall floor
 
 - **Touch targets sized for gloved thumbs.** On touch screens every small

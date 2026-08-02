@@ -44,6 +44,7 @@ import {
   validateSaveFile,
   isValidScenario,
   normalizeSensorLog,
+  normalizeSensorRegistry,
 } from '../state/schema.js';
 import { driftFit } from '../core/driftfit.js';
 import { parseTrendCsv, maxWindowedRate } from '../lib/trendcsv.js';
@@ -215,13 +216,14 @@ function normalizeCaps(profiles) {
 // ════════════════════════════════════════════════════════════
 function applyElevation() {
   const ft = state.hall.elevFt ?? 0;
-  state.pressure = pressureFromAltitude(ft);
-  // One decimal, not three: this is the STANDARD ATMOSPHERE at the site's
-  // elevation. Real barometric pressure swings ±2 kPa with weather, so three
-  // decimals asserted a precision the model does not have.
+  // A measured barometer reading beats the elevation model when the hall has
+  // one — the standard atmosphere is a ±2 kPa estimate, a barometer is data.
+  const measured = state.hall.baroKpa != null;
+  state.pressure = measured ? state.hall.baroKpa : pressureFromAltitude(ft);
+  // One decimal, not three: even a measured value drifts with the weather.
   const inHg = state.pressure * 0.2953;
   const pr = document.getElementById('pressure-readout');
-  if (pr) pr.innerHTML = `${state.pressure.toFixed(1)} kPa <span class="sub">(${inHg.toFixed(2)} inHg · standard atmosphere at elevation — weather swings ±2 kPa)</span>`;
+  if (pr) pr.innerHTML = `${state.pressure.toFixed(1)} kPa <span class="sub">(${inHg.toFixed(2)} inHg · ${measured ? 'measured on site — clear the barometer field to fall back to elevation' : 'standard atmosphere at elevation — weather swings ±2 kPa'})</span>`;
   const fp = document.getElementById('fn-pressure');
   if (fp) fp.textContent = `${state.pressure.toFixed(1)} kPa`;
   const chipLabel = document.getElementById('chip-label');
@@ -494,24 +496,28 @@ document.querySelectorAll('#unit-toggle .unit-btn').forEach(btn => {
 /** One line of verdict HTML for an RH check. */
 function svRhVerdictHtml(sensorRh, trueRh, uRef) {
   if (sensorRh == null) return '';
+  const tol = svActiveTol();
   const err = sensorRh - trueRh;
-  const v = svVerdict(err, SV_TOL.rhPass, SV_TOL.rhMarginal, uRef);
+  const v = svVerdict(err, tol.rhPass, tol.rhMarginal, uRef);
+  const spec = tol.rhFromSpec ? ` against this sensor's own ±${tol.rhPass}% spec` : '';
   const hint = v.indet
-    ? `(reference ±${uRef.toFixed(1)}% straddles the ±${SV_TOL.rhPass} limit — use a tighter reference to decide)`
-    : `(decision band ±${v.band.toFixed(1)} after reference ±${uRef.toFixed(1)})`;
+    ? `(reference ±${uRef.toFixed(1)}% straddles the ±${tol.rhPass} limit${spec} — use a tighter reference to decide)`
+    : `(decision band ±${v.band.toFixed(1)} after reference ±${uRef.toFixed(1)}${spec})`;
   return `<br>Sensor reads ${sensorRh.toFixed(1)}% → error <span class="${v.cls}">${err >= 0 ? '+' : ''}${err.toFixed(1)}% RH · ${v.word}</span> <span class="cap-hint">${hint}</span>`;
 }
 
 /** One line of verdict HTML for a temperature check (all math in °F). */
 function svTempVerdictHtml(sensorF, trueF, uRefF) {
   if (sensorF == null) return '';
+  const tol = svActiveTol();
   const errF = sensorF - trueF;
-  const v = svVerdict(errF, SV_TOL.tPassF, SV_TOL.tMarginalF, uRefF);
+  const v = svVerdict(errF, tol.tPassF, tol.tMarginalF, uRefF);
   const disp = Math.round(dispDeltaT(errF) * 100) / 100;
   const dU = (f) => `${Math.round(dispDeltaT(f) * 100) / 100}${deltaLabel()}`;
+  const spec = tol.tFromSpec ? ` against this sensor's own ±${dU(tol.tPassF)} spec` : '';
   const hint = v.indet
-    ? `(reference ±${dU(uRefF)} straddles the ±${dU(SV_TOL.tPassF)} limit — use a tighter reference to decide)`
-    : `(decision band ±${dU(v.band)} after reference ±${dU(uRefF)})`;
+    ? `(reference ±${dU(uRefF)} straddles the ±${dU(tol.tPassF)} limit${spec} — use a tighter reference to decide)`
+    : `(decision band ±${dU(v.band)} after reference ±${dU(uRefF)}${spec})`;
   return `<br>Sensor error <span class="${v.cls}">${errF >= 0 ? '+' : ''}${disp}${deltaLabel()} · ${v.word}</span> <span class="cap-hint">${hint}</span>`;
 }
 
@@ -737,7 +743,17 @@ function renderSensorValidation() {
     btn.style.display = svState.tab === 'psy' || svState.tab === 'dp' ? '' : 'none';
   }
   const summary = document.getElementById('sv-summary');
-  if (summary) summary.textContent = out.summary;
+  if (summary) {
+    // Recall status stays visible even while the card is collapsed — a
+    // logbook that only speaks when opened is not a recall system.
+    const due = svDueCounts();
+    const dueTxt = due.overdue
+      ? ` · ⚠ ${due.overdue} sensor${due.overdue === 1 ? '' : 's'} overdue for a check`
+      : due.dueSoon
+        ? ` · ${due.dueSoon} check${due.dueSoon === 1 ? '' : 's'} due soon`
+        : '';
+    summary.textContent = out.summary + dueTxt;
+  }
   svSetCurrent = out.canSetCurrent || null;
   svLoggable = out.loggable || null;
   const logBtn = document.getElementById('sv-log');
@@ -762,30 +778,93 @@ function persistSensorLog() {
   storage.set(SENSOR_LOG_KEY, JSON.stringify(sensorLog));
 }
 
-function renderSensorLogbook() {
-  const host = document.getElementById('sv-logbook');
-  if (!host) return;
-  const sensors = [...new Set(sensorLog.map((e) => e.sensor))].sort();
-  if (!sensors.length) {
-    host.innerHTML =
-      '<div class="sv-hint">No checks logged yet. Run any method with a sensor reading, name the sensor, and press “＋ Log check” — history turns single verdicts into a drift trend.</div>';
-    return;
-  }
-  const sel = document.getElementById('svlog-sel');
-  const selected = sensors.includes(sel?.value) ? sel.value : sensors[0];
-  const entries = sensorLog.filter((e) => e.sensor === selected);
-  const qty = entries[entries.length - 1].quantity;
-  const scoped = entries.filter((e) => e.quantity === qty);
-  const unit = qty === 'rh' ? '%RH' : '°F';
-  const band = qty === 'rh' ? SV_TOL.rhMarginal : SV_TOL.tMarginalF;
+// ── Sensor registry: each instrument's OWN spec and calibration cadence ────
+// The generic ±2 %RH / ±0.9 °F tolerances are a reasonable default, but a
+// ±3 %RH hall transmitter was being FAILED for meeting its spec while a
+// ±1 %RH reference probe PASSED while out of its own. Register the sensor
+// and its spec becomes the tolerance its verdicts are graded against.
+const SENSOR_REG_KEY = 'sdc_psychro_sensors_v1';
+let sensorRegistry = [];
 
-  const rows = scoped
-    .slice(-8)
+const sensorMetaFor = (name) =>
+  sensorRegistry.find((m) => m.name === String(name || '').trim()) || null;
+
+function loadSensorRegistry() {
+  try {
+    sensorRegistry = normalizeSensorRegistry(JSON.parse(storage.get(SENSOR_REG_KEY) || '[]'));
+  } catch {
+    sensorRegistry = [];
+  }
+}
+function persistSensorRegistry() {
+  sensorRegistry = normalizeSensorRegistry(sensorRegistry);
+  storage.set(SENSOR_REG_KEY, JSON.stringify(sensorRegistry));
+}
+function upsertSensorMeta(name, patch) {
+  const key = String(name || '').trim();
+  if (!key) return;
+  const cur = sensorMetaFor(key) || { name: key, specRh: null, specTF: null, calIntervalDays: null, lastCalDate: null };
+  const next = { ...cur, ...patch, name: key };
+  sensorRegistry = sensorRegistry.filter((m) => m.name !== key).concat([next]);
+  persistSensorRegistry();
+}
+
+/**
+ * Verdict tolerances for the sensor currently named in the label box: its
+ * registered spec when present, the generic defaults otherwise. Marginal
+ * keeps the defaults' ratios (RH 2→5 = 2.5×, temp 0.9→1.8 = 2×).
+ */
+function svActiveTol() {
+  const meta = sensorMetaFor(document.getElementById('sv-sensor-label')?.value);
+  return {
+    rhPass: meta?.specRh ?? SV_TOL.rhPass,
+    rhMarginal: meta?.specRh != null ? meta.specRh * 2.5 : SV_TOL.rhMarginal,
+    tPassF: meta?.specTF ?? SV_TOL.tPassF,
+    tMarginalF: meta?.specTF != null ? meta.specTF * 2 : SV_TOL.tMarginalF,
+    rhFromSpec: meta?.specRh != null,
+    tFromSpec: meta?.specTF != null,
+  };
+}
+
+/**
+ * Calibration recall: per registered sensor with an interval, days until the
+ * next check is due — anchored at its newest logged check or its recorded
+ * lastCalDate, whichever is later. Never checked at all counts as due now.
+ * @returns {{overdue:number, dueSoon:number}} dueSoon = within 14 days
+ */
+function svDueCounts() {
+  const now = Date.now();
+  let overdue = 0, dueSoon = 0;
+  for (const m of sensorRegistry) {
+    if (!(m.calIntervalDays > 0)) continue;
+    const dates = sensorLog.filter((e) => e.sensor === m.name).map((e) => new Date(e.date).getTime());
+    if (m.lastCalDate) dates.push(new Date(m.lastCalDate).getTime());
+    const last = dates.length ? Math.max(...dates) : null;
+    const daysLeft = last == null ? -1 : m.calIntervalDays - (now - last) / 86400000;
+    if (daysLeft < 0) overdue++;
+    else if (daysLeft <= 14) dueSoon++;
+  }
+  return { overdue, dueSoon };
+}
+
+let svlogShowAll = false;
+
+/** One quantity's history table + drift line for the selected sensor. */
+function svlogSection(scoped, qty, meta) {
+  const unit = qty === 'rh' ? '%RH' : '°F';
+  const band =
+    qty === 'rh'
+      ? (meta?.specRh != null ? meta.specRh * 2.5 : SV_TOL.rhMarginal)
+      : (meta?.specTF != null ? meta.specTF * 2 : SV_TOL.tMarginalF);
+
+  const shown = svlogShowAll ? scoped : scoped.slice(-8);
+  const rows = shown
     .map(
       (e) =>
         `<tr><td>${new Date(e.date).toLocaleDateString()}</td><td>${e.method}</td>` +
         `<td>${e.ref.toFixed(1)} ± ${e.u.toFixed(1)}</td><td>${e.reading.toFixed(1)}</td>` +
-        `<td style="color:${Math.abs(e.err) <= band ? 'var(--ok)' : 'var(--danger)'}">${e.err >= 0 ? '+' : ''}${e.err.toFixed(2)}</td></tr>`,
+        `<td style="color:${Math.abs(e.err) <= band ? 'var(--ok)' : 'var(--danger)'}">${e.err >= 0 ? '+' : ''}${e.err.toFixed(2)}</td>` +
+        `<td class="cap-hint">${[e.hallName, e.tech].filter(Boolean).map((s) => String(s).replace(/</g, '&lt;')).join(' · ') || '—'}</td></tr>`,
     )
     .join('');
 
@@ -813,14 +892,97 @@ function renderSensorLogbook() {
     driftLine = `Drift <strong>${drift}</strong> · ${eta} <span class="cap-hint">(linear extrapolation over ${fit.n} checks / ${Math.round(fit.spanDays)} days — a forecast, not a promise)</span>`;
   }
 
+  return (
+    `<div class="sv-hint" style="margin-top:8px"><strong>${qty === 'rh' ? 'Humidity' : 'Temperature'} checks</strong></div>` +
+    `<table class="svlog-table"><thead><tr><th>date</th><th>method</th><th>reference</th><th>read</th><th>err ${unit}</th><th>hall · by</th></tr></thead><tbody>${rows}</tbody></table>` +
+    (scoped.length > 8 && !svlogShowAll ? `<div class="cap-hint">showing the last 8 of ${scoped.length}</div>` : '') +
+    `<div class="sv-hint">${driftLine}</div>`
+  );
+}
+
+function renderSensorLogbook() {
+  const host = document.getElementById('sv-logbook');
+  if (!host) return;
+  const sensors = [...new Set(sensorLog.map((e) => e.sensor))].sort();
+  if (!sensors.length) {
+    host.innerHTML =
+      '<div class="sv-hint">No checks logged yet. Run any method with a sensor reading, name the sensor, and press “＋ Log check” — history turns single verdicts into a drift trend.</div>';
+    return;
+  }
+  const sel = document.getElementById('svlog-sel');
+  const selected = sensors.includes(sel?.value) ? sel.value : sensors[0];
+  const entries = sensorLog.filter((e) => e.sensor === selected);
+  const meta = sensorMetaFor(selected);
+
+  // One temperature check used to hide a sensor's entire RH history (the
+  // table showed only the LAST entry's quantity) — render every quantity
+  // this sensor has ever been checked on, each with its own drift trend.
+  const sections = ['rh', 'temp']
+    .map((q) => ({ q, scoped: entries.filter((e) => e.quantity === q) }))
+    .filter((s) => s.scoped.length)
+    .map((s) => svlogSection(s.scoped, s.q, meta))
+    .join('');
+
+  // Calibration recall for this sensor.
+  let dueLine = '';
+  if (meta?.calIntervalDays > 0) {
+    const dates = entries.map((e) => new Date(e.date).getTime());
+    if (meta.lastCalDate) dates.push(new Date(meta.lastCalDate).getTime());
+    const last = dates.length ? Math.max(...dates) : null;
+    const daysLeft = last == null ? -1 : meta.calIntervalDays - (Date.now() - last) / 86400000;
+    dueLine =
+      daysLeft < 0
+        ? `<div class="sv-hint"><span class="sv-fail">⚠ Check overdue</span> — the every-${meta.calIntervalDays}-days cadence has lapsed.</div>`
+        : `<div class="sv-hint">Next check due in <strong>${Math.ceil(daysLeft)} day${Math.ceil(daysLeft) === 1 ? '' : 's'}</strong> (every ${meta.calIntervalDays} days).</div>`;
+  }
+
+  // The registry editor: this sensor's own spec + cadence, plain fields.
+  const dLbl = deltaLabel();
+  const showSpecT = meta?.specTF != null ? Math.round(dispDeltaT(meta.specTF) * 100) / 100 : '';
+  const regHtml =
+    `<div class="sv-grid" style="margin-top:8px">` +
+    `<div class="sla-field"><label>Its RH spec ± % <span class="cap-hint">from its datasheet</span></label><input type="number" inputmode="decimal" id="svreg-rh" step="0.1" min="0.1" value="${meta?.specRh ?? ''}" placeholder="default ±${SV_TOL.rhPass}"></div>` +
+    `<div class="sla-field"><label>Its temp spec ± ${dLbl}</label><input type="number" inputmode="decimal" id="svreg-t" step="0.1" min="0.1" value="${showSpecT}" placeholder="default ±${Math.round(dispDeltaT(SV_TOL.tPassF) * 100) / 100}"></div>` +
+    `<div class="sla-field"><label>Check every (days)</label><input type="number" inputmode="numeric" id="svreg-days" step="1" min="1" value="${meta?.calIntervalDays ?? ''}" placeholder="e.g. 90"></div>` +
+    `</div>` +
+    `<div class="cap-hint">A registered spec replaces the generic tolerance in this sensor's verdicts; an interval turns the logbook into a recall list.</div>`;
+
   host.innerHTML =
     `<div class="sla-field" style="margin:10px 0 6px"><label>Logbook — sensor</label>` +
     `<select id="svlog-sel" class="sla-select">${sensors.map((n) => `<option${n === selected ? ' selected' : ''}>${n.replace(/</g, '&lt;')}</option>`).join('')}</select></div>` +
-    `<table class="svlog-table"><thead><tr><th>date</th><th>method</th><th>reference</th><th>read</th><th>err ${unit}</th></tr></thead><tbody>${rows}</tbody></table>` +
-    `<div class="sv-hint">${driftLine}</div>` +
-    `<div class="sv-actions"><button class="scn-btn" id="svlog-del">🗑 Delete this sensor's history</button></div>`;
+    regHtml + dueLine + sections +
+    `<div class="sv-actions">` +
+    (sensorLog.length > 8 ? `<button class="scn-btn" id="svlog-more">${svlogShowAll ? 'Show recent only' : 'Show all history'}</button>` : '') +
+    `<button class="scn-btn" id="svlog-csv">⇩ Export logbook CSV</button>` +
+    `<button class="scn-btn" id="svlog-del">🗑 Delete this sensor's history</button></div>`;
 
   document.getElementById('svlog-sel').addEventListener('change', renderSensorLogbook);
+  const regWire = (id, key, conv) => {
+    document.getElementById(id)?.addEventListener('input', function () {
+      const v = parseFloat(this.value);
+      upsertSensorMeta(selected, { [key]: isNaN(v) || v <= 0 ? null : conv(v) });
+      renderSensorValidation(); // grades + due counts follow the registry live
+    });
+  };
+  regWire('svreg-rh', 'specRh', (v) => v);
+  regWire('svreg-t', 'specTF', (v) => v / deltaFromF(1, state.tempUnit || 'F'));
+  regWire('svreg-days', 'calIntervalDays', (v) => Math.round(v));
+  document.getElementById('svlog-more')?.addEventListener('click', () => {
+    svlogShowAll = !svlogShowAll;
+    renderSensorLogbook();
+  });
+  document.getElementById('svlog-csv')?.addEventListener('click', () => {
+    // Hand-rolled CSV (zero deps): quote everything, double internal quotes.
+    const q = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+    const head = ['date', 'sensor', 'hall', 'site', 'method', 'quantity', 'reference', 'uncertainty', 'reading', 'error', 'by'];
+    const lines = [head.join(',')].concat(
+      sensorLog.map((e) =>
+        [e.date, e.sensor, e.hallName ?? '', e.siteName ?? '', e.method, e.quantity, e.ref, e.u, e.reading, e.err, e.tech ?? '']
+          .map(q).join(','),
+      ),
+    );
+    platformSaveFile(exportName('sensor-logbook', 'csv'), lines.join('\n'));
+  });
   document.getElementById('svlog-del').addEventListener('click', async () => {
     const ok = await confirmDialog({
       title: 'Delete history',
@@ -835,6 +997,11 @@ function renderSensorLogbook() {
   });
 }
 
+// Naming a registered sensor re-grades the live verdict against ITS spec.
+document.getElementById('sv-sensor-label')?.addEventListener('input', () => {
+  renderSensorValidation();
+});
+
 document.getElementById('sv-log')?.addEventListener('click', () => {
   if (!svLoggable) return;
   const label = document.getElementById('sv-sensor-label')?.value.trim();
@@ -843,7 +1010,8 @@ document.getElementById('sv-log')?.addEventListener('click', () => {
     document.getElementById('sv-sensor-label')?.focus();
     return;
   }
-  sensorLog.push({
+  const tech = document.getElementById('sv-tech')?.value.trim();
+  const entry = {
     sensor: label,
     method: svState.tab,
     quantity: svLoggable.quantity,
@@ -852,9 +1020,16 @@ document.getElementById('sv-log')?.addEventListener('click', () => {
     reading: svLoggable.reading,
     err: svLoggable.err,
     date: new Date().toISOString(),
-  });
+  };
+  // Audit context: which hall, which site, who — the first questions a
+  // customer QA review asks of any calibration record.
+  if (state.hall?.name) entry.hallName = state.hall.name;
+  if (state.hall?.siteName) entry.siteName = state.hall.siteName;
+  if (tech) entry.tech = tech;
+  sensorLog.push(entry);
   persistSensorLog();
   renderSensorLogbook();
+  renderSensorValidation(); // due counts may have just cleared
   toast(`Logged for "${label}".`, { kind: 'ok' });
 });
 
@@ -1855,6 +2030,7 @@ function renderHallEditor() {
     </div>
     <div class="sla-field"><label>Site / location <span class="cap-hint">set by the Location picker above</span></label><input type="text" id="hall-site" value="${(state.hall.siteName||'').replace(/"/g,'&quot;')}" placeholder="e.g. Goodyear, AZ" ></div>
     <div class="sla-field"><label>Elevation ft <span class="cap-hint">preset from location; fine-tune here</span></label><input type="number" id="hall-elev" value="${state.hall.elevFt ?? 0}" step="10" min="-15000" max="20000" ></div>
+    <div class="sla-field"><label>Measured pressure kPa <span class="cap-hint">optional — a barometer beats the elevation estimate</span></label><input type="number" inputmode="decimal" id="hall-baro" value="${state.hall.baroKpa ?? ''}" step="0.1" min="55" max="110" placeholder="blank = from elevation"></div>
     <div class="sla-caps">
       <div class="sla-caps-label">Plant capability &amp; rates — what this hall can actually do</div>
       <div class="cap-explain">Temperature rates: use commissioning-observed °F/hr, or derive a physics estimate below (IT load, excess sensible capacity, thermal mass). Moisture is first-principles: hall air mass × ΔW ÷ equipment lb/hr. Enter NET capacity (nameplate minus steady makeup-air latent load). Blank = not plant-limited; the SLA ramp limit still governs.</div>
@@ -2027,6 +2203,13 @@ function renderHallEditor() {
   if (elevEl) elevEl.addEventListener('input', function() {
     const v = parseFloat(this.value); if (isNaN(v)) return;
     state.hall.elevFt = Math.max(-15000, Math.min(20000, Math.round(v)));
+    applyElevation(); update();
+  });
+  const baroEl = document.getElementById('hall-baro');
+  if (baroEl) baroEl.addEventListener('input', function() {
+    const v = parseFloat(this.value);
+    // Blank or out-of-window clears the override — back to the elevation model.
+    state.hall.baroKpa = isNaN(v) || v < 55 || v > 110 ? null : v;
     applyElevation(); update();
   });
 
@@ -3195,6 +3378,7 @@ function buildSaveFile() {
     customSites,
     scenarios,
     sensorLog,
+    sensorRegistry,
     tempUnit: state.tempUnit,
   };
 }
@@ -3229,7 +3413,15 @@ function mergeSaveFile(data) {
       logs++;
     }
   });
-  if (logs) {
+  // Registry merges by name — the incoming spec/cadence wins, so a colleague's
+  // fresher datasheet numbers replace stale ones instead of being ignored.
+  let regs = 0;
+  v.sensorRegistry.forEach((m) => {
+    sensorRegistry = sensorRegistry.filter((x) => x.name !== m.name).concat([m]);
+    regs++;
+  });
+  if (regs) persistSensorRegistry();
+  if (logs || regs) {
     persistSensorLog();
     renderSensorLogbook();
   }
@@ -3258,7 +3450,7 @@ function mergeSaveFile(data) {
   normalizeCaps(state.slaProfiles);
   applyElevation();
   renderSlaTabs(); renderSlaEditor(); renderHallTabs(); renderHallEditor(); renderScenarios(); update();
-  return `Loaded: ${halls} hall${halls === 1 ? '' : 's'}, ${slas} SLA${slas === 1 ? '' : 's'}, ${sites} custom site${sites === 1 ? '' : 's'}, ${scns} scenario${scns === 1 ? '' : 's'}${logs ? `, ${logs} sensor check${logs === 1 ? '' : 's'}` : ''}.`;
+  return `Loaded: ${halls} hall${halls === 1 ? '' : 's'}, ${slas} SLA${slas === 1 ? '' : 's'}, ${sites} custom site${sites === 1 ? '' : 's'}, ${scns} scenario${scns === 1 ? '' : 's'}${logs ? `, ${logs} sensor check${logs === 1 ? '' : 's'}` : ''}${regs ? `, ${regs} sensor spec${regs === 1 ? '' : 's'}` : ''}.`;
 }
 
 document.getElementById('save-export').addEventListener('click', downloadSaveFile);
@@ -3584,21 +3776,46 @@ document.getElementById('share-qr')?.addEventListener('click', () => {
     render: (canvas) => drawQr(canvas, url, 6),
   });
 });
+/**
+ * Hour-by-hour set-points for the current plan: linear in (T, W) — the exact
+ * interpolation the chart's pacing ticks use — expressed back as RH so every
+ * surface tells the same story. At most 12 rungs; the arrival is always last.
+ */
+function briefingHourly(plan) {
+  if (!plan || !(plan.hours > 0.5)) return null;
+  const p = state.pressure;
+  const tcA = fToC(state.aTemp), tcB = fToC(state.bTemp);
+  const wA = humidityRatioG(tcA, state.aRH, p) / 1000;
+  const wB = humidityRatioG(tcB, state.bRH, p) / 1000;
+  const rungs = Math.min(12, Math.ceil(plan.hours));
+  const out = [];
+  for (let i = 1; i <= rungs; i++) {
+    const f = Math.min(1, (i === rungs ? plan.hours : i) / plan.hours);
+    const tc = tcA + (tcB - tcA) * f;
+    const w = wA + (wB - wA) * f;
+    out.push({ tempF: cToF(tc), rh: Math.min(100, Math.max(0, rhFromW(tc, w, p))) });
+  }
+  return out;
+}
+
 document.getElementById('copy-briefing')?.addEventListener('click', () => {
   const p = state.pressure;
   const a = deriveStateF(state.aTemp, state.aRH, p);
   const b = deriveStateF(state.bTemp, state.bRH, p);
   const chkA = checkSLA(state.aTemp, state.aRH);
   const chkB = checkSLA(state.bTemp, state.bRH);
+  const plan = planMove();
   const text = buildBriefing({
     a, b,
-    plan: planMove(),
+    plan,
     hall: state.hall,
     sla: state.slaProfiles[state.activeSla] || null,
     verdicts: { aOk: chkA.ok, bOk: chkB.ok, aDetail: fmtSlaReason(chkA), bDetail: fmtSlaReason(chkB) },
     fmtT: (f) => `${dispTs(f)} ${tLabel()}`,
     fmtDT: (fd) => `${Math.round(dispDeltaT(fd) * 10) / 10}${deltaLabel()}`,
     fmtHrs,
+    hourly: briefingHourly(plan),
+    generatedAt: new Date(),
   });
   copyText(text, 'Briefing');
 });
@@ -3933,6 +4150,7 @@ update();
 loadScenarios();
 renderScenarios();
 loadSensorLog();
+loadSensorRegistry();
 renderSensorLogbook();
 // A deep link wins over stored state — the person clicked it on purpose.
 if (applyStateFromUrl()) update();

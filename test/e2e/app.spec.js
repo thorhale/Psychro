@@ -311,6 +311,10 @@ test.describe('share and playback', () => {
     const text = await page.evaluate(() => navigator.clipboard.readText());
     expect(text).toContain('68 °F / 45% RH');
     expect(text).toContain('verify against site instrumentation');
+    // The ticket is now a work order: hour-by-hour rungs and a timestamp.
+    expect(text).toContain('Hourly set-points:');
+    expect(text).toContain('(arrival)');
+    expect(text).toMatch(/Generated \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/);
   });
 
   test('scrubbing the playback moves the marker and the readout', async ({ page }) => {
@@ -482,6 +486,85 @@ test.describe('operator companion', () => {
     // placard_<hall>_<sla>_<date>.pdf — four halls' placards in one Downloads
     // folder used to be indistinguishable copies of sdc_psychrometric.pdf.
     expect(download.suggestedFilename()).toMatch(/^placard_.+_\d{4}-\d{2}-\d{2}\.pdf$/);
+  });
+});
+
+test.describe('sensor registry and recall', () => {
+  test('a registered spec re-grades the live verdict against the sensor itself', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#sv-tab-salt').click();
+    await page.locator('#sv-salt-sel').selectOption('nacl');
+    await page.fill('#sv-salt-t', '77');
+    await page.dispatchEvent('#sv-salt-t', 'input');
+    await page.fill('#sv-salt-rh', '78'); // +2.7 vs the generic ±2 → MARGINAL
+    await page.dispatchEvent('#sv-salt-rh', 'input');
+    await page.fill('#sv-sensor-label', 'CRAH-9 return');
+    await page.dispatchEvent('#sv-sensor-label', 'input');
+    await expect(page.locator('#sv-res')).toContainText('MARGINAL');
+
+    // Log it so the registry editor appears, then record the sensor's real
+    // datasheet spec: ±4 %RH. The same +2.7 error is now confidently in spec.
+    await page.locator('#sv-log').click();
+    await page.fill('#svreg-rh', '4');
+    await page.dispatchEvent('#svreg-rh', 'input');
+    await expect(page.locator('#sv-res')).toContainText('PASS');
+    await expect(page.locator('#sv-res')).toContainText("own ±4% spec");
+
+    // A cadence turns the logbook into a recall list.
+    await page.fill('#svreg-days', '90');
+    await page.dispatchEvent('#svreg-days', 'input');
+    await page.locator('#svlog-sel').selectOption('CRAH-9 return');
+    await expect(page.locator('#sv-logbook')).toContainText('Next check due in');
+  });
+
+  test('temperature and humidity histories are both visible at once', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // One RH check…
+    await page.locator('#sv-tab-salt').click();
+    await page.fill('#sv-salt-t', '77');
+    await page.dispatchEvent('#sv-salt-t', 'input');
+    await page.fill('#sv-salt-rh', '75');
+    await page.dispatchEvent('#sv-salt-rh', 'input');
+    await page.fill('#sv-sensor-label', 'MULTI-1');
+    await page.locator('#sv-log').click();
+    // …then a temperature check on the SAME sensor. The old logbook showed
+    // only the last entry's quantity, hiding the RH history entirely.
+    await page.locator('#sv-tab-ice').click();
+    await page.fill('#sv-ice-t', '32.4');
+    await page.dispatchEvent('#sv-ice-t', 'input');
+    await page.locator('#sv-log').click();
+    await expect(page.locator('#sv-logbook')).toContainText('Humidity checks');
+    await expect(page.locator('#sv-logbook')).toContainText('Temperature checks');
+  });
+
+  test('the logbook exports as a named CSV', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#sv-tab-ice').click();
+    await page.fill('#sv-ice-t', '32.2');
+    await page.dispatchEvent('#sv-ice-t', 'input');
+    await page.fill('#sv-sensor-label', 'PROBE-7');
+    await page.fill('#sv-tech', 'TH');
+    await page.locator('#sv-log').click();
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('#svlog-csv').click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^sensor-logbook_.+\.csv$/);
+  });
+
+  test('a measured barometer beats the elevation estimate, and clears back', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await expect(page.locator('#pressure-readout')).toContainText('standard atmosphere');
+    await page.fill('#hall-baro', '100');
+    await page.dispatchEvent('#hall-baro', 'input');
+    await expect(page.locator('#pressure-readout')).toContainText('100.0 kPa');
+    await expect(page.locator('#pressure-readout')).toContainText('measured on site');
+    await page.fill('#hall-baro', '');
+    await page.dispatchEvent('#hall-baro', 'input');
+    await expect(page.locator('#pressure-readout')).toContainText('standard atmosphere');
   });
 });
 
