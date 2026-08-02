@@ -128,8 +128,20 @@ describe('training referee', () => {
     expect(idle.stabilized).toBe(false); // v1 would have said true
   });
 
+  it('v3: a breached run cannot collect the stability bonus', () => {
+    // Settling down AFTER blowing the dew-point cap is not a win. The result
+    // panel only ever printed "+ 30 stability bonus" for unbreached runs, so
+    // a breached-but-settled hall was collecting 30 points it never explained.
+    const s = SCENARIOS.find((x) => x.id === 'chiller-down');
+    const r = refereeRun({
+      scenario: s, seed: 1, target: { tempF: 60, rh: 15 }, hall: HALL, checkSla, pressure: P,
+    });
+    expect(r.breachedAtMin).not.toBeNull();
+    expect(r.score).toBe(r.minutesInSla);
+  });
+
   it('exports its version and physics constants for the challenge-code format', () => {
-    expect(TRAINER_VERSION).toBe(2);
+    expect(TRAINER_VERSION).toBe(3);
     expect(IT_LOAD_F_PER_HR).toBeGreaterThan(0);
     expect(PLANT_TAU_MIN).toBeGreaterThan(1);
   });

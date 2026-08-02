@@ -312,7 +312,7 @@ test.describe('share and playback', () => {
     expect(text).toContain('68 °F / 45% RH');
     expect(text).toContain('verify against site instrumentation');
     // The ticket is now a work order: hour-by-hour rungs and a timestamp.
-    expect(text).toContain('Hourly set-points:');
+    expect(text).toContain('Set-point ladder (elapsed from start):');
     expect(text).toContain('(arrival)');
     expect(text).toMatch(/Generated \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/);
   });
@@ -620,6 +620,56 @@ test.describe('sensor registry and recall', () => {
   });
 });
 
+test.describe('round-2 seam fixes', () => {
+  test('an imported trail survives an unrelated edit to the hall card', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    const csv = 'Timestamp,Temp (°F),RH (%)\n' +
+      Array.from({ length: 8 }, (_, i) =>
+        `${new Date(Date.UTC(2026, 6, 1, i)).toISOString()},${(68 + i * 0.5).toFixed(1)},45`).join('\n');
+    await page.setInputFiles('#trend-file', {
+      name: 'trend.csv', mimeType: 'text/csv', buffer: Buffer.from(csv),
+    });
+    await expect(page.locator('#trend-res')).toContainText('8 points');
+    // Toggling a capability rebuilds the hall card's markup; the panel used to
+    // vanish with it, stranding the overlay with no unit toggle and no way to log.
+    await page.locator('#cap-dehum').click();
+    await expect(page.locator('#trend-res')).toContainText('8 points');
+    await expect(page.locator('#trend-unit-c')).toBeVisible();
+  });
+
+  test('switching halls drops the previous hall\'s measured trail', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    const csv = 'Timestamp,Temp (°F),RH (%)\n' +
+      Array.from({ length: 6 }, (_, i) =>
+        `${new Date(Date.UTC(2026, 6, 1, i)).toISOString()},${(70 + i).toFixed(1)},45`).join('\n');
+    await page.setInputFiles('#trend-file', {
+      name: 'hallA.csv', mimeType: 'text/csv', buffer: Buffer.from(csv),
+    });
+    await expect(page.locator('.leg-item[data-vis="actual"]')).not.toHaveClass(/leg-off/);
+    await page.locator('#hall-add').click(); // creates and switches to a new hall
+    await expect(page.locator('#trend-res')).toBeHidden();
+    await expect(page.locator('.leg-item[data-vis="actual"]')).toHaveClass(/leg-off/);
+  });
+
+  test('the logbook grades rows with the same guard band as the live verdict', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#sv-tab-salt').click();
+    await page.fill('#sv-salt-t', '77');
+    await page.dispatchEvent('#sv-salt-t', 'input');
+    await page.fill('#sv-salt-rh', '78'); // +2.7 → MARGINAL under ±2 (u 0.4)
+    await page.dispatchEvent('#sv-salt-rh', 'input');
+    await page.fill('#sv-sensor-label', 'BAND-1');
+    await expect(page.locator('#sv-res')).toContainText('MARGINAL');
+    await page.locator('#sv-log').click();
+    // The row must say MARGINAL too — it used to render green "in band"
+    // because it compared against the recalibrate bound and ignored u.
+    await expect(page.locator('.svlog-table tbody')).toContainText('MARGINAL');
+  });
+});
+
 test.describe('field usability', () => {
   test.use({ hasTouch: true });
 
@@ -700,12 +750,12 @@ test.describe('training mode', () => {
     await page.locator('#tr-share').click();
     await expect(page.locator('.ntf-toast')).toContainText('Challenge code copied');
     const url = await page.evaluate(() => navigator.clipboard.readText());
-    expect(url).toContain('#train=v2.cold-snap.777');
+    expect(url).toContain('#train=v3.cold-snap.777');
 
     // Opening the code lands preloaded on the identical fault. Leave the page
     // first — a hash-only goto is a same-document navigation and never reboots.
     await page.goto('about:blank');
-    await page.goto('./#train=v2.cold-snap.777');
+    await page.goto('./#train=v3.cold-snap.777');
     await expect(page.locator('.ntf-toast')).toContainText('Challenge accepted');
     await expect(page.locator('#tr-scenario')).toHaveValue('cold-snap');
     await expect(page.locator('#tr-seed')).toHaveValue('777');

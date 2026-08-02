@@ -11,6 +11,49 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — seams and inconsistencies in the last round's work (round 2)
+
+- **The logbook and the live verdict now use one grader.** History rows were
+  coloured against the *recalibrate* bound and ignored the reference's
+  uncertainty entirely, so a check the card above had just called MARGINAL
+  rendered green in the table below it. Rows now carry the verdict word too —
+  colour alone was the app's last colour-only signal.
+- **Temperature history reads in your unit.** The spec editor said ±0.5 °C
+  while the table under it printed ±1.8 and +0.30 °F/month, unlabelled. Same
+  for the trend summary, which printed "Achieved 4.5 °F/hr" directly above a
+  ramp line in °C.
+- **Ladder mode speaks the fourth verdict.** Hands-free mode announced PASS,
+  MARGINAL and FAIL but went silent on "TOO CLOSE TO CALL" — the one verdict
+  that means *your reference cannot decide this*.
+- **A breached training run can no longer collect the stability bonus.** A
+  hall that blew the dew-point cap at minute 68 and settled afterwards was
+  quietly scoring 30 points the result panel never explained. Challenge codes
+  are now `v3`.
+- **The cold-snap drill's brief matches its physics.** It promised a
+  low-temperature threat that v2's server-heat load had made impossible — an
+  idle hall *warms*. Rewritten to teach what the referee actually does: winter
+  air cannot chill this hall, but it will strip the water out of it. (Raising
+  the fault instead would have made the drill unwinnable, not harder — the
+  training hall's warming rate is 4 °F/hr.)
+- **An imported trend survives editing the hall card.** The result panel lived
+  inside markup that unrelated edits rebuilt, so toggling a capability wiped
+  the unit toggle and the "log to calibration" button while leaving the
+  overlay drawn. It now redraws from the retained file.
+- **A measured trail belongs to its hall.** Switching halls left the previous
+  hall's trajectory on the chart, re-projected onto the new hall's pressure.
+- **Exported artifacts state the real pressure basis.** The placard and
+  briefing hardcoded "standard atmosphere at elevation" even when a measured
+  barometer was in force — a laminated door sheet printing a measured 96.4 kPa
+  as an estimate.
+- **The set-point ladder states real elapsed hours.** A 40-hour move printed
+  twelve rungs numbered 1–12 and called the last one "arrival".
+- **Registry fixes**: the spec editor now edits the sensor named in the label
+  box (it was editing whichever sensor sorted first alphabetically); sensors
+  that arrive from a save file are selectable instead of being permanently
+  "overdue" and unreachable; the overdue tally is correct at boot and after
+  deleting a history.
+- **Pinch-to-drag no longer jumps the chart** when you lift one finger.
+
 ### Security — untrusted text can no longer reach the DOM as markup
 
 - **Fixed two cross-site-scripting paths.** Names in this app arrive from
