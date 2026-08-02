@@ -445,6 +445,7 @@ document.querySelectorAll('#unit-toggle .unit-btn').forEach(btn => {
     state.tempUnit = this.dataset.unit;
     document.querySelectorAll('#unit-toggle .unit-btn').forEach(b => b.classList.toggle('active', b===this));
     syncTempInputs();
+    renderSlaEditor(); // the SLA contract is edited in the display unit
     update();
   });
 });
@@ -1494,6 +1495,24 @@ function checkSLA(tempF, rh) {
   return checkSLACore(state.slaProfiles[state.activeSla], tempF, rh);
 }
 
+/**
+ * Format a checkSLA verdict's violated bound in the ACTIVE display unit.
+ * The core returns the bound as data (canonical °F / %); the string an
+ * operator reads must follow their unit toggle.
+ */
+function fmtSlaReason(chk) {
+  if (chk.ok) return 'within SLA';
+  const t = (f) => `${dispTs(f)} ${tLabel()}`;
+  switch (chk.kind) {
+    case 'tMin': return `T below ${t(chk.bound)}`;
+    case 'tMax': return `T above ${t(chk.bound)}`;
+    case 'rhMin': return `RH below ${chk.bound}%`;
+    case 'rhMax': return `RH above ${chk.bound}%`;
+    case 'dpMax': return `dew point above ${t(chk.bound)}`;
+    default: return chk.detail || 'out of SLA';
+  }
+}
+
 // Merged readout: big RH→RH headline + collapsible computed details for both points.
 let resultsExpanded = false;  // persists across re-renders
 
@@ -1577,12 +1596,16 @@ function updateControlReadout() {
       ? `<div class="ramp-row"><span class="ramp-k">Water to ${plan.moistCap.label==='Dehum'?'remove':'add'}</span><span class="ramp-v">${plan.moistCap.waterLb.toFixed(plan.moistCap.waterLb<10?1:0)} lb (${(plan.moistCap.waterLb*0.4536).toFixed(plan.moistCap.waterLb<10?1:0)} kg)</span></div>`
       : '';
     const volHint = plan.needsVol
-      ? `<div class="ramp-foot" style="color:var(--warn)">Set the hall volume in the SLA editor to time the moisture work (mass balance needs it).</div>`
+      ? `<div class="ramp-foot" style="color:var(--warn)">Set the hall volume in the Data Hall panel to time the moisture work (mass balance needs it).</div>`
+      : '';
+    const rateHint = plan.needsTempRate
+      ? `<div class="ramp-foot" style="color:var(--warn)">Enter a ${dDT < 0 ? 'cooling' : 'warming'} rate in the Data Hall panel to time this move — right now the estimate has nothing to stand on.</div>`
       : '';
     const capRow = capBits.length
       ? `<div class="ramp-row"><span class="ramp-k">Plant capacity${(effP !== 100 || derBits.length) ? ' (effective)' : ''}</span><span class="ramp-v">${capBits.join(' · ')}</span></div>`
       : '';
-    const ok = minHrs <= 1;
+    // "Achievable" is a promise — never make it while plant data is missing.
+    const ok = minHrs <= 1 && !plan.needsTempRate && !plan.needsVol;
     const rampLimT = sla.maxDtHr != null ? `${dispDeltaT(sla.maxDtHr).toFixed(0)}${dU}/hr` : '—';
     rampHtml = `
       <div class="ramp-advisory">
@@ -1603,8 +1626,11 @@ function updateControlReadout() {
         </div>
         ${ok
           ? `<div class="ramp-foot ramp-ok">✓ Achievable within about an hour</div>`
-          : `<div class="ramp-foot ramp-bad">⏱ Plan ≥ ${fmtHrs(minHrs)} — ${plan.binding} is the constraint${plan.binding.startsWith('SLA')?` (${sla.name})`:''}</div>`}
+          : plan.needsTempRate || plan.needsVol
+            ? ''
+            : `<div class="ramp-foot ramp-bad">⏱ Plan ≥ ${fmtHrs(minHrs)} — ${plan.binding} is the constraint${plan.binding.startsWith('SLA')?` (${sla.name})`:''}</div>`}
         ${volHint}
+        ${rateHint}
       </div>`;
   }
 
@@ -1679,7 +1705,7 @@ function updateControlReadout() {
   // Live SLA verdicts for both points — the at-a-glance compliance truth.
   const chkA = checkSLA(state.aTemp, state.aRH);
   const chkB = checkSLA(state.bTemp, state.bRH);
-  const slaChip = c => `<span class="cr-slachip"><span class="badge ${c.ok ? 'badge-ok' : 'badge-bad'}">${c.ok ? '✓ in SLA' : '✗ ' + c.reason}</span></span>`;
+  const slaChip = c => `<span class="cr-slachip"><span class="badge ${c.ok ? 'badge-ok' : 'badge-bad'}">${c.ok ? '✓ in SLA' : '✗ ' + fmtSlaReason(c)}</span></span>`;
 
   el.innerHTML = `
     <div class="cr-lede">${lede}</div>
@@ -2535,25 +2561,34 @@ function renderSlaEditor() {
   const sla = state.slaProfiles[state.activeSla];
   const ed = document.getElementById('sla-editor');
   const lock = sla.locked ? 'disabled' : '';
+  // The contract is STORED in °F but EDITED in the active display unit — this
+  // is the one card where the customer's numbers get typed in, and it used to
+  // be the one card that ignored the °C toggle. Absolute temps convert via
+  // tU(); the per-hour ramp limit is a DELTA (°C deltas scale, they don't
+  // offset), so it goes through the delta converters instead.
+  const showT = (f) => (f == null ? '' : svFmtT(f));
+  const showDT = (dF) => (dF == null ? '' : (Math.round(dispDeltaT(dF) * 10) / 10).toString());
   ed.innerHTML = `
     <div class="sla-field name-field">
       <label>Profile name</label>
       <input type="text" id="sla-name" value="${sla.name.replace(/"/g,'&quot;')}" ${lock}>
     </div>
-    <div class="sla-field"><label>Temp min °F</label><input type="number" id="sla-tmin" value="${sla.tMinF}" step="1" ${lock}></div>
-    <div class="sla-field"><label>Temp max °F</label><input type="number" id="sla-tmax" value="${sla.tMaxF}" step="1" ${lock}></div>
+    <div class="sla-field"><label>Temp min <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-tmin" value="${showT(sla.tMinF)}" step="0.5" ${lock}></div>
+    <div class="sla-field"><label>Temp max <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-tmax" value="${showT(sla.tMaxF)}" step="0.5" ${lock}></div>
     <div class="sla-field"><label>RH min %</label><input type="number" id="sla-rhmin" value="${sla.rhMin}" step="1" ${lock}></div>
     <div class="sla-field"><label>RH max %</label><input type="number" id="sla-rhmax" value="${sla.rhMax}" step="1" ${lock}></div>
-    <div class="sla-field"><label>Dew pt cap °F</label><input type="number" id="sla-dpmax" value="${sla.dpMaxF ?? ''}" step="0.5" placeholder="none" ${lock}></div>
-    <div class="sla-field"><label>Max ΔT /hr °F</label><input type="number" id="sla-dthr" value="${sla.maxDtHr ?? ''}" step="1" placeholder="none" ${lock}></div>
+    <div class="sla-field"><label>Dew pt cap <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-dpmax" value="${showT(sla.dpMaxF != null && sla.dpMaxF !== '' ? Number(sla.dpMaxF) : null)}" step="0.5" placeholder="none" ${lock}></div>
+    <div class="sla-field"><label>Max ΔT /hr ${deltaLabel()}</label><input type="number" id="sla-dthr" value="${showDT(sla.maxDtHr)}" step="0.5" placeholder="none" ${lock}></div>
     <div class="sla-field"><label>Max ΔRH /hr %</label><input type="number" id="sla-drhhr" value="${sla.maxDrhHr ?? ''}" step="1" placeholder="none" ${lock}></div>
   `;
   if (!sla.locked) {
-    const bind = (id, key, isNum) => {
+    // conv: display value → canonical °F (absolute or delta); identity for RH.
+    const dtToF = (v) => v / deltaFromF(1, state.tempUnit || 'F');
+    const bind = (id, key, conv) => {
       document.getElementById(id).addEventListener('input', function() {
-        if (isNum) {
+        if (conv) {
           const v = this.value === '' ? null : parseFloat(this.value);
-          sla[key] = (v === null || isNaN(v)) ? null : v;
+          sla[key] = (v === null || isNaN(v)) ? null : conv(v);
         } else {
           sla[key] = this.value;
           renderSlaTabs();
@@ -2561,11 +2596,12 @@ function renderSlaEditor() {
         update();
       });
     };
-    bind('sla-name','name',false);
-    bind('sla-tmin','tMinF',true); bind('sla-tmax','tMaxF',true);
-    bind('sla-rhmin','rhMin',true); bind('sla-rhmax','rhMax',true);
-    bind('sla-dpmax','dpMaxF',true);
-    bind('sla-dthr','maxDtHr',true); bind('sla-drhhr','maxDrhHr',true);
+    const idF = (v) => v;
+    bind('sla-name','name',null);
+    bind('sla-tmin','tMinF',(v) => tU().toF(v)); bind('sla-tmax','tMaxF',(v) => tU().toF(v));
+    bind('sla-rhmin','rhMin',idF); bind('sla-rhmax','rhMax',idF);
+    bind('sla-dpmax','dpMaxF',(v) => tU().toF(v));
+    bind('sla-dthr','maxDtHr',dtToF); bind('sla-drhhr','maxDrhHr',idF);
   }
   document.getElementById('sla-del').disabled = sla.locked || state.slaProfiles.length <= 1;
 }
@@ -2835,7 +2871,7 @@ function centerView() {
         <div class="tt-row"><span class="tt-k">Wet bulb</span><span>${dispTs(cToF(wbC))} ${tLabel()}</span></div>
         <div class="tt-row"><span class="tt-k">Enthalpy</span><span>${h.toFixed(1)} kJ/kg</span></div>
         <div class="tt-row"><span class="tt-k">ASHRAE</span><span class="zpill z${zone}">${zone}</span></div>
-        <div class="tt-sla" style="color:${chk.ok ? 'var(--ok)' : 'var(--danger)'}">${chk.ok ? '✓ within SLA' : '✗ ' + chk.reason}</div>`;
+        <div class="tt-sla" style="color:${chk.ok ? 'var(--ok)' : 'var(--danger)'}">${chk.ok ? '✓ within SLA' : '✗ ' + fmtSlaReason(chk)}</div>`;
     }
     tip.innerHTML = body;
     vline.style.cssText = `display:block; left:${px}px; top:${pad.t}px; height:${H - pad.t - pad.b}px;`;
@@ -3424,7 +3460,7 @@ document.getElementById('copy-briefing')?.addEventListener('click', () => {
     plan: planMove(),
     hall: state.hall,
     sla: state.slaProfiles[state.activeSla] || null,
-    verdicts: { aOk: chkA.ok, bOk: chkB.ok, aDetail: chkA.reason, bDetail: chkB.reason },
+    verdicts: { aOk: chkA.ok, bOk: chkB.ok, aDetail: fmtSlaReason(chkA), bDetail: fmtSlaReason(chkB) },
     fmtT: (f) => `${dispTs(f)} ${tLabel()}`,
     fmtDT: (fd) => `${Math.round(dispDeltaT(fd) * 10) / 10}${deltaLabel()}`,
     fmtHrs,

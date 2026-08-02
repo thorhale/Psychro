@@ -83,6 +83,52 @@ describe('ashraeZone', () => {
     expect(dp).toBeGreaterThan(21);
     expect(ashraeZone(30, 62, P0)).toBe('A3');
   });
+
+  it('agrees with the drawn polygon at every pressure — badge and plot are one truth', () => {
+    // The badge once used fixed sea-level g/kg caps while the chart drew the
+    // pressure-aware boundary, so at altitude a point could sit inside the
+    // plotted A1 while the badge said A2. Oracle: ray-cast the point against
+    // the very polygon the chart renders.
+    const inPolygon = (t, w, pts) => {
+      let inside = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [xi, yi] = pts[i], [xj, yj] = pts[j];
+        if (yi > w !== yj > w && t < ((xj - xi) * (w - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    };
+    // Deterministic PRNG so a failure is reproducible.
+    let s = 0x5eed;
+    const rand = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const order = ['A1', 'A2', 'A3', 'A4'];
+    let checked = 0;
+    for (let n = 0; n < 400; n++) {
+      const tc = 2 + rand() * 46;
+      const rh = 5 + rand() * 90;
+      const p = 70 + rand() * 33;
+      const W = humidityRatioG(tc, rh, p);
+      // Skip points hugging any boundary: the polygon is traced in 0.5 °C
+      // steps, so right at an edge the ray-cast and the analytic boundary can
+      // legitimately disagree by a hair. The property is about interiors.
+      const nearEdge = order.some((id) => {
+        const env = ASHRAE_ENVELOPES[id];
+        return (
+          Math.abs(tc - env.tMin) < 0.6 || Math.abs(tc - env.tMax) < 0.6 ||
+          Math.abs(W - upperW(tc, env, p)) < 0.15 ||
+          Math.abs(W - lowerW(tc, env, p)) < 0.15
+        );
+      });
+      if (nearEdge) continue;
+      checked++;
+      const zone = ashraeZone(tc, rh, p);
+      const tightestByPolygon =
+        order.find((id) => inPolygon(tc, W, envelopePolygon(ASHRAE_ENVELOPES[id], p))) || 'Out';
+      expect(zone, `at ${tc.toFixed(1)}°C ${rh.toFixed(0)}% ${p.toFixed(1)}kPa`).toBe(
+        tightestByPolygon,
+      );
+    }
+    expect(checked).toBeGreaterThan(200); // the skip filter must not eat the test
+  });
 });
 
 describe('SLA polygons and compliance', () => {
@@ -97,39 +143,28 @@ describe('SLA polygons and compliance', () => {
     }
   });
 
-  it('checkSLA reports the specific violated bound, badge string and all', () => {
-    // The badge string is what an operator reads off the screen, so it is part of
-    // the contract this test pins — not just the boolean.
+  it('checkSLA reports the violated bound as data, not a pre-baked string', () => {
+    // The core returns which bound broke and its canonical value; formatting
+    // in the operator's display unit belongs to the UI. (A previous shape
+    // baked '°F' into the string and it surfaced verbatim in °C mode.)
     expect(checkSLA(sla, 72, 45)).toEqual({
-      ok: true,
-      reason: 'within SLA',
-      detail: 'within SLA',
+      ok: true, kind: null, bound: null, unit: null, detail: 'within SLA',
     });
     expect(checkSLA(sla, 50, 45)).toEqual({
-      ok: false,
-      reason: 'T < 59°F',
-      detail: 'below temp min',
+      ok: false, kind: 'tMin', bound: 59, unit: 'F', detail: 'below temp min',
     });
     expect(checkSLA(sla, 95, 45)).toEqual({
-      ok: false,
-      reason: 'T > 89.6°F',
-      detail: 'above temp max',
+      ok: false, kind: 'tMax', bound: 89.6, unit: 'F', detail: 'above temp max',
     });
     expect(checkSLA(sla, 72, 5)).toEqual({
-      ok: false,
-      reason: 'RH < 8%',
-      detail: 'below RH min',
+      ok: false, kind: 'rhMin', bound: 8, unit: '%', detail: 'below RH min',
     });
     expect(checkSLA(sla, 72, 90)).toEqual({
-      ok: false,
-      reason: 'RH > 80%',
-      detail: 'above RH max',
+      ok: false, kind: 'rhMax', bound: 80, unit: '%', detail: 'above RH max',
     });
     // 85 °F / 75 %: inside the temp/RH box but past the 62.6 °F dew-point cap.
     expect(checkSLA(sla, 85, 75)).toEqual({
-      ok: false,
-      reason: 'DP > 62.6°F',
-      detail: 'above dew point cap',
+      ok: false, kind: 'dpMax', bound: 62.6, unit: 'F', detail: 'above dew point cap',
     });
   });
 
@@ -166,9 +201,7 @@ describe('SLA polygons and compliance', () => {
     // resulting 65.5 °F dew point exceeds the 62.6 °F cap. Drying the same air
     // to 30 % (54.1 °F dew point) brings it back into contract.
     expect(checkSLA(sla, 89.6, 45)).toEqual({
-      ok: false,
-      reason: 'DP > 62.6°F',
-      detail: 'above dew point cap',
+      ok: false, kind: 'dpMax', bound: 62.6, unit: 'F', detail: 'above dew point cap',
     });
     expect(checkSLA(sla, 89.6, 30).ok).toBe(true);
   });

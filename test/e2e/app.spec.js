@@ -596,6 +596,32 @@ test.describe('units', () => {
     await page.locator('#unit-toggle .unit-btn[data-unit="F"]').click();
     await expect(page.locator('#a-temp')).toHaveValue('68');
   });
+
+  test('an out-of-SLA verdict speaks the display unit, not stored °F', async ({ page }) => {
+    // The deep link parks Current at 40 °F — below the Base SLA's 50 °F floor.
+    // In °C mode the chip must name the bound as 10 °C; the °F string leaking
+    // through here is the exact bug this pins.
+    await page.goto('./#v=1&a=40,45&b=68,45');
+    await expect(page.locator('.cr-slachip .badge-bad').first()).toContainText('below 50 °F');
+    await page.locator('#unit-toggle .unit-btn[data-unit="C"]').click();
+    await expect(page.locator('.cr-slachip .badge-bad').first()).toContainText('below 10 °C');
+    await expect(page.locator('.cr-slachip .badge-bad').first()).not.toContainText('°F');
+  });
+
+  test('the SLA editor edits the contract in the active display unit', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // Create an editable profile (Base SLA is locked), then flip to °C.
+    await page.locator('#sla-add').click();
+    await expect(page.locator('#sla-tmin')).toHaveValue('50');
+    await page.locator('#unit-toggle .unit-btn[data-unit="C"]').click();
+    await expect(page.locator('#sla-tmin')).toHaveValue('10'); // 50 °F = 10 °C
+    // Typing 12 °C must store 53.6 °F canonically — visible back in °F mode.
+    await page.fill('#sla-tmin', '12');
+    await page.dispatchEvent('#sla-tmin', 'input');
+    await page.locator('#unit-toggle .unit-btn[data-unit="F"]').click();
+    await expect(page.locator('#sla-tmin')).toHaveValue('53.6');
+  });
 });
 
 test.describe('download link', () => {

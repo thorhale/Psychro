@@ -69,11 +69,28 @@ describe('briefing generator', () => {
     expect(text).not.toContain('Both points inside');
   });
 
-  it('reports moisture mass when the plan has one', () => {
-    const text = buildBriefing(
-      makeParams({ plan: { hours: 3.2, binding: 'dehumidification', moistCap: { waterLb: 27.4 } } }),
+  it('reports moisture mass with the direction from the plan label', () => {
+    // waterLb is a MASS — always positive. Direction lives in moistCap.label,
+    // and this pins the bug where a sign test on the mass briefed every
+    // humidification move as "moisture to remove".
+    const dehum = buildBriefing(
+      makeParams({ plan: { hours: 3.2, binding: 'dehumidify capacity', moistCap: { label: 'Dehum', waterLb: 27.4 } } }),
     );
-    expect(text).toContain('Moisture to remove: 27 lb of water.');
+    expect(dehum).toContain('Moisture to remove: 27 lb of water.');
+    const hum = buildBriefing(
+      makeParams({ plan: { hours: 3.2, binding: 'humidify capacity', moistCap: { label: 'Humidify', waterLb: 27.4 } } }),
+    );
+    expect(hum).toContain('Moisture to add: 27 lb of water.');
+  });
+
+  it('a zero-hour plan with missing plant rates admits it cannot time the move', () => {
+    // hours 0 + a missing-rate flag used to read "No plant work required" —
+    // the opposite of the truth. Missing data is not a finished job.
+    const text = buildBriefing(
+      makeParams({ plan: { hours: 0, binding: '', moistCap: null, needsTempRate: true } }),
+    );
+    expect(text).toContain('Duration unknown — plant rates are not set for this hall.');
+    expect(text).not.toContain('No plant work required');
   });
 
   it('humidity ratios in the prose are the derived values, verbatim', () => {

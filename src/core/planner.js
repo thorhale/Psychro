@@ -48,6 +48,9 @@ import { humidityRatio, specificVolume } from './psychro.js';
  * @property {{rate:number,label:string}|null} tempCap
  * @property {{rate:number,label:string,waterLb:number}|null} moistCap
  * @property {boolean} needsVol  moisture rate entered but hall volume missing
+ * @property {boolean} needsTempRate  a real ΔT with no plant rate entered for
+ *   that direction — the duration is then bounded by the SLA ramp limit alone
+ *   (or nothing at all), so "achievable" claims must not be made
  */
 
 /**
@@ -83,7 +86,12 @@ export function rampPlanFor(inputs, opts) {
   if (sla.maxDtHr) add(Math.abs(dT) / sla.maxDtHr, 'SLA temp limit');
   if (sla.maxDrhHr) add(Math.abs(dRH) / sla.maxDrhHr, 'SLA humidity limit');
 
-  const tempRate = (dT < 0 ? hall.rateCoolF : hall.rateWarmF) * (dT < 0 ? fxCool : fxWarm);
+  // A null rate times a factor is 0, which used to fall through SILENTLY: the
+  // plan then rested on the SLA ramp limit alone (or nothing) while the UI
+  // said "achievable". A missing rate is missing data, and gets its own flag.
+  const nameplateTemp = dT < 0 ? hall.rateCoolF : hall.rateWarmF;
+  const tempRate = (nameplateTemp || 0) * (dT < 0 ? fxCool : fxWarm);
+  const needsTempRate = Math.abs(dT) >= 0.05 && !(tempRate > 0);
   const tempCapInfo =
     Math.abs(dT) >= 0.05 && tempRate > 0
       ? { rate: tempRate, label: dT < 0 ? 'Cool' : 'Warm' }
@@ -121,7 +129,7 @@ export function rampPlanFor(inputs, opts) {
   }
 
   if (!parts.length)
-    return { hours: 0, binding: '', tempCap: tempCapInfo, moistCap: moistCapInfo, needsVol };
+    return { hours: 0, binding: '', tempCap: tempCapInfo, moistCap: moistCapInfo, needsVol, needsTempRate };
   parts.sort((a, b) => b.h - a.h);
   return {
     hours: parts[0].h,
@@ -129,6 +137,7 @@ export function rampPlanFor(inputs, opts) {
     tempCap: tempCapInfo,
     moistCap: moistCapInfo,
     needsVol,
+    needsTempRate,
   };
 }
 

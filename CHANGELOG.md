@@ -11,6 +11,34 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — say true things (verdicts, units, planner honesty)
+
+- **Briefing said "remove moisture" on every move, even humidification.**
+  The copied change ticket branched on the sign of the water mass — which is
+  always positive (it's a mass). It now takes its direction from the same
+  plan label the on-screen readout uses, and the test suite pins both
+  directions.
+- **The ASHRAE zone badge now agrees with the drawn envelope at every
+  pressure.** Classification previously used fixed sea-level g/kg caps while
+  the chart drew the real pressure-aware boundary, so at altitude a point
+  could sit visibly inside the plotted A1 polygon while the badge said A2.
+  Both now share one boundary engine, pinned by a property test that
+  ray-casts random points against the very polygons the chart renders.
+- **SLA verdicts follow the °C/K toggle.** "T < 50°F" used to appear verbatim
+  in °C mode (headline chip, chart tooltip, copied briefing). The core now
+  returns the violated bound as data and the display layer formats it in the
+  active unit ("T below 10 °C").
+- **The Customer SLA editor is unit-aware.** The one card where the
+  customer's contract numbers get typed was Fahrenheit-only; it now edits in
+  the active display unit and stores canonically, including the per-hour
+  ramp limit (which converts as a temperature *difference*, not an absolute).
+- **A missing plant rate no longer yields a confident plan.** With no
+  cooling/warming rate entered, `null × factor` silently produced an
+  unconstrained estimate and a "✓ Achievable within about an hour" verdict.
+  The planner now flags the missing rate, the readout explains what to enter
+  and where, and the briefing says "Duration unknown — plant rates are not
+  set for this hall" instead of "No plant work required."
+
 ### Added — training mode, NFC tags, hands-free voice
 
 - **Envelope Escape Room** (`src/core/trainer.js`): a training card where a
