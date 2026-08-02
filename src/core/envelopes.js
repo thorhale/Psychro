@@ -148,15 +148,26 @@ export function slaPolygon(profile, p) {
 /**
  * Which ASHRAE class a state point falls in — tightest first.
  * Returns 'A1' | 'A2' | 'A3' | 'A4' | 'Out'.
+ *
+ * Classified with the SAME `upperW`/`lowerW` boundary engine that draws the
+ * polygons, at site pressure. An earlier version used fixed g/kg caps
+ * (11/15/18/21) transcribed from the sea-level chart; at altitude those
+ * disagreed with the plotted envelope, so a point could sit visibly inside
+ * the A1 polygon while the badge said A2. The polygon is the authority.
  */
 export function ashraeZone(tc, rh, p) {
   const W = humidityRatioG(tc, rh, p);
-  const dp = dewPointFrom(tc, rh);
-  if (dp === null) return 'Out';
-  if (tc >= 15 && tc <= 32 && dp <= 17 && W <= 11.0 && rh <= 80) return 'A1';
-  if (tc >= 10 && tc <= 35 && dp <= 21 && W <= 15.0 && rh <= 80) return 'A2';
-  if (tc >= 5 && tc <= 40 && dp <= 24 && W <= 18.0 && rh <= 80) return 'A3';
-  if (tc >= 5 && tc <= 45 && dp <= 24 && W <= 21.0 && rh <= 90) return 'A4';
+  if (!isFinite(W)) return 'Out';
+  for (const id of ['A1', 'A2', 'A3', 'A4']) {
+    const env = ASHRAE_ENVELOPES[id];
+    if (
+      tc >= env.tMin &&
+      tc <= env.tMax &&
+      W <= upperW(tc, env, p) + 1e-9 &&
+      W >= lowerW(tc, env, p) - 1e-9
+    )
+      return id;
+  }
   return 'Out';
 }
 
@@ -169,32 +180,31 @@ export function ashraeZone(tc, rh, p) {
  * is exactly the kind of drift that puts a "✓ in SLA" badge on an
  * out-of-contract point.
  *
- * `reason` is the short badge string (`T < 50°F`); `detail` names the bound in
- * words for tooltips and the accessible description. Checks run in the order an
- * engineer would read them: temperature, humidity, then the dew-point cap.
+ * `detail` names the bound in words for tooltips and the accessible
+ * description. The violated bound itself comes back as DATA (`kind`, `bound`,
+ * `unit`) rather than a pre-baked string: bounds are stored in °F, but the
+ * operator may be reading in °C, so formatting belongs to the display layer.
+ * An earlier version returned `reason: 'T < 50°F'` and that string surfaced
+ * verbatim in °C mode. Checks run in the order an engineer would read them:
+ * temperature, humidity, then the dew-point cap.
  *
  * @param {{tMinF:number,tMaxF:number,rhMin:number,rhMax:number,dpMaxF:(number|null|string)}} profile
  * @param {number} tempF dry bulb °F
  * @param {number} rh relative humidity %
- * @returns {{ok: boolean, reason: string, detail: string}}
+ * @returns {{ok: boolean, detail: string,
+ *            kind: ('tMin'|'tMax'|'rhMin'|'rhMax'|'dpMax'|null),
+ *            bound: (number|null), unit: ('F'|'%'|null)}}
  */
 export function checkSLA(profile, tempF, rh) {
-  if (tempF < profile.tMinF)
-    return { ok: false, reason: `T < ${profile.tMinF}°F`, detail: 'below temp min' };
-  if (tempF > profile.tMaxF)
-    return { ok: false, reason: `T > ${profile.tMaxF}°F`, detail: 'above temp max' };
-  if (rh < profile.rhMin)
-    return { ok: false, reason: `RH < ${profile.rhMin}%`, detail: 'below RH min' };
-  if (rh > profile.rhMax)
-    return { ok: false, reason: `RH > ${profile.rhMax}%`, detail: 'above RH max' };
+  const fail = (kind, bound, unit, detail) => ({ ok: false, kind, bound, unit, detail });
+  if (tempF < profile.tMinF) return fail('tMin', profile.tMinF, 'F', 'below temp min');
+  if (tempF > profile.tMaxF) return fail('tMax', profile.tMaxF, 'F', 'above temp max');
+  if (rh < profile.rhMin) return fail('rhMin', profile.rhMin, '%', 'below RH min');
+  if (rh > profile.rhMax) return fail('rhMax', profile.rhMax, '%', 'above RH max');
   if (profile.dpMaxF != null && profile.dpMaxF !== '') {
     const dp = dewPointFrom(fToC(tempF), rh);
     if (dp !== null && cToF(dp) > Number(profile.dpMaxF))
-      return {
-        ok: false,
-        reason: `DP > ${profile.dpMaxF}°F`,
-        detail: 'above dew point cap',
-      };
+      return fail('dpMax', Number(profile.dpMaxF), 'F', 'above dew point cap');
   }
-  return { ok: true, reason: 'within SLA', detail: 'within SLA' };
+  return { ok: true, kind: null, bound: null, unit: null, detail: 'within SLA' };
 }

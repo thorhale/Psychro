@@ -51,9 +51,15 @@ export function buildBriefing(p) {
   if (plan && plan.hours > 0) {
     lines.push(`Estimated duration ≥ ${fmtHrs(plan.hours)} — binding constraint: ${plan.binding}.`);
     if (plan.moistCap)
+      // Direction comes from the plan's own label (`Dehum`/`Humidify`), the
+      // same field the on-screen readout branches on. `waterLb` is a MASS —
+      // always positive — so a sign test on it once briefed every
+      // humidification move as "moisture to remove".
       lines.push(
-        `Moisture to ${plan.moistCap.waterLb >= 0 ? 'remove' : 'add'}: ${Math.abs(plan.moistCap.waterLb).toFixed(0)} lb of water.`,
+        `Moisture to ${plan.moistCap.label === 'Dehum' ? 'remove' : 'add'}: ${Math.abs(plan.moistCap.waterLb).toFixed(0)} lb of water.`,
       );
+  } else if (plan && (plan.needsTempRate || plan.needsVol)) {
+    lines.push('Duration unknown — plant rates are not set for this hall.');
   } else if (plan) {
     lines.push('No plant work required — the points differ only within rounding.');
   }

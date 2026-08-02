@@ -146,6 +146,24 @@ describe('moisture mass balance', () => {
     expect(r.moistCap).toBeNull();
   });
 
+  it('flags needsTempRate when a real ΔT has no plant rate to time it', () => {
+    // `null * factor` is 0 in JS — this used to fall through SILENTLY, leaving
+    // the plan bounded by the SLA ramp limit alone (or by nothing) while the
+    // UI called the move achievable. Missing data must say so.
+    const cool = plan({ hall: { ...idealHall(), rateCoolF: null }, bTempF: 69 });
+    expect(cool.needsTempRate).toBe(true);
+    expect(cool.tempCap).toBeNull();
+    const zero = plan({ hall: { ...idealHall(), rateCoolF: 0 }, bTempF: 69 });
+    expect(zero.needsTempRate).toBe(true);
+    // Direction-aware: a missing WARMING rate doesn't flag a COOLING move.
+    const warmMissing = plan({ hall: { ...idealHall(), rateWarmF: null }, bTempF: 69 });
+    expect(warmMissing.needsTempRate).toBe(false);
+    // No temperature change at all → nothing to time, no flag.
+    expect(plan({ hall: { ...idealHall(), rateCoolF: null } }).needsTempRate).toBe(false);
+    // Rate present → no flag, and the constraint is real.
+    expect(plan({ bTempF: 69 }).needsTempRate).toBe(false);
+  });
+
   it('altitude: air-mass and ΔW effects nearly cancel at fixed ΔRH', () => {
     // At altitude there is less air mass per ft³ (m_da ∝ p) but the SAME RH change
     // spans a larger humidity-ratio difference (ΔW ∝ 1/p) — the two cancel to
