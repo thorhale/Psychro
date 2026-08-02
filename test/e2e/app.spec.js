@@ -338,13 +338,19 @@ test.describe('sensor validation suite', () => {
     await expect(page.locator('#sv-res')).toContainText('75.3%');
     await expect(page.locator('#sv-res')).toContainText('Greenspan');
 
-    await page.fill('#sv-salt-rh', '74'); // −1.3 → inside 2 + 0.4 band
+    await page.fill('#sv-salt-rh', '74'); // −1.3 → inside the 2 − 0.4 guard band
     await page.dispatchEvent('#sv-salt-rh', 'input');
     await expect(page.locator('#sv-res')).toContainText('PASS');
 
     await page.fill('#sv-salt-rh', '82'); // +6.7 → beyond 5 + 0.4
     await page.dispatchEvent('#sv-salt-rh', 'input');
     await expect(page.locator('#sv-res')).toContainText('FAIL');
+
+    // Error landing within ±u of the tolerance: the reference itself could be
+    // why it looks good (or bad), and the verdict must say so, not guess.
+    await page.fill('#sv-salt-rh', '77.2'); // +1.9: between 1.6 and 2.4
+    await page.dispatchEvent('#sv-salt-rh', 'input');
+    await expect(page.locator('#sv-res')).toContainText('TOO CLOSE TO CALL');
   });
 
   test('boiling-point reference is altitude-corrected, not 212°F', async ({ page }) => {
@@ -364,7 +370,7 @@ test.describe('sensor validation suite', () => {
     await page.goto('./');
     await expandAll(page);
     await page.locator('#sv-tab-ice').click();
-    await page.fill('#sv-ice-t', '32.4'); // +0.4 °F → inside ±0.9+0.1
+    await page.fill('#sv-ice-t', '32.4'); // +0.4 °F → inside the 0.9 − 0.1 guard band
     await page.dispatchEvent('#sv-ice-t', 'input');
     await expect(page.locator('#sv-res')).toContainText('PASS');
     await page.fill('#sv-ice-t', '34.5'); // +2.5 °F → beyond ±1.8+0.1
@@ -416,9 +422,55 @@ test.describe('operator companion', () => {
     await expect(page.locator('#trend-res')).toContainText('12 points');
     await expect(page.locator('#trend-res')).toContainText('°F from the header');
     await expect(page.locator('#trend-res')).toContainText('Achieved');
+    // The gentle 0.6 °F/hr move sits inside the Base SLA's 18 °F/hr limit —
+    // and the readout says so now that the limit is actually checked. Hourly
+    // sampling widens the rolling window to the sample interval and says so.
+    await expect(page.locator('#trend-res')).toContainText('Fastest sustained ramp (60-min window)');
+    await expect(page.locator('#trend-res')).toContainText('within the SLA ramp limits');
     // The Actual legend layer switched itself on and the chart changed.
     await expect(page.locator('.leg-item[data-vis="actual"]')).not.toHaveClass(/leg-off/);
     expect(await snapshot()).not.toBe(before);
+  });
+
+  test('sentinel dropouts are skipped, and the unit override re-reads the file', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // A °C hall trend with two −9999 comms dropouts and NO unit in the header:
+    // the sentinels must not reach the unit heuristic, which should read ~22 °C.
+    const rows = Array.from({ length: 10 }, (_, i) => {
+      const t = new Date(Date.UTC(2026, 6, 1, 0, i * 10)).toISOString();
+      const v = i === 3 || i === 7 ? '-9999' : (22 + i * 0.1).toFixed(1);
+      return `${t},${v},45`;
+    });
+    await page.setInputFiles('#trend-file', {
+      name: 'trend-c.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('Timestamp,Zone Temp,RH\n' + rows.join('\n')),
+    });
+    await expect(page.locator('#trend-res')).toContainText('8 points');
+    await expect(page.locator('#trend-res')).toContainText('2 bad rows skipped');
+    await expect(page.locator('#trend-res')).toContainText('°C guessed from the value range');
+
+    // The heuristic guessed °C — the operator can force °F and the file
+    // re-reads in place (22 °F is a freezer, but the point is the override).
+    await page.locator('#trend-unit-f').click();
+    await expect(page.locator('#trend-res')).toContainText('°F (your override)');
+  });
+
+  test('a ramp faster than the SLA limit is called out', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // 0.4 °F/min = 24 °F/hr sustained over 30 minutes — past the Base SLA's 18.
+    const rows = Array.from({ length: 31 }, (_, i) => {
+      const t = new Date(Date.UTC(2026, 6, 1, 0, i)).toISOString();
+      return `${t},${(68 + i * 0.4).toFixed(1)},45`;
+    });
+    await page.setInputFiles('#trend-file', {
+      name: 'fast.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('Timestamp,Temp (°F),RH\n' + rows.join('\n')),
+    });
+    await expect(page.locator('#trend-res')).toContainText('FASTER than the SLA');
   });
 
   test('the door placard downloads as a PDF', async ({ page }) => {

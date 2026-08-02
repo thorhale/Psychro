@@ -208,3 +208,32 @@ export function checkSLA(profile, tempF, rh) {
   }
   return { ok: true, kind: null, bound: null, unit: null, detail: 'within SLA' };
 }
+
+/**
+ * Does a measured rate of change satisfy the SLA's ramp limits?
+ *
+ * The profile stores `maxDtHr` (°F/hr) and `maxDrhHr` (%RH/hr); until this
+ * existed they were printed on placards as DO-NOT-CROSS numbers but never
+ * actually checked against anything. Same data-not-string return style as
+ * `checkSLA`; a null/absent limit disables that check.
+ *
+ * @param {{maxDtHr?:(number|null), maxDrhHr?:(number|null)}} profile
+ * @param {number|null} dtPerHr   measured |ΔT| rate, °F/hr
+ * @param {number|null} drhPerHr  measured |ΔRH| rate, %RH/hr
+ * @returns {{ok:boolean, detail:string,
+ *            kind:('dtHr'|'drhHr'|null), bound:(number|null),
+ *            actual:(number|null), unit:('F/hr'|'%/hr'|null)}}
+ */
+export function checkRamp(profile, dtPerHr, drhPerHr) {
+  if (profile.maxDtHr != null && dtPerHr != null && Math.abs(dtPerHr) > profile.maxDtHr)
+    return {
+      ok: false, kind: 'dtHr', bound: profile.maxDtHr, actual: Math.abs(dtPerHr),
+      unit: 'F/hr', detail: 'temperature ramp too fast',
+    };
+  if (profile.maxDrhHr != null && drhPerHr != null && Math.abs(drhPerHr) > profile.maxDrhHr)
+    return {
+      ok: false, kind: 'drhHr', bound: profile.maxDrhHr, actual: Math.abs(drhPerHr),
+      unit: '%/hr', detail: 'humidity ramp too fast',
+    };
+  return { ok: true, kind: null, bound: null, actual: null, unit: null, detail: 'within ramp limits' };
+}

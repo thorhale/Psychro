@@ -3,12 +3,33 @@
 The app's Sensor Validation card offers six ways to check a temperature or RH
 sensor against an **independent physical reference**. This page records what
 each method's reference actually is, how good it is, and when to reach for it.
-Every verdict in the app widens its pass band by the reference's uncertainty —
-a check can never claim more confidence than its reference has.
 
-Verdict bands (before widening): RH ±2 % PASS / ±5 % MARGINAL (typical
-capacitive-sensor spec); temperature ±0.9 °F (0.5 °C) PASS / ±1.8 °F (1 °C)
-MARGINAL.
+Verdicts are **guard-banded** (the ISO 14253-1 decision rule): to claim PASS,
+the sensor's error must be inside its tolerance *by more than the reference's
+own uncertainty* — otherwise the reference itself could be why the number
+looks good. Concretely, with tolerance `tol` and reference uncertainty `u`:
+
+- **PASS** — |error| ≤ tol − u (confidently in spec)
+- **TOO CLOSE TO CALL** — |error| within ±u of the tolerance limit: the
+  reference isn't accurate enough to decide. Repeat the check with a tighter
+  reference (a salt jar or ice bath instead of a field instrument).
+- **MARGINAL** — confidently past the tolerance, inside the recalibrate band
+- **FAIL** — |error| > recalibrate band + u (confidently out, even granting
+  the reference its full uncertainty)
+
+A worse reference therefore makes *every confident verdict harder* to earn —
+which is what uncertainty means. (An earlier release widened the PASS band by
+`u` instead, which let a sloppier reference pass more sensors; that was
+backwards, and this rule replaces it.)
+
+Tolerances: RH ±2 % (recalibrate at ±5 %) — typical capacitive-sensor spec;
+temperature ±0.9 °F / 0.5 °C (recalibrate at ±1.8 °F / 1 °C).
+
+One consequence worth knowing: the boiling-point method's practical
+uncertainty (±0.9 °F) equals the temperature tolerance, so it can never issue
+a confident PASS — it is a *gross-error* check, good for catching a sensor
+that is degrees off, not tenths. The ice bath (±0.1 °F) is the method that
+can actually certify a PASS.
 
 ## 1. Psychrometer (dry-bulb + wet-bulb) — RH
 
@@ -112,7 +133,8 @@ sensor slope, not just offset.
 **Reference:** a recently calibrated instrument, side by side with the sensor
 under test, both settled at the same spot.
 **Uncertainty used:** whatever its calibration certificate says (you enter
-it); the verdict band widens by exactly that amount.
+it); the guard band applies exactly that amount, so a vague certificate
+means more "too close to call" verdicts — as it should.
 **Use when:** day-to-day spot checks — fastest method, and exactly as good as
 the reference's paperwork.
 

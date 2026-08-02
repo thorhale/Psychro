@@ -233,6 +233,7 @@
   .sv-pass { color:var(--ok); font-weight:700; }
   .sv-marginal { color:var(--warn); font-weight:700; }
   .sv-fail { color:var(--danger); font-weight:700; }
+  .sv-indet { color:#9db8d0; font-weight:700; }
   .sv-actions { margin-top:10px; }
   /* Ladder mode: readable from the floor with the psychrometer still in hand */
   .sv-ladder-on { font-size:1.4rem; line-height:1.55; }
@@ -753,7 +754,7 @@
       <button class="scn-btn" id="sv-ladder" style="display:none" aria-pressed="false" title="Big type + spoken verdicts, for when both hands hold a psychrometer">🔊 Ladder mode</button>
     </div>
     <div id="sv-logbook"></div>
-    <div class="formula-note">All methods run at site pressure <span id="sv-pressure">—</span> where pressure matters. Verdict bands: RH ±2% PASS / ±5% MARGINAL (typical capacitive spec); temperature ±0.9 °F PASS / ±1.8 °F MARGINAL — each widened by the reference's stated uncertainty, shown with every verdict. Methods and references: <code>docs/sensor-validation.md</code>.</div>
+    <div class="formula-note">All methods run at site pressure <span id="sv-pressure">—</span> where pressure matters. Tolerances: RH ±2% / ±5% recalibrate (typical capacitive spec); temperature ±0.9 °F / ±1.8 °F. Verdicts are guard-banded: PASS means the error is inside tolerance <em>by more than the reference's own uncertainty</em>; when the reference's ±u straddles the limit the verdict is "too close to call" — a check can never claim more confidence than its reference has. Methods and references: <code>docs/sensor-validation.md</code>.</div>
   </div>
 </details>
 
