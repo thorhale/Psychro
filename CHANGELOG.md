@@ -11,6 +11,26 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — cleanup and optimization pass
+
+- **One walk of the inventory instead of seven.** The equipment panel asked
+  totals, nameplate and the redundancy of each of five kinds as separate
+  questions, each walking the whole list and each re-running the psychrometrics
+  for every wetted-media unit. They all fall out of the same walk, so they now
+  share it: a media unit costs one evaluation per render rather than a dozen.
+- **Panels only rebuild when their markup changed.** These re-render on every
+  slider movement, and most movements change nothing they display — dragging a
+  Target slider does not move equipment outputs, which come from the Current
+  point. Reassigning innerHTML threw away the DOM and its listeners for
+  nothing.
+- **Capacity conversions have one home.** Tons, BTU/hr, MBH, GPH, gal/day,
+  pints/day, m³/hr and the rest lived in two copies — the inventory and the
+  rate calculator — which is a correction waiting to be applied to one and not
+  the other. Same for the CFM and cubic-foot conversions, which were inline
+  literals beside helpers that already existed.
+- The save-file writer stamps the format version from the constant the reader
+  checks against, rather than a hardcoded copy of it.
+
 ### Added — equipment condition history
 
 The inventory knew a machine's condition today but kept no memory of it, so

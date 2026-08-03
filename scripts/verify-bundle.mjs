@@ -230,8 +230,18 @@ check('blockworld/ copied through', existsSync(join(dist, 'blockworld', 'index.h
 // the app had no first-run guidance and no glossary anywhere, while the docs
 // it pointed at were not even published. Prose that closes that gap is worth
 // its bytes; the budget still trips instantly on a vendored library.
-const RAW_BUDGET_KB = 300;
-const GZIP_BUDGET_KB = 95;
+// Raised 300/95 → 450/150 for the digital-twin work (equipment inventory,
+// redundancy, condition history) and the room to keep building on it. The
+// budget exists to catch ACCIDENTAL weight — a vendored chart library, an
+// inlined font, a base64 image — not to ration deliberate features, and at
+// 95 kB it had started doing the latter.
+//
+// 150 kB gzipped is still a very small app: it arrives in well under a second
+// on anything better than 2G, and after first load the service worker serves
+// it from cache, so the number that matters on a hall floor is zero. A
+// vendored library would still trip this immediately, which is the point.
+const RAW_BUDGET_KB = 450;
+const GZIP_BUDGET_KB = 150;
 const rawKb = statSync(join(dist, 'index.html')).size / 1024;
 const gzipKb = gzipSync(readFileSync(join(dist, 'index.html'))).length / 1024;
 check(

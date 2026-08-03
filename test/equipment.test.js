@@ -15,6 +15,7 @@ import {
   perMachineOutput,
   inventoryTotals,
   inventoryNameplate,
+  inventoryRollup,
   ratesFromTotals,
   worstSingleLoss,
   logCondition,
@@ -370,6 +371,65 @@ describe('condition history', () => {
     // Out-of-range readings are clamped, not dropped — someone typed something.
     logCondition(u, 140, '2026-01-10');
     expect(u.hist).toEqual([{ d: '2026-01-10', c: 100 }]);
+  });
+});
+
+describe('inventoryRollup', () => {
+  // A mixed hall: healthy and degraded units, one tagged out, wetted media
+  // whose output only the caller's model can supply, and every kind present.
+  const inv = normalizeInventory([
+    { kind: 'cool', name: 'CRAH', count: 3, cap: 30, unit: 'ton' },
+    { kind: 'cool', name: 'AHU-1', count: 1, cap: 50, unit: 'ton', condPct: 40 },
+    { kind: 'cool', name: 'CRAH-4', count: 1, cap: 30, unit: 'ton', online: false },
+    { kind: 'heat', count: 1, cap: 20, unit: 'kw' },
+    { kind: 'dehum', count: 2, cap: 24, unit: 'lbhr', condPct: 75 },
+    { kind: 'humid', name: 'HUM-A', count: 2, evap: { cfm: 9000, effPct: 85 } },
+    { kind: 'air', count: 4, cap: 10000, unit: 'cfm', condPct: 60 },
+  ]);
+  const model = () => 37.5;
+
+  it('answers in one pass exactly what the separate calls answer', () => {
+    const r = inventoryRollup(inv, model);
+    expect(r.now).toEqual(inventoryTotals(inv, model));
+    expect(r.nameplate).toEqual(inventoryNameplate(inv, model));
+    for (const k of EQUIP_KINDS) {
+      expect(r.redundancy[k]).toEqual(worstSingleLoss(inv, k, model));
+    }
+  });
+
+  it('keeps nameplate and live separated by condition alone', () => {
+    const r = inventoryRollup(inv, model);
+    // Nameplate restores both the derate AND the out-of-service unit:
+    // 3 × 30 + 1 × 50 + 1 × 30 = 170 ton of cooling installed.
+    expect(r.nameplate.coolKW).toBeCloseTo(170 * 3.51685, 6);
+    expect(r.now.coolKW).toBeCloseTo((3 * 30 + 50 * 0.4) * 3.51685, 6);
+    expect(r.nameplate.offline).toBe(0);
+    expect(r.now.offline).toBe(1);
+    expect(r.now.degraded).toBe(3); // AHU-1, the dehumidifiers, the fans
+    // The media unit is asked for its output once, not once per question.
+    expect(r.now.humidLbHr).toBeCloseTo(2 * 37.5, 6);
+    expect(r.nameplate.humidLbHr).toBeCloseTo(2 * 37.5, 6);
+  });
+
+  it('costs one model evaluation per unit, however many questions are asked', () => {
+    let calls = 0;
+    const counted = () => { calls++; return 37.5; };
+    const r = inventoryRollup(inv, counted);
+    // One wetted-media line item in this inventory.
+    expect(calls).toBe(1);
+    // …and the answers are all there, from that single evaluation.
+    expect(r.now.humidLbHr).toBeGreaterThan(0);
+    expect(r.nameplate.humidLbHr).toBeGreaterThan(0);
+    expect(r.redundancy.humid.machines).toBe(2);
+  });
+
+  it('survives an empty or junk inventory', () => {
+    for (const bad of [[], null, undefined, 'nope', [null, { kind: 'x' }]]) {
+      const r = inventoryRollup(bad, model);
+      expect(r.now.coolKW).toBe(0);
+      expect(r.nameplate.coolKW).toBe(0);
+      expect(EQUIP_KINDS.every((k) => r.redundancy[k] === null)).toBe(true);
+    }
   });
 });
 

@@ -26,7 +26,10 @@ import {
 } from '../core/psychro.js';
 import { SALTS, saltRh, saltRhSlope, SALT_T_MIN_C, SALT_T_MAX_C } from '../core/saltref.js';
 import { boilingPointC, U_PRACTICAL_C } from '../core/boilref.js';
-import { fToC, cToF, TEMP_UNITS, deltaFromF, deltaLabelFor } from '../core/units.js';
+import {
+  fToC, cToF, TEMP_UNITS, deltaFromF, deltaLabelFor,
+  ft3ToM3, cfmToM3s, toKW, toLbHr, LATENT_BTU_PER_LB,
+} from '../core/units.js';
 import {
   ASHRAE_ENVELOPES,
   envelopePolygon,
@@ -45,11 +48,12 @@ import {
   isValidScenario,
   normalizeSensorLog,
   normalizeSensorRegistry,
+  SAVE_FILE_VERSION,
 } from '../state/schema.js';
 import { driftFit } from '../core/driftfit.js';
 import { evapMediaOutput, effectivenessFromOutput } from '../core/evapmedia.js';
 import {
-  normalizeInventory, inventoryTotals, inventoryNameplate, worstSingleLoss,
+  normalizeInventory, inventoryTotals, inventoryRollup,
   ratesFromTotals, unitOutput, unitsForKind, isThermalKind, isAirKind, baseUnitOf,
   logCondition, conditionTrend,
 } from '../core/equipment.js';
@@ -1981,7 +1985,7 @@ function updateControlReadout() {
     const tcA = fToC(A.tempF), tcB = fToC(B.tempF);
     const WAkg = A.W / 1000, WBkg = B.W / 1000;
     const vA = specificVolume(tcA, WAkg, p);              // m³/kg dry air at Current
-    const mda = (cfm * 0.000471947) / vA;                // kg dry air/s  (1 CFM = 4.71947e-4 m³/s)
+    const mda = cfmToM3s(cfm) / vA;                // kg dry air/s
     const qTot = mda * (A.h - B.h);                      // kW · + = cooling
     const qSens = mda * (1.006 + 1.86 * (WAkg + WBkg) / 2) * (tcA - tcB);
     const qLat = qTot - qSens;
@@ -2578,15 +2582,9 @@ function renderHallEditor() {
   // supply DP with the exact exponential dry-down. Humidify: steam kW →
   // lb/hr via ≈ 2675 kJ/kg water→steam (≈ 2.97 lb/hr per kW).
   const calcState = () => (state.hall.calc = state.hall.calc || {});
-  const toKW = (val, unit) => unit === 'ton' ? val * 3.51685
-    : unit === 'btu' ? val / 3412.14
-    : unit === 'mbh' ? val / 3.41214
-    : val;
-  // Water-output units → lb/hr. Water ≈ 8.34 lb/gal; pint = 1/8 gal.
-  const waterToLbHr = (val, unit) => unit === 'gph' ? val * 8.34
-    : unit === 'gpd' ? val * 8.34 / 24
-    : unit === 'pintday' ? val * 8.34 / 8 / 24
-    : val;                                    // 'lbhr'
+  // Capacity conversions come from core/units.js — the same tables the
+  // equipment inventory uses. They were duplicated here, which is a
+  // correction waiting to be applied to one copy and not the other.
   function runRateCalc() {
     const cs = calcState();
     const g = id => document.getElementById(id);
@@ -2646,12 +2644,12 @@ function renderHallEditor() {
     if (dr) {
       if (cs.dhType === 'lbhr') {
         if (cs.dhQty > 0 && cs.dhEach > 0) {
-          const lbhr = waterToLbHr(cs.dhQty * cs.dhEach, cs.dhUnit);
+          const lbhr = toLbHr(cs.dhQty * cs.dhEach, cs.dhUnit);
           dr.innerHTML = `= <strong>${lbhr.toFixed(1)} lb/hr</strong> <button class="calc-apply" data-rk="rateDehumLb" data-rv="${lbhr.toFixed(1)}">Apply</button>`;
         } else dr.textContent = '—';
       } else if (cs.dhType === 'latent') {
         if (cs.dhLQty > 0 && cs.dhLat > 0) {
-          const lbhr = toKW(cs.dhLQty * cs.dhLat, cs.dhLatUnit) * 3412.14 / 1060;
+          const lbhr = (toKW(cs.dhLQty * cs.dhLat, cs.dhLatUnit) * 3412.14) / LATENT_BTU_PER_LB;
           dr.innerHTML = `= <strong>${lbhr.toFixed(1)} lb/hr</strong> <button class="calc-apply" data-rk="rateDehumLb" data-rv="${lbhr.toFixed(1)}">Apply</button>`;
         } else dr.textContent = '—';
       } else { // coil — exact exponential dry-down
@@ -2659,14 +2657,14 @@ function renderHallEditor() {
           const p = state.pressure, W0 = currentW();
           const Ws = saturationHumidityRatio(fToC(cs.dp), p);
           const v = specificVolume(fToC(state.aTemp), W0, p);
-          const mCoil = cs.cfm * 0.000471947 / v * 3600;
+          const mCoil = (cfmToM3s(cs.cfm) / v) * 3600;
           if (Ws >= W0) dr.innerHTML = '<span class="calc-warn">Supply DP ≥ hall dew point — no removal at current conditions.</span>';
           else {
             const initLb = mCoil * (W0 - Ws) / 0.45359237;
             let extra = '', applyRate = initLb;
             const Wb = humidityRatio(fToC(state.bTemp), state.bRH, p);
             if (state.hall.hallVolFt3 > 0 && Wb < W0 - 0.00005) {
-              const mHall = (state.hall.hallVolFt3 * 0.0283168) / v;
+              const mHall = ft3ToM3(state.hall.hallVolFt3) / v;
               const tau = mHall / mCoil;
               if (Wb <= Ws) extra = '<div class="calc-warn">Target at/below supply DP — unreachable with this coil (colder coil or desiccant).</div>';
               else {
@@ -2715,7 +2713,7 @@ function renderHallEditor() {
             `<div class="cap-hint">Air leaves at ${dispTs(r.leavingTempF)}${tLabel()} — evaporative humidification also cools, by ${(Math.round(dispDeltaT(state.aTemp - r.leavingTempF) * 10) / 10)}${deltaLabel()} here. Output falls as the hall gets damper: this figure is for the condition above, not a fixed rating.</div>`;
         }
       } else if (cs.hQty > 0 && cs.hEach > 0) {
-        const lbhr = waterToLbHr(cs.hQty * cs.hEach, cs.hUnit);
+        const lbhr = toLbHr(cs.hQty * cs.hEach, cs.hUnit);
         hc.innerHTML = `= <strong>${lbhr.toFixed(1)} lb/hr</strong> <button class="calc-apply" data-rk="rateHumLb" data-rv="${lbhr.toFixed(1)}">Apply</button>`;
       } else hc.textContent = '—';
     }
@@ -3620,7 +3618,7 @@ document.getElementById('scn-file').addEventListener('change', function() {
 // ════════════════════════════════════════════════════════════
 function buildSaveFile() {
   return {
-    app: 'SDC Hall Environment Planner', kind: 'saveFile', version: 1,
+    app: 'SDC Hall Environment Planner', kind: 'saveFile', version: SAVE_FILE_VERSION,
     exported: new Date().toISOString(),
     hallProfiles: state.hallProfiles,
     slaProfiles: state.slaProfiles,
@@ -4225,7 +4223,7 @@ function thermalC() {
   if (!(state.hall.hallVolFt3 > 0)) return null;
   const p = state.pressure, W0 = currentW();
   const v = specificVolume(fToC(state.aTemp), W0, p);
-  const mda = (state.hall.hallVolFt3 * 0.0283168) / v;
+  const mda = ft3ToM3(state.hall.hallVolFt3) / v;
   const cAir = mda * (1.006 + 1.86 * W0);
   const massLb = parseFloat(document.getElementById('rc-mass')?.value);
   const cEq = massLb > 0 ? massLb * 0.45359237 * 0.5 : 0;
@@ -4285,6 +4283,25 @@ function trendHtml(u) {
     `<span class="eq-trend" title="${t.readings} readings since ${t.since}">` +
     `↓ ${t.from}% → ${t.to}% since ${escHtml(t.since)}</span>`
   );
+}
+
+/**
+ * Rebuild a panel only when its markup actually changed.
+ *
+ * These panels re-render on every update(), which fires on every slider
+ * movement. Most of those movements change nothing they display — dragging a
+ * TARGET slider does not move the equipment outputs, which are computed from
+ * the CURRENT point — and reassigning innerHTML throws away the DOM, the
+ * listeners and any selection for nothing.
+ *
+ * @returns {boolean} true if the DOM was replaced and listeners need binding
+ */
+const lastHtml = new WeakMap();
+function paintIfChanged(host, html) {
+  if (lastHtml.get(host) === html) return false;
+  lastHtml.set(host, html);
+  host.innerHTML = html;
+  return true;
 }
 
 /** Is this hall's plan being driven by its inventory right now? */
@@ -4397,7 +4414,7 @@ function setRateSource(mode) {
  * a failure that does not happen. A kind with a single machine gets said out
  * loud too — that is a single point of failure, not a redundancy figure.
  */
-function redundancyHtml(inv) {
+function redundancyHtml(redundancy) {
   const KINDS = [
     { k: 'cool', label: 'Cooling', dec: 0 },
     { k: 'heat', label: 'Heating', dec: 0 },
@@ -4408,7 +4425,7 @@ function redundancyHtml(inv) {
   const itKW = (state.hall.calc || {}).it;
   const lines = [];
   for (const { k, label, dec } of KINDS) {
-    const r = worstSingleLoss(inv, k, evapUnitLbHr);
+    const r = redundancy[k];
     if (!r || r.worst <= 0) continue;
     const unit = baseUnitOf(k);
     const who = r.worstName ? ` <span class="cap-hint">(${escHtml(r.worstName)})</span>` : '';
@@ -4443,8 +4460,8 @@ function renderEquipment() {
   const host = document.getElementById('equip-panel');
   if (!host) return;
   const inv = state.hall.equipment || [];
-  const now = inventoryTotals(inv, evapUnitLbHr);
-  const full = inventoryNameplate(inv, evapUnitLbHr);
+  // One walk of the inventory answers every question this panel asks of it.
+  const { now, nameplate: full, redundancy } = inventoryRollup(inv, evapUnitLbHr);
 
   const rows = inv.map((u, i) => {
     const isEvap = !!u.evap;
@@ -4509,7 +4526,7 @@ function renderEquipment() {
       (now.counts.air || full.airCfm > 0
         ? `<div><span class="cap-hint">Airflow</span> ${pair(now.airCfm, full.airCfm, 'CFM', 0, true)} <span class="cap-hint">· ${now.counts.air} fan${now.counts.air === 1 ? '' : 's'}${ach ? ` · ${ach.toFixed(0)} air changes/hr` : ''}</span></div>`
         : '') +
-      `</div>` + redundancyHtml(inv) +
+      `</div>` + redundancyHtml(redundancy) +
       (now.offline || now.degraded
         ? `<div class="calc-warn" style="margin-top:6px">⚠ ${[
             now.offline ? `${now.offline} out of service` : '',
@@ -4518,7 +4535,7 @@ function renderEquipment() {
         : '')
     : '<div class="cap-hint">No equipment listed yet. Add the units this hall actually has and the rates below can be derived from them — including what is offline or fouled.</div>';
 
-  host.innerHTML =
+  const html =
     `<div class="sla-caps-label">Installed plant — each unit counted, rated and derated on its own</div>` +
     `<div class="cap-explain">List what is really in this hall. A unit's <strong>%</strong> is its condition against its own nameplate (scaled media, a tired compressor); unticking <strong>on</strong> takes it out of service entirely. Evaporative humidifiers are computed from airflow at the hall's live condition, so their capacity moves with the room.</div>` +
     `<div id="equip-rows">${rows.join('')}</div>` +
@@ -4534,6 +4551,8 @@ function renderEquipment() {
           `<button type="button" class="scn-btn" id="equip-manual">Type the rates by hand instead</button></div>`
         : `<div class="eq-add-row"><button type="button" class="scn-btn scn-btn-primary" id="equip-apply">Drive the rates below from this inventory</button></div>`
       : '');
+  // Nothing to rebind if the panel is already showing exactly this.
+  if (!paintIfChanged(host, html)) return;
 
   host.querySelectorAll('.eq-f').forEach((el) =>
     el.addEventListener(el.tagName === 'SELECT' || el.type === 'checkbox' ? 'change' : 'input', function () {
@@ -4646,13 +4665,13 @@ function renderAllHalls() {
     const inv = h.equipment || [];
     const plantBits = [];
     if (inv.length) {
-      const t = inventoryTotals(inv, evapHere);
+      const { now: t, redundancy } = inventoryRollup(inv, evapHere);
       if (t.offline) plantBits.push(`${t.offline} out of service`);
       if (t.degraded) plantBits.push(`${t.degraded} degraded`);
       // Only a FAILING redundancy check earns space here: "you cannot lose a
       // machine" is worth interrupting a scan for, "you can" is not.
       const itKW = (h.calc || {}).it;
-      const r = worstSingleLoss(inv, 'cool', evapHere);
+      const r = redundancy.cool;
       if (r && itKW > 0 && r.remaining < itKW) {
         plantBits.push(`losing ${escHtml(r.worstName || 'the largest unit')} drops below the IT load`);
       }
@@ -4675,16 +4694,18 @@ function renderAllHalls() {
     );
   });
 
-  host.innerHTML = rows.join('') ||
+  const html = rows.join('') ||
     '<div class="sv-hint">No halls yet — add one in the Data Hall card.</div>';
-  host.querySelectorAll('[data-hall]').forEach((b) =>
-    b.addEventListener('click', () => {
-      const i = +b.dataset.hall;
-      if (i === state.activeHall) return;
-      switchHall(i);
-      renderHallTabs(); renderHallEditor(); syncAllControls(); update();
-    }),
-  );
+  if (paintIfChanged(host, html)) {
+    host.querySelectorAll('[data-hall]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const i = +b.dataset.hall;
+        if (i === state.activeHall) return;
+        switchHall(i);
+        renderHallTabs(); renderHallEditor(); syncAllControls(); update();
+      }),
+    );
+  }
 
   if (sub) {
     const n = state.hallProfiles.length;

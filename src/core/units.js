@@ -30,6 +30,58 @@ export const kgToLb = (kg) => kg / 0.45359237;
 /** kPa → inches of mercury. */
 export const kPaToInHg = (kpa) => kpa * 0.2953;
 
+/** Cubic feet per minute → cubic metres per second. */
+export const cfmToM3s = (cfm) => cfm * 4.71947e-4;
+
+/**
+ * Equipment capacity units.
+ *
+ * These live here rather than beside the inventory because two different parts
+ * of the app convert the same schedule figures: the equipment inventory and
+ * the rate calculator, which an operator can use without ever listing a unit.
+ * They were separate copies of the same numbers, which is a correction waiting
+ * to be applied to one of them and not the other.
+ */
+
+/** Thermal capacity units → kW. */
+export const THERMAL_TO_KW = {
+  kw: 1,
+  ton: 3.51685, //   ton of refrigeration
+  btu: 1 / 3412.14, // BTU/hr
+  mbh: 1 / 3.41214, // thousand BTU/hr
+};
+
+/** Water-output units → lb/hr. Water ≈ 8.34 lb/gal; a pint is 1/8 gal. */
+export const WATER_TO_LBHR = {
+  lbhr: 1,
+  gph: 8.34,
+  gpd: 8.34 / 24,
+  pintday: 8.34 / 8 / 24,
+};
+
+/**
+ * Airflow units → CFM.
+ *
+ * Fans are environment plant too: a slipping belt, a loading filter or a dead
+ * fan in an array all mean less air over the coil and the media, and none of
+ * them announce themselves.
+ */
+export const AIR_TO_CFM = {
+  cfm: 1,
+  m3h: 0.5885778, //  m³/hr
+  cmm: 35.31467, //   m³/min
+  lps: 2.118880, //   litres/second
+};
+
+/** Convert a thermal capacity to kW; an unknown unit passes through. */
+export const toKW = (val, unit) => val * (THERMAL_TO_KW[unit] ?? 1);
+
+/** Convert a water output to lb/hr; an unknown unit passes through. */
+export const toLbHr = (val, unit) => val * (WATER_TO_LBHR[unit] ?? 1);
+
+/** Latent heat of vaporization used to turn a latent kW into lb/hr of water. */
+export const LATENT_BTU_PER_LB = 1060;
+
 /**
  * Temperature display units. `fromF` converts stored °F to the display unit;
  * `toF` converts typed input back. K and °C share a degree size, so a temperature
