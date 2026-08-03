@@ -11,6 +11,38 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — the rest of the planned main.js split
+
+Four more sections out, following the pattern set by the first split:
+
+- **`src/app/chart.js`** (789) — drawing the psychrometric chart *and*
+  navigating it. These moved together because they share the view window:
+  `view` is what the renderer reads and what zoom, pan and the fit buttons
+  write. Splitting them would export that mutable window across a module
+  boundary — the same coupling with more ceremony.
+- **`src/app/sensor-ui.js`** (771) — the validation forms, the calibration
+  logbook and the drift forecast. The save-file merge RULES moved with it,
+  because "a duplicate is the same sensor on the same day by the same method"
+  belongs with the data it governs, not with the file reader.
+- **`src/app/export-ui.js`** (271) — image and PDF artifacts. Everything that
+  leaves the app to be read on paper, away from the state that produced it.
+- **`src/app/training-ui.js`** (222) — the Envelope Escape Room.
+
+`src/app/main.js` is **2,627 lines**, down from 5,081 at the start of the
+split. Each extracted panel imports downward and receives the few
+"re-render the rest of the app" callbacks from the entry point.
+
+`dispT1` (°F at one decimal) moved into `src/ui/format.js`, where both the
+sensor suite and the trainer can reach it.
+
+### Known gap
+
+The four new modules are **not yet in `npm run typecheck`** — including them
+surfaces 49 pre-existing DOM-typing errors that were invisible while the code
+sat in an unchecked main.js. Turning the whole of `src/app` on shows 195.
+That is a real cleanup and it deserves its own pass rather than being buried
+in a move; the injected-callback contracts are typed here in the meantime.
+
 ### Changed — main.js split into modules
 
 `src/app/main.js` was 5,081 lines holding the whole UI. The first pieces are
