@@ -17,6 +17,9 @@ import {
   inventoryNameplate,
   ratesFromTotals,
   worstSingleLoss,
+  logCondition,
+  conditionTrend,
+  HIST_MAX,
   unitsForKind,
   baseUnitOf,
   isThermalKind,
@@ -301,6 +304,72 @@ describe('ratesFromTotals', () => {
     expect(r.rateHumLb).toBe(20); //   2 × 20 lb/hr at half condition
     expect(r.airflowCfm).toBe(15000); // 2 × 10 000 CFM at 75 %
     expect(r.rateWarmF).toBeNull(); //   no heating installed
+  });
+});
+
+describe('condition history', () => {
+  const fresh = () => normalizeEquip({ kind: 'humid', name: 'HUM-1', cap: 20 });
+
+  it('remembers where a machine has been, one reading per day', () => {
+    const u = fresh();
+    logCondition(u, 100, '2026-01-10');
+    logCondition(u, 85, '2026-03-02');
+    logCondition(u, 60, '2026-06-01');
+    expect(u.hist).toEqual([
+      { d: '2026-01-10', c: 100 },
+      { d: '2026-03-02', c: 85 },
+      { d: '2026-06-01', c: 60 },
+    ]);
+    // Fiddling with the number all afternoon is ONE observation, not six.
+    logCondition(u, 55, '2026-06-01');
+    logCondition(u, 58, '2026-06-01');
+    expect(u.hist).toHaveLength(3);
+    expect(u.hist[2]).toEqual({ d: '2026-06-01', c: 58 });
+    // An unchanged reading on a later day adds nothing to the story.
+    logCondition(u, 58, '2026-07-01');
+    expect(u.hist).toHaveLength(3);
+  });
+
+  it('keeps a bounded, ordered history through storage', () => {
+    const u = fresh();
+    for (let i = 1; i <= HIST_MAX + 5; i++) {
+      logCondition(u, 100 - i, `2026-01-${String(i).padStart(2, '0')}`);
+    }
+    expect(u.hist).toHaveLength(HIST_MAX);
+    expect(u.hist[u.hist.length - 1].c).toBe(100 - (HIST_MAX + 5)); // newest kept
+    // Whatever order storage hands them back, they come out oldest-first, and
+    // entries that are not a date and a number are dropped rather than kept.
+    const round = normalizeEquip({
+      kind: 'humid',
+      hist: [{ d: '2026-05-01', c: 70 }, { d: '2026-02-01', c: 90 }, { d: 'whenever', c: 5 }, null, { d: '2026-03-01' }],
+    });
+    expect(round.hist).toEqual([{ d: '2026-02-01', c: 90 }, { d: '2026-05-01', c: 70 }]);
+    expect(normalizeEquip({ kind: 'humid' }).hist).toEqual([]);
+  });
+
+  it('refuses to draw a trend through a single point', () => {
+    const u = fresh();
+    expect(conditionTrend(u)).toBeNull();
+    logCondition(u, 90, '2026-01-10');
+    expect(conditionTrend(u)).toBeNull(); // one reading is a fact, not a trend
+    logCondition(u, 72, '2026-05-10');
+    expect(conditionTrend(u)).toEqual({
+      from: 90, to: 72, delta: -18, since: '2026-01-10', readings: 2,
+    });
+    // Recovery after service reads as a rise, so the UI can stay quiet on it.
+    logCondition(u, 95, '2026-06-10');
+    expect(conditionTrend(u).delta).toBe(5);
+  });
+
+  it('ignores what it cannot record', () => {
+    const u = fresh();
+    logCondition(u, NaN, '2026-01-10');
+    logCondition(u, 80, 'today');
+    logCondition(null, 80, '2026-01-10');
+    expect(u.hist).toEqual([]);
+    // Out-of-range readings are clamped, not dropped — someone typed something.
+    logCondition(u, 140, '2026-01-10');
+    expect(u.hist).toEqual([{ d: '2026-01-10', c: 100 }]);
   });
 });
 

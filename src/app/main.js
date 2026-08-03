@@ -51,6 +51,7 @@ import { evapMediaOutput, effectivenessFromOutput } from '../core/evapmedia.js';
 import {
   normalizeInventory, inventoryTotals, inventoryNameplate, worstSingleLoss,
   ratesFromTotals, unitOutput, unitsForKind, isThermalKind, isAirKind, baseUnitOf,
+  logCondition, conditionTrend,
 } from '../core/equipment.js';
 import { parseTrendCsv, maxWindowedRate } from '../lib/trendcsv.js';
 import { SCENARIOS, refereeRun, TRAINER_VERSION } from '../core/trainer.js';
@@ -4270,6 +4271,22 @@ const evapLbHrAt = (tempF, rh, pressure) => (evap) => {
 /** Output per evaporative unit at the ACTIVE hall's live condition. */
 const evapUnitLbHr = (evap) => evapLbHrAt(state.aTemp, state.aRH, state.pressure)(evap);
 
+/**
+ * A unit's condition history in one line, or nothing.
+ *
+ * Only ever shown once there are two readings to compare: one number is a
+ * fact, not a trend. Only a FALL is called out — a machine recovering after
+ * service is good news and does not need to shout.
+ */
+function trendHtml(u) {
+  const t = conditionTrend(u);
+  if (!t || t.delta >= 0) return '';
+  return (
+    `<span class="eq-trend" title="${t.readings} readings since ${t.since}">` +
+    `↓ ${t.from}% → ${t.to}% since ${escHtml(t.since)}</span>`
+  );
+}
+
 /** Is this hall's plan being driven by its inventory right now? */
 const ratesAreLive = (h = state.hall) =>
   h && h.rateSource === 'inventory' && (h.equipment || []).length > 0;
@@ -4463,6 +4480,7 @@ function renderEquipment() {
       `<label class="cap-ck" title="In service"><input type="checkbox" class="eq-f" data-i="${i}" data-k="online"${u.online ? ' checked' : ''}> on</label>` +
       `<span class="eq-out">${u.online ? outTxt : 'out of service'}</span>` +
       `<button type="button" class="scn-del eq-del" data-i="${i}" title="Remove">✕</button>` +
+      trendHtml(u) +
       `</div>`
     );
   });
@@ -4528,6 +4546,12 @@ function renderEquipment() {
       else if (k === 'evapCfm') u.evap.cfm = parseFloat(this.value) || 0;
       else if (k === 'evapEff') u.evap.effPct = Math.min(100, Math.max(1, parseFloat(this.value) || 1));
       else u[k] = parseFloat(this.value) || (k === 'count' ? 1 : 0);
+      // Condition is the one field worth remembering over time: a machine
+      // fading over months is a maintenance signal, and it was being lost the
+      // moment the number was overwritten.
+      if (k === 'condPct' || k === 'evapEff') {
+        logCondition(u, k === 'evapEff' ? u.evap.effPct : u.condPct, new Date().toISOString().slice(0, 10));
+      }
       state.hall.equipment = normalizeInventory(state.hall.equipment);
       renderEquipment();
       update();

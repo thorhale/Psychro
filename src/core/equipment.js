@@ -78,6 +78,7 @@ const AIR_TO_CFM = {
  * @property {number} condPct    this unit's condition vs its own nameplate
  * @property {boolean} online    in service
  * @property {{cfm:number, effPct:number}|null} evap wetted-media parameters
+ * @property {{d:string, c:number}[]} hist dated condition readings, oldest first
  */
 
 /** Is this kind measured in thermal units (vs water output or airflow)? */
@@ -102,6 +103,59 @@ export function unitsForKind(kind) {
 
 const isNum = (v) => typeof v === 'number' && isFinite(v);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/** How many condition readings a unit keeps. Enough to see a slope. */
+export const HIST_MAX = 12;
+const isDay = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+
+/** Coerce a unit's condition history: dated readings, oldest first. */
+function normalizeHistory(raw) {
+  return (Array.isArray(raw) ? raw : [])
+    .filter((e) => e && isDay(e.d) && isNum(e.c))
+    .map((e) => ({ d: e.d, c: clamp(e.c, 0, 100) }))
+    .sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0))
+    .slice(-HIST_MAX);
+}
+
+/**
+ * Record where a unit's condition stands today.
+ *
+ * The inventory knew a machine's condition NOW but kept no memory of it, so
+ * "HUM-1 has been fading since spring" was a thing an operator held in their
+ * head or lost. One reading per day — the last write on a day wins, because a
+ * day's fiddling with a number is one observation, not six. Mutates.
+ *
+ * @param {EquipUnit} u
+ * @param {number} pct the condition being recorded
+ * @param {string} today ISO date, YYYY-MM-DD — passed in so this stays pure
+ */
+export function logCondition(u, pct, today) {
+  if (!u || !isNum(pct) || !isDay(today)) return u;
+  const c = clamp(pct, 0, 100);
+  const h = Array.isArray(u.hist) ? u.hist : (u.hist = []);
+  const last = h[h.length - 1];
+  if (last && last.d === today) last.c = c;
+  else if (!last || last.c !== c) h.push({ d: today, c });
+  if (h.length > HIST_MAX) h.splice(0, h.length - HIST_MAX);
+  return u;
+}
+
+/**
+ * How a unit's condition has moved, for a line an operator can act on.
+ *
+ * @returns {{from:number, to:number, delta:number, since:string, readings:number}|null}
+ *   null until there are two readings to compare — one number is a fact, not
+ *   a trend, and drawing a slope through it would be invention.
+ */
+export function conditionTrend(u) {
+  const h = (u && Array.isArray(u.hist) ? u.hist : []);
+  if (h.length < 2) return null;
+  const first = h[0], last = h[h.length - 1];
+  return {
+    from: first.c, to: last.c, delta: last.c - first.c,
+    since: first.d, readings: h.length,
+  };
+}
 
 /**
  * Coerce one inventory entry into a complete, typed unit.
@@ -134,6 +188,7 @@ export function normalizeEquip(u) {
     name: typeof u.name === 'string' ? u.name.slice(0, 60) : '',
     count: isNum(u.count) ? clamp(Math.round(u.count), 1, 999) : 1,
     cap: isNum(u.cap) && u.cap >= 0 ? u.cap : 0,
+    hist: normalizeHistory(u.hist),
     unit,
     condPct: isNum(u.condPct) ? clamp(u.condPct, 0, 100) : 100,
     online: u.online !== false, // absent means in service

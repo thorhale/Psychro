@@ -1081,6 +1081,34 @@ test.describe('equipment inventory', () => {
     await expect(page.locator('.eq-redundancy')).toContainText('20.0 lb/hr left');
   });
 
+  test("a day's fiddling with a condition is one reading, not a trend", async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('.eq-add[data-kind="humid"]:not([data-evap])').click();
+    const cond = () => page.locator('.eq-row').first().locator('[data-k="condPct"]');
+    await page.locator('.eq-row').first().locator('[data-k="cap"]').fill('20');
+    await page.locator('.eq-row').first().locator('[data-k="cap"]').dispatchEvent('input');
+
+    // Three edits in one sitting are one observation of one machine on one
+    // day. Reading a slope out of that would be inventing a decline.
+    for (const v of ['90', '75', '60']) {
+      await cond().fill(v);
+      await cond().dispatchEvent('input');
+    }
+    await expect(page.locator('.eq-trend')).toHaveCount(0);
+
+    // The reading itself is kept, so tomorrow's edit has something to compare
+    // against — it survives a reload with the rest of the hall.
+    await page.reload();
+    await expandAll(page);
+    await expect(cond()).toHaveValue('60');
+    const kept = await page.evaluate(
+      () => JSON.parse(localStorage.getItem('sdc_hep_v4') || '{}')
+        ?.hallProfiles?.[0]?.equipment?.[0]?.hist?.length,
+    );
+    expect(kept).toBe(1);
+  });
+
   test('the inventory belongs to its hall', async ({ page }) => {
     await page.goto('./');
     await expandAll(page);

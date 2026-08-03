@@ -11,6 +11,22 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — equipment condition history
+
+The inventory knew a machine's condition today but kept no memory of it, so
+"HUM-1 has been fading since spring" was something an operator held in their
+head or lost.
+
+- Each unit now keeps its **dated condition readings** (the last twelve), and a
+  row whose condition has fallen says how far and since when.
+- **One reading per day.** An afternoon spent adjusting a number is one
+  observation of one machine, not six, and reading a slope out of that would
+  be inventing a decline.
+- **Two readings minimum** before anything is drawn — a single number is a
+  fact, not a trend.
+- **Only falls are called out.** A machine serviced back to full is good news
+  and does not need to shout.
+
 ### Added — the all-halls overview can see the plant
 
 The overview was blind to the equipment: a hall with two CRAHs tagged out and
