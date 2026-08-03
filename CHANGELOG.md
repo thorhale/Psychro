@@ -11,6 +11,37 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — main.js split into modules
+
+`src/app/main.js` was 5,081 lines holding the whole UI. The first pieces are
+out, chosen because they were the ones other pieces kept reaching for:
+
+- **`src/app/state.js`** — the state object. This was the blocker: while it
+  lived in main.js, any panel extracted out of main.js had to import back into
+  it, and a cycle between an entry point and the things it starts up is a
+  boot-order bug waiting for a bad day.
+- **`src/ui/format.js`** — display conversion, including the SLA-verdict
+  wording. A panel that reaches into the entry point for its formatting is a
+  panel that eventually prints a stored °F into a °C interface.
+- **`src/ui/escape.js`** — HTML escaping. A panel that has to reach back into
+  main.js for its escaping is a panel that will be written without any.
+- **`src/app/hallphysics.js`** — the hall's thermal capacitance and current
+  moisture, shared by the rate calculator and the inventory so the two can
+  never disagree about the mass they act on.
+- **`src/app/equipment-ui.js`** — the equipment panel and the all-halls
+  overview, 530 lines. Re-rendering the rest of the app belongs to the entry
+  point, so main.js injects those few callbacks at boot rather than being
+  imported back into.
+
+main.js is 4,507 lines; the import graph now points one way.
+
+### Fixed
+
+- `npm run typecheck` never looked at `src/app` or `src/ui`, so a broken
+  import in either was caught only by the end-to-end tests — if at all. The
+  extracted modules are now in scope, and the DOM and unit-string types they
+  turned up are fixed rather than suppressed.
+
 ### Changed — cleanup and optimization pass
 
 - **One walk of the inventory instead of seven.** The equipment panel asked
