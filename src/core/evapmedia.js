@@ -40,10 +40,8 @@
  */
 
 import { humidityRatio, specificVolume, wetBulb } from './psychro.js';
-import { fToC } from './units.js';
+import { fToC, cfmToM3s } from './units.js';
 
-/** 1 CFM in m³/s. */
-const CFM_TO_M3S = 4.71947e-4;
 /** kg/s → lb/hr. */
 const KGS_TO_LBHR = 2.20462262 * 3600;
 
@@ -79,7 +77,7 @@ export function evapMediaOutput({ cfm, tempF, rh, effPct, pressure }) {
   const gain = Math.max(0, (wMax - wIn) * eps); // kg/kg actually picked up
   const wOut = wIn + gain;
 
-  const mDaPerS = (cfm * CFM_TO_M3S) / specificVolume(tc, wIn, pressure); // kg dry air/s
+  const mDaPerS = cfmToM3s(cfm) / specificVolume(tc, wIn, pressure); // kg dry air/s
   return {
     lbPerHr: mDaPerS * gain * KGS_TO_LBHR,
     wIn,

@@ -33,39 +33,10 @@
  * lb/hr lives here because it is unit algebra with no physics in it.
  */
 
+import { THERMAL_TO_KW, WATER_TO_LBHR, AIR_TO_CFM } from './units.js';
+
 /** Equipment kinds the environment plant is made of. */
 export const EQUIP_KINDS = ['cool', 'heat', 'dehum', 'humid', 'air'];
-
-/** Thermal capacity units → kW. */
-const THERMAL_TO_KW = {
-  kw: 1,
-  ton: 3.51685, //   ton of refrigeration
-  btu: 1 / 3412.14, // BTU/hr
-  mbh: 1 / 3.41214, // thousand BTU/hr
-};
-
-/** Water-output units → lb/hr. Water ≈ 8.34 lb/gal; a pint is 1/8 gal. */
-const WATER_TO_LBHR = {
-  lbhr: 1,
-  gph: 8.34,
-  gpd: 8.34 / 24,
-  pintday: 8.34 / 8 / 24,
-};
-
-/**
- * Airflow units → CFM.
- *
- * Fans are environment plant too: a slipping belt, a loading filter or a dead
- * fan in an array all mean less air over the coil and the media, and none of
- * them announce themselves. Air movement gets counted and derated like
- * everything else.
- */
-const AIR_TO_CFM = {
-  cfm: 1,
-  m3h: 0.5885778, //  m³/hr
-  cmm: 35.31467, //   m³/min
-  lps: 2.118880, //   litres/second
-};
 
 /**
  * @typedef {object} EquipUnit
@@ -215,17 +186,27 @@ export function normalizeInventory(raw) {
  */
 export function unitOutput(u, evapLbHr) {
   if (!u || !u.online) return 0;
-  const cond = u.condPct / 100;
+  return fullHealthOutput(u, evapLbHr) * (u.condPct / 100);
+}
+
+/**
+ * What a line item would deliver at 100 % condition, ignoring in-service state.
+ *
+ * The nameplate figure and the live figure differ only by the condition, so
+ * deriving one from the other keeps a wetted-media unit to a single
+ * psychrometric evaluation instead of one per question asked about it.
+ */
+function fullHealthOutput(u, evapLbHr) {
   if (u.evap) {
     // No airflow, no evaporation — independent of whatever model the caller
     // hands in. A unit awaiting its airflow figure produces nothing.
     if (!(u.evap.cfm > 0)) return 0;
     if (typeof evapLbHr !== 'function') return 0;
     const each = evapLbHr(u.evap);
-    return isNum(each) && each > 0 ? each * u.count * cond : 0;
+    return isNum(each) && each > 0 ? each * u.count : 0;
   }
   const factor = scaleFor(u.kind)[u.unit];
-  return (u.cap || 0) * (factor ?? 1) * u.count * cond;
+  return (u.cap || 0) * (factor ?? 1) * u.count;
 }
 
 /**
@@ -252,21 +233,13 @@ export function perMachineOutput(u, evapLbHr) {
  *   `degraded` count line items needing attention, for an at-a-glance banner.
  */
 export function inventoryTotals(inv, evapLbHr) {
-  const t = {
-    coolKW: 0, heatKW: 0, dehumLbHr: 0, humidLbHr: 0, airCfm: 0,
-    counts: { cool: 0, heat: 0, dehum: 0, humid: 0, air: 0 },
-    offline: 0, degraded: 0,
-  };
-  const bucket = { cool: 'coolKW', heat: 'heatKW', dehum: 'dehumLbHr', humid: 'humidLbHr', air: 'airCfm' };
-  for (const u of Array.isArray(inv) ? inv : []) {
-    if (!u || !EQUIP_KINDS.includes(u.kind)) continue;
-    if (!u.online) { t.offline++; continue; }
-    if (u.condPct < 100) t.degraded++;
-    t.counts[u.kind] += u.count;
-    t[bucket[u.kind]] += unitOutput(u, evapLbHr);
-  }
-  return t;
+  return inventoryRollup(inv, evapLbHr).now;
 }
+
+/** Which total each kind adds into. */
+const BUCKET = {
+  cool: 'coolKW', heat: 'heatKW', dehum: 'dehumLbHr', humid: 'humidLbHr', air: 'airCfm',
+};
 
 /**
  * Turn inventory totals into the hall's four planning rates.
@@ -334,17 +307,64 @@ export function ratesFromTotals(totals, ctx = {}) {
  *   null when this kind has nothing in service to lose.
  */
 export function worstSingleLoss(inv, kind, evapLbHr) {
-  let total = 0, worst = 0, worstName = '', machines = 0;
+  return inventoryRollup(inv, evapLbHr).redundancy[kind];
+}
+
+/**
+ * Everything the UI asks of an inventory, in ONE walk of it.
+ *
+ * The panel used to ask seven separate questions — totals, nameplate, and the
+ * redundancy of each of five kinds — and each one walked the whole list
+ * calling `unitOutput`, which for wetted media means a full psychrometric
+ * evaluation. Seven passes per render, on a render that runs on every slider
+ * movement. The questions all fall out of the same walk, so they now share it.
+ *
+ * @param {EquipUnit[]} inv normalized inventory
+ * @param {(evap:{cfm:number, effPct:number}) => number} [evapLbHr]
+ * @returns {{now: ReturnType<typeof inventoryTotals>,
+ *            nameplate: ReturnType<typeof inventoryTotals>,
+ *            redundancy: Record<string, {total:number, worst:number,
+ *              worstName:string, remaining:number, machines:number}|null>}}
+ */
+export function inventoryRollup(inv, evapLbHr) {
+  const blank = () => ({
+    coolKW: 0, heatKW: 0, dehumLbHr: 0, humidLbHr: 0, airCfm: 0,
+    counts: { cool: 0, heat: 0, dehum: 0, humid: 0, air: 0 },
+    offline: 0, degraded: 0,
+  });
+  const now = blank(), nameplate = blank();
+  /** @type {Record<string, any>} */
+  const red = { cool: null, heat: null, dehum: null, humid: null, air: null };
+
   for (const u of Array.isArray(inv) ? inv : []) {
-    if (!u || u.kind !== kind || !u.online) continue;
-    const out = unitOutput(u, evapLbHr);
-    total += out;
-    machines += u.count;
-    const each = perMachineOutput(u, evapLbHr);
-    if (each > worst) { worst = each; worstName = u.name || ''; }
+    if (!u || !EQUIP_KINDS.includes(u.kind)) continue;
+    const key = BUCKET[u.kind];
+
+    // Nameplate is this same unit at full health and in service, so it is the
+    // live output divided back out by the condition rather than a second walk
+    // over a copied array.
+    const cond = u.condPct / 100;
+    const atFull = fullHealthOutput(u, evapLbHr);
+    nameplate[key] += atFull;
+    nameplate.counts[u.kind] += u.count;
+
+    if (!u.online) { now.offline++; continue; }
+    if (u.condPct < 100) now.degraded++;
+    now.counts[u.kind] += u.count;
+    const out = atFull * cond;
+    now[key] += out;
+
+    // Redundancy: the largest SINGLE machine of this kind that is running.
+    const each = u.count > 0 ? out / u.count : 0;
+    const r = red[u.kind] || (red[u.kind] = { total: 0, worst: 0, worstName: '', remaining: 0, machines: 0 });
+    r.total += out;
+    r.machines += u.count;
+    if (each > r.worst) { r.worst = each; r.worstName = u.name || ''; }
   }
-  if (machines === 0) return null;
-  return { total, worst, worstName, remaining: total - worst, machines };
+  for (const k of EQUIP_KINDS) {
+    if (red[k]) red[k].remaining = red[k].total - red[k].worst;
+  }
+  return { now, nameplate, redundancy: red };
 }
 
 /**
@@ -353,6 +373,5 @@ export function worstSingleLoss(inv, kind, evapLbHr) {
  * sentence an operator can act on; "you have 120 lb/hr" is not.
  */
 export function inventoryNameplate(inv, evapLbHr) {
-  const pristine = (Array.isArray(inv) ? inv : []).map((u) => ({ ...u, condPct: 100, online: true }));
-  return inventoryTotals(pristine, evapLbHr);
+  return inventoryRollup(inv, evapLbHr).nameplate;
 }
