@@ -35,6 +35,15 @@ export const dispTs = (f) => Math.round(dispT(f)).toString();
 export const tLabel = () => tU().label;
 
 /**
+ * °F → the display unit at one decimal.
+ *
+ * Sensor work and the trainer both need a tenth of a degree: a validation
+ * verdict turns on it, and rounding a training run to whole degrees would
+ * hide the drift the drill is about.
+ */
+export const dispT1 = (f) => (Math.round(tU().fromF(f) * 10) / 10).toString();
+
+/**
  * Convert a temperature DIFFERENCE. K and °C degrees are the same size, so a
  * delta converts differently from an absolute temperature — printing a 10 °F
  * rise as "-12 °C" is the bug this exists to prevent.
