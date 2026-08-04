@@ -81,7 +81,9 @@ export default defineConfig({
     },
     {
       name: 'built',
-      testMatch: ['app.spec.js', 'visual.spec.js'],
+      // perf budgets run against the DEPLOYED artifact — the thing an
+      // operator actually loads — and only there, so they are measured once.
+      testMatch: ['app.spec.js', 'visual.spec.js', 'perf.spec.js'],
       use: { ...chromium, baseURL: `${ROOT}/dist/` },
     },
   ],
