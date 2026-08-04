@@ -24,6 +24,7 @@ import { SV_TOL, svVerdict } from '../core/svverdict.js';
 import { driftFit } from '../core/driftfit.js';
 import { normalizeSensorLog, normalizeSensorRegistry } from '../state/schema.js';
 import { saveFile as platformSaveFile, storage } from '../platform/index.js';
+import { inp } from '../ui/dom.js';
 
 /** What only the entry point can do: clamp inputs and refresh the app. */
 /**
@@ -232,7 +233,7 @@ const SV_METHODS = {
 
   boil() {
     const tBoilC = boilingPointC(state.pressure);
-    const note = document.getElementById('sv-boil-note');
+    const note = inp('sv-boil-note');
     if (tBoilC == null)
       return { html: '<span class="calc-warn">Site pressure is outside the boiling-reference window.</span>', summary: 'out of range' };
     const tBoilF = cToF(tBoilC);
@@ -284,9 +285,9 @@ const SV_METHODS = {
 };
 
 export function renderSensorValidation() {
-  const res = document.getElementById('sv-res');
+  const res = inp('sv-res');
   if (!res) return;
-  const pEl = document.getElementById('sv-pressure');
+  const pEl = inp('sv-pressure');
   if (pEl) pEl.textContent = `${state.pressure.toFixed(1)} kPa`;
 
   // Re-display temp boxes only when the unit actually changed — never rewrite
@@ -295,7 +296,7 @@ export function renderSensorValidation() {
     svLastUnit = state.tempUnit;
     [['sv-db', 'dbF'], ['sv-wb', 'wbF'], ['sv-dp-db', 'dpDbF'], ['sv-dp-dp', 'dpDpF'],
      ['sv-salt-t', 'saltTF'], ['sv-ice-t', 'iceTF'], ['sv-boil-t', 'boilTF']].forEach(([id, key]) => {
-      const el = document.getElementById(id);
+      const el = inp(id);
       if (el && el !== document.activeElement)
         el.value = svState[key] != null ? dispT1(svState[key]) : '';
     });
@@ -304,12 +305,12 @@ export function renderSensorValidation() {
   const out = SV_METHODS[svState.tab]();
   res.innerHTML = out.html;
   ladderSpeak(res);
-  const btn = document.getElementById('sv-to-current');
+  const btn = inp('sv-to-current');
   if (btn) {
     btn.disabled = !out.canSetCurrent;
     btn.style.display = svState.tab === 'psy' || svState.tab === 'dp' ? '' : 'none';
   }
-  const summary = document.getElementById('sv-summary');
+  const summary = inp('sv-summary');
   if (summary) {
     // Recall status stays visible even while the card is collapsed — a
     // logbook that only speaks when opened is not a recall system.
@@ -323,7 +324,7 @@ export function renderSensorValidation() {
   }
   svSetCurrent = out.canSetCurrent || null;
   svLoggable = out.loggable || null;
-  const logBtn = document.getElementById('sv-log');
+  const logBtn = inp('sv-log');
   if (logBtn) logBtn.disabled = !svLoggable;
 }
 let svSetCurrent = null;
@@ -385,7 +386,7 @@ function upsertSensorMeta(name, patch) {
  * keeps the defaults' ratios (RH 2→5 = 2.5×, temp 0.9→1.8 = 2×).
  */
 function svActiveTol() {
-  const meta = sensorMetaFor(document.getElementById('sv-sensor-label')?.value);
+  const meta = sensorMetaFor(inp('sv-sensor-label')?.value);
   return {
     rhPass: meta?.specRh ?? SV_TOL.rhPass,
     rhMarginal: meta?.specRh != null ? meta.specRh * 2.5 : SV_TOL.rhMarginal,
@@ -480,7 +481,7 @@ function svlogSection(scoped, qty, meta) {
 }
 
 export function renderSensorLogbook() {
-  const host = document.getElementById('sv-logbook');
+  const host = inp('sv-logbook');
   if (!host) return;
   // Union of logged AND registered names: a sensor that arrived via a save
   // file (or whose history was deleted) was unreachable in this dropdown
@@ -494,11 +495,11 @@ export function renderSensorLogbook() {
       '<div class="sv-hint">No checks logged yet. Run any method with a sensor reading, name the sensor, and press “＋ Log check” — history turns single verdicts into a drift trend.</div>';
     return;
   }
-  const sel = document.getElementById('svlog-sel');
+  const sel = inp('svlog-sel');
   // The sensor named in the label box wins: the spec editor below must edit
   // the SAME instrument the verdict above is grading. Otherwise typing a spec
   // silently retuned whichever sensor happened to sort first alphabetically.
-  const typed = document.getElementById('sv-sensor-label')?.value.trim();
+  const typed = inp('sv-sensor-label')?.value.trim();
   const selected = sensors.includes(typed)
     ? typed
     : sensors.includes(sel?.value) ? sel.value : sensors[0];
@@ -548,9 +549,9 @@ export function renderSensorLogbook() {
     `<button class="scn-btn" id="svlog-csv">⇩ Export logbook CSV</button>` +
     `<button class="scn-btn" id="svlog-del">🗑 Delete this sensor's history</button></div>`;
 
-  document.getElementById('svlog-sel').addEventListener('change', renderSensorLogbook);
+  inp('svlog-sel').addEventListener('change', renderSensorLogbook);
   const regWire = (id, key, conv) => {
-    document.getElementById(id)?.addEventListener('input', function () {
+    inp(id)?.addEventListener('input', function () {
       const v = parseFloat(this.value);
       upsertSensorMeta(selected, { [key]: isNaN(v) || v <= 0 ? null : conv(v) });
       renderSensorValidation(); // grades + due counts follow the registry live
@@ -560,11 +561,11 @@ export function renderSensorLogbook() {
   regWire('svreg-rh', 'specRh', (v) => v);
   regWire('svreg-t', 'specTF', (v) => v / deltaFromF(1, state.tempUnit || 'F'));
   regWire('svreg-days', 'calIntervalDays', (v) => Math.round(v));
-  document.getElementById('svlog-more')?.addEventListener('click', () => {
+  inp('svlog-more')?.addEventListener('click', () => {
     svlogShowAll = !svlogShowAll;
     renderSensorLogbook();
   });
-  document.getElementById('svlog-csv')?.addEventListener('click', () => {
+  inp('svlog-csv')?.addEventListener('click', () => {
     // Hand-rolled CSV (zero deps): quote everything, double internal quotes.
     const q = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
     const head = ['date', 'sensor', 'hall', 'site', 'method', 'quantity', 'reference', 'uncertainty', 'reading', 'error', 'by'];
@@ -576,7 +577,7 @@ export function renderSensorLogbook() {
     );
     platformSaveFile(shell.exportName('sensor-logbook', 'csv'), lines.join('\n'));
   });
-  document.getElementById('svlog-del').addEventListener('click', async () => {
+  inp('svlog-del').addEventListener('click', async () => {
     const ok = await confirmDialog({
       title: 'Delete history',
       message: `Delete all ${entries.length} logged check(s) for "${selected}"? This cannot be undone.`,
@@ -592,20 +593,20 @@ export function renderSensorLogbook() {
 }
 
 // Naming a registered sensor re-grades the live verdict against ITS spec.
-document.getElementById('sv-sensor-label')?.addEventListener('input', () => {
+inp('sv-sensor-label')?.addEventListener('input', () => {
   renderSensorValidation();
   renderSensorLogbook(); // follow the named sensor's history and spec editor
 });
 
-document.getElementById('sv-log')?.addEventListener('click', () => {
+inp('sv-log')?.addEventListener('click', () => {
   if (!svLoggable) return;
-  const label = document.getElementById('sv-sensor-label')?.value.trim();
+  const label = inp('sv-sensor-label')?.value.trim();
   if (!label) {
     toast('Name the sensor first (e.g. "CRAH-3 supply") so its history has a home.', { kind: 'warn' });
-    document.getElementById('sv-sensor-label')?.focus();
+    inp('sv-sensor-label')?.focus();
     return;
   }
-  const tech = document.getElementById('sv-tech')?.value.trim();
+  const tech = inp('sv-tech')?.value.trim();
   const entry = {
     sensor: label,
     method: svState.tab,
@@ -631,11 +632,11 @@ document.getElementById('sv-log')?.addEventListener('click', () => {
 // ── Suite wiring: tabs, per-method inputs, shared actions ──────────────────
 const SV_TABS = ['psy', 'dp', 'salt', 'ice', 'boil', 'ref'];
 for (const tab of SV_TABS) {
-  document.getElementById(`sv-tab-${tab}`).addEventListener('click', () => {
+  inp(`sv-tab-${tab}`).addEventListener('click', () => {
     svState.tab = tab;
     for (const t of SV_TABS) {
-      document.getElementById(`sv-tab-${t}`).setAttribute('aria-selected', String(t === tab));
-      document.getElementById(`sv-pane-${t}`).classList.toggle('active', t === tab);
+      inp(`sv-tab-${t}`).setAttribute('aria-selected', String(t === tab));
+      inp(`sv-pane-${t}`).classList.toggle('active', t === tab);
     }
     renderSensorValidation();
   });
@@ -644,7 +645,7 @@ for (const tab of SV_TABS) {
 // The salt list comes from the reference module — the UI cannot drift from
 // the data it grades against.
 {
-  const sel = document.getElementById('sv-salt-sel');
+  const sel = inp('sv-salt-sel');
   for (const s of SALTS) {
     const o = document.createElement('option');
     o.value = s.id;
@@ -654,7 +655,7 @@ for (const tab of SV_TABS) {
   sel.value = svState.saltId;
   sel.addEventListener('change', () => {
     svState.saltId = sel.value;
-    const note = document.getElementById('sv-salt-note');
+    const note = inp('sv-salt-note');
     const salt = SALTS.find((s) => s.id === sel.value);
     if (note && salt) {
       const slope = saltRhSlope(sel.value, 25);
@@ -671,7 +672,7 @@ for (const tab of SV_TABS) {
 
 // Chamber-temp uncertainty: entered as a temperature DELTA in the active
 // display unit, stored canonically in ±°C.
-document.getElementById('sv-salt-ut').addEventListener('input', function () {
+inp('sv-salt-ut').addEventListener('input', function () {
   const v = parseFloat(this.value);
   svState.saltUTc = isNaN(v) || v < 0 ? 0.5 : v / dispDeltaT(1) / 1.8;
   renderSensorValidation();
@@ -679,7 +680,7 @@ document.getElementById('sv-salt-ut').addEventListener('input', function () {
 
 /** Wire a temperature input (active display unit → canonical °F). */
 function svTempWire(id, key) {
-  document.getElementById(id).addEventListener('input', function () {
+  inp(id).addEventListener('input', function () {
     const v = parseFloat(this.value);
     svState[key] = isNaN(v) ? null : tU().toF(v);
     renderSensorValidation();
@@ -687,7 +688,7 @@ function svTempWire(id, key) {
 }
 /** Wire a plain numeric input (RH %, uncertainties). */
 function svNumWire(id, key, lo = -Infinity, hi = Infinity) {
-  document.getElementById(id).addEventListener('input', function () {
+  inp(id).addEventListener('input', function () {
     const v = parseFloat(this.value);
     svState[key] = isNaN(v) ? null : Math.min(hi, Math.max(lo, v));
     renderSensorValidation();
@@ -708,20 +709,20 @@ svNumWire('sv-ref-val', 'refVal');
 svNumWire('sv-ref-u', 'refU', 0, 50);
 svNumWire('sv-ref-reading', 'refReading');
 
-document.getElementById('sv-method').addEventListener('change', function () {
+inp('sv-method').addEventListener('change', function () {
   svState.method = this.value;
   renderSensorValidation();
 });
-document.getElementById('sv-ref-qty').addEventListener('change', function () {
+inp('sv-ref-qty').addEventListener('change', function () {
   svState.refQty = this.value;
   const isRh = this.value === 'rh';
-  document.getElementById('sv-ref-val-label').textContent = isRh
+  inp('sv-ref-val-label').textContent = isRh
     ? 'Reference reads (RH %)' : 'Reference reads (temp)';
-  document.getElementById('sv-ref-reading-label').textContent = isRh
+  inp('sv-ref-reading-label').textContent = isRh
     ? 'Sensor under test reads (RH %)' : 'Sensor under test reads (temp)';
   renderSensorValidation();
 });
-document.getElementById('sv-to-current').addEventListener('click', function () {
+inp('sv-to-current').addEventListener('click', function () {
   if (!svSetCurrent) return;
   state.aTemp = shell.clampF(svSetCurrent.tempF);
   state.aRH = shell.clampRH(svSetCurrent.rh);
@@ -731,7 +732,7 @@ document.getElementById('sv-to-current').addEventListener('click', function () {
 
 // Ladder mode toggle — only shown where speech synthesis exists at all.
 if ('speechSynthesis' in window) {
-  const ladderBtn = document.getElementById('sv-ladder');
+  const ladderBtn = inp('sv-ladder');
   if (ladderBtn) {
     ladderBtn.style.display = '';
     ladderBtn.addEventListener('click', () => {
@@ -739,7 +740,7 @@ if ('speechSynthesis' in window) {
       ladderLastSpoken = ''; // re-announce the verdict on screen right now
       ladderBtn.setAttribute('aria-pressed', String(ladderOn));
       ladderBtn.classList.toggle('scn-btn-primary', ladderOn);
-      document.getElementById('sv-res')?.classList.toggle('sv-ladder-on', ladderOn);
+      inp('sv-res')?.classList.toggle('sv-ladder-on', ladderOn);
       if (!ladderOn) window.speechSynthesis.cancel();
       renderSensorValidation();
     });

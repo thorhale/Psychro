@@ -1,21 +1,11 @@
 /**
- * Stream Data Centers site catalog + branding strings.
+ * Stream Data Centers site catalog.
  *
- * Pure data — updating the campus list or renaming the product touches only this
- * file. Elevations are metro-level approximations (ft); fine-tune per campus pad
+ * Pure data — updating the campus list touches only this file. Naming and
+ * colours live in src/config/brand.js. Elevations are metro-level approximations (ft); fine-tune per campus pad
  * in the hall profile.
  */
 
-export const BRAND = {
-  company: 'STREAM',
-  companySub: 'DATA CENTERS',
-  product: 'Hall Environment Planner',
-  tagline: 'Critical Engineering · ASHRAE TC 9.9',
-  /** Navy → teal palette used by the export header and footer. */
-  navy: '#1a3a5c',
-  navyDark: '#13263a',
-  teal: '#00a9ce',
-};
 
 export const STREAM_SITES_BUILTIN = [
   // Alabama

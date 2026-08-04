@@ -10,6 +10,7 @@
 
 import { toast } from '../ui/notify.js';
 import { storage } from '../platform/index.js';
+import { inp } from '../ui/dom.js';
 
 /**
  * Tell the active worker which same-origin URLs this page actually loaded, so
@@ -86,14 +87,14 @@ export function initInstallBanner() {
 
   const isStandalone =
     window.matchMedia('(display-mode: standalone)').matches ||
-    window.navigator.standalone === true;
+    /** @type {any} */ (window.navigator).standalone === true;
   if (isStandalone) return; // already running as the installed app
 
   function recentlyDismissed() {
     const t = +(storage.get(DISMISS_KEY) ?? 0);
     return t && Date.now() - t < DISMISS_DAYS * 86400000;
   }
-  const banner = document.getElementById('install-banner');
+  const banner = inp('install-banner');
   function show() {
     if (banner) banner.classList.add('show');
   }
@@ -106,15 +107,15 @@ export function initInstallBanner() {
   }
   if (!banner || recentlyDismissed()) return;
 
-  document.getElementById('install-dismiss').addEventListener('click', dismiss);
+  inp('install-dismiss').addEventListener('click', dismiss);
 
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !/** @type {any} */ (window).MSStream;
   if (isIOS) {
     // No beforeinstallprompt on iOS — show the manual Share-sheet steps.
-    document.getElementById('install-title').textContent = 'Add to Home Screen';
-    document.getElementById('install-sub').textContent =
+    inp('install-title').textContent = 'Add to Home Screen';
+    inp('install-sub').textContent =
       'Tap Share ⬆ then "Add to Home Screen" — opens fullscreen, works offline';
-    document.getElementById('install-go').style.display = 'none';
+    inp('install-go').style.display = 'none';
     show();
     return;
   }
@@ -125,10 +126,10 @@ export function initInstallBanner() {
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e;
-    document.getElementById('install-title').textContent = 'Install this app';
-    document.getElementById('install-sub').textContent =
+    inp('install-title').textContent = 'Install this app';
+    inp('install-sub').textContent =
       'Works offline · opens fullscreen like a native app';
-    document.getElementById('install-go').style.display = '';
+    inp('install-go').style.display = '';
     show();
   });
 
@@ -144,22 +145,22 @@ export function initInstallBanner() {
     const ua = navigator.userAgent;
     const isFirefox = /firefox/i.test(ua);
     const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(ua);
-    const go = document.getElementById('install-go');
+    const go = inp('install-go');
     if (isFirefox || isSafari) {
       // No install path in these browsers — lead with the file.
-      document.getElementById('install-title').textContent = 'Keep this app';
-      document.getElementById('install-sub').textContent =
+      inp('install-title').textContent = 'Keep this app';
+      inp('install-sub').textContent =
         'Download it as one file — opens anywhere, works offline, no install needed';
       if (go) go.style.display = 'none';
     } else {
-      document.getElementById('install-title').textContent = 'Install this app';
-      document.getElementById('install-sub').textContent =
+      inp('install-title').textContent = 'Install this app';
+      inp('install-sub').textContent =
         'Use your browser menu ⋮ → "Install", or download it as a single file';
       if (go) go.style.display = 'none'; // no saved event; our button can't prompt
     }
     show();
   }, 3000);
-  document.getElementById('install-go').addEventListener('click', async () => {
+  inp('install-go').addEventListener('click', async () => {
     if (!deferredPrompt) {
       hide();
       return;

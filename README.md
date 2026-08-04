@@ -36,7 +36,7 @@ blockworld/           independent bonus voxel game (untouched by the build)
 ```bash
 npm ci
 npm run dev            # live-reload dev server
-npm test               # 278 tests: oracle, invariants, consistency, assets, schema, platform
+npm test               # 287 tests: oracle, invariants, consistency, assets, schema, platform
 npm run lint
 npm run typecheck
 npm run analyze        # per-property accuracy table vs CoolProp
@@ -106,6 +106,28 @@ debug APK and compiles the iOS project with signing disabled. Everything needed
 to ship to the stores — listing copy, both privacy questionnaires, signing steps
 and secrets — is in [`docs/store/`](docs/store/).
 
+## Swapping the branding
+
+Naming and colours live in one file, `src/config/brand.js`, and the palette is
+**sampled from the artwork** rather than typed beside it:
+
+```bash
+# drop new logo files into assets/, then
+npm run brand:sample              # report what the images contain
+npm run brand:sample -- --write   # rewrite the palette in src/config/brand.js
+```
+
+The sampler decodes the PNGs (hand-rolled on `node:zlib` — no dependencies),
+finds the dominant saturated colour of the mark, and derives the shades plus an
+interactive accent from its hue. The accent's saturation and lightness are
+fixed rather than sampled, so a logo in any hue still yields something legible
+on the dark interface.
+
+Text is swapped by editing `BRAND` in the same file; the markup carries
+readable defaults tagged `data-brand="…"` which `applyBrand()` replaces at
+boot. `test/brand.test.js` fails if any module starts hardcoding a palette hex
+again — which is exactly what made the previous branding config inert.
+
 ## Data & privacy
 
 Saved scenarios, halls, SLAs, and custom sites live on each person's own device
@@ -118,7 +140,7 @@ writes — export a save file when you see that warning.
 
 ## Validation
 
-- **CI on every push**: lint, typecheck, 278 tests (CoolProp oracle, physical
+- **CI on every push**: lint, typecheck, 287 tests (CoolProp oracle, physical
   invariants over seeded-random states, cross-surface consistency, asset layout,
   storage migration, platform adapters), the accuracy report, 46 bundle-integrity
   checks, and 180 Playwright tests covering all three artifacts — the raw-served

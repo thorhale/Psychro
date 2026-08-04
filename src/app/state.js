@@ -60,6 +60,11 @@ export const state = {
   // dpMaxF null = no dew-point cap. maxDtHr/maxDrhHr = ASHRAE ramp limits.
   // Customer SLAs are pure contracts: envelope + ramp limits only. The Data
   // Hall above owns site, elevation, volume, and plant. dpMaxF null = no cap.
+  /**
+   * Customer contracts. Typed so an artifact that prints a bound — the door
+   * placard, the briefing — is checked against the field actually existing.
+   * @type {SlaProfile[]}
+   */
   slaProfiles: [
     { name:'Base SLA', tMinF:50, tMaxF:95, rhMin:5, rhMax:80, dpMaxF:null,  maxDtHr:18, maxDrhHr:20, locked:true },
     { name:'Customer 1 (ASHRAE A1)', tMinF:59, tMaxF:89.6, rhMin:8, rhMax:80, dpMaxF:62.6, maxDtHr:9, maxDrhHr:20 },

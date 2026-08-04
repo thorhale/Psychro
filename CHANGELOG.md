@@ -11,6 +11,49 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — branding is swappable, and the palette is sampled from the artwork
+
+There was a `BRAND` config object that nothing imported, while the real hex
+codes sat inline in the stylesheet, the toast styles and the PDF renderer.
+"Change it here" changed nothing.
+
+- **`src/config/brand.js` is now the single source** for names and colours.
+  Every surface reads it: the CSS custom properties, the toast styles, and the
+  export and placard canvases, which have no stylesheet to inherit from.
+- **`npm run brand:sample`** decodes the logo PNGs and derives the palette from
+  them — dominant saturated colour for the primary, its shades, and an
+  interactive accent rotated toward cyan at a fixed saturation and lightness so
+  any future hue still reads on the dark interface. `-- --write` rewrites the
+  palette in place. The PNG decoder is hand-rolled on `node:zlib`; the project
+  still carries no runtime dependencies.
+- Sampling the current mark gives `#193c76` / `#10a8c6`, within a hair of the
+  hardcoded values it replaces — the check that the derivation is sound rather
+  than merely automatic.
+- **`test/brand.test.js` fails if a module hardcodes a palette hex again**,
+  which is the failure mode that made the old config inert.
+
+### Changed — every module under `src/app` is now type-checked
+
+Turning it on surfaced 195 errors, all pre-existing and invisible while the
+code sat outside the checker's scope. Two were real:
+
+- A **runtime crash** in the scenario save button, from a variable shadowing
+  its own initialiser — introduced by this pass's own rename and caught
+  immediately by the check the pass was adding.
+- Two **dead comparisons** testing a numeric dew-point cap against `''`.
+
+The rest were typing gaps. `src/ui/dom.js` states element intent once
+(`inp` / `el` / `canvasEl`) instead of casting at 90 call sites, `SlaProfile`
+is declared so an artifact printing a contract bound is checked against the
+field existing, and the Vite build constants are declared for the checker.
+
+### Added — save files carry the whole inventory
+
+The save-file tests used halls with no equipment, so nothing said an imported
+plant model kept its condition history, its per-unit derates, or a wetted-media
+unit's measured effectiveness. Now pinned, including that unrepairable entries
+are dropped without taking the good ones with them.
+
 ### Changed — the rest of the planned main.js split
 
 Four more sections out, following the pattern set by the first split:
@@ -34,14 +77,6 @@ split. Each extracted panel imports downward and receives the few
 
 `dispT1` (°F at one decimal) moved into `src/ui/format.js`, where both the
 sensor suite and the trainer can reach it.
-
-### Known gap
-
-The four new modules are **not yet in `npm run typecheck`** — including them
-surfaces 49 pre-existing DOM-typing errors that were invisible while the code
-sat in an unchecked main.js. Turning the whole of `src/app` on shows 195.
-That is a real cleanup and it deserves its own pass rather than being buried
-in a move; the injected-callback contracts are typed here in the meantime.
 
 ### Changed — main.js split into modules
 

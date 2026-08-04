@@ -28,6 +28,7 @@ import { dispTs, tLabel, fmtSlaReason } from '../ui/format.js';
 import { checkSLA as checkSLACore } from '../core/envelopes.js';
 import { pressureFromAltitude } from '../core/psychro.js';
 import { evapMediaOutput } from '../core/evapmedia.js';
+import { inp } from '../ui/dom.js';
 import {
   normalizeInventory, inventoryTotals, inventoryRollup, ratesFromTotals,
   unitOutput, unitsForKind, isThermalKind, isAirKind, baseUnitOf,
@@ -169,7 +170,7 @@ export function syncDerivedRates() {
  */
 function paintDerivedRates() {
   const set = (id, v) => {
-    const el = /** @type {HTMLInputElement|null} */ (document.getElementById(id));
+    const el = /** @type {HTMLInputElement|null} */ (inp(id));
     if (el) el.value = v == null ? '' : String(v);
   };
   set('rate-cool', state.hall.rateCoolF);
@@ -183,8 +184,8 @@ function paintDerivedRates() {
     ['cap-dehum', 'rate-dehum', 'canDehumidify'],
     ['cap-hum', 'rate-hum', 'canHumidify'],
   ]) {
-    const cb = /** @type {HTMLInputElement|null} */ (document.getElementById(box));
-    const el = /** @type {HTMLInputElement|null} */ (document.getElementById(rate));
+    const cb = /** @type {HTMLInputElement|null} */ (inp(box));
+    const el = /** @type {HTMLInputElement|null} */ (inp(rate));
     if (cb) cb.checked = !!state.hall[flag];
     if (el) el.disabled = !state.hall[flag];
   }
@@ -273,7 +274,7 @@ function redundancyHtml(redundancy) {
 }
 
 export function renderEquipment() {
-  const host = document.getElementById('equip-panel');
+  const host = inp('equip-panel');
   if (!host) return;
   const inv = state.hall.equipment || [];
   // One walk of the inventory answers every question this panel asks of it.
@@ -409,7 +410,7 @@ export function renderEquipment() {
       shell.update();
     }),
   );
-  document.getElementById('equip-apply')?.addEventListener('click', () => {
+  inp('equip-apply')?.addEventListener('click', () => {
     // Nothing derivable yet: say which of the two things is missing rather
     // than switching into a live mode that would blank every rate.
     const C = thermalC();
@@ -429,7 +430,7 @@ export function renderEquipment() {
     toast('The rates now follow this inventory — change a unit and the plan changes with it.',
       { kind: 'ok', duration: 6000 });
   });
-  document.getElementById('equip-manual')?.addEventListener('click', () => {
+  inp('equip-manual')?.addEventListener('click', () => {
     setRateSource('manual');
     toast('Back to typed rates — your earlier numbers are restored.', { kind: 'ok' });
   });
@@ -441,8 +442,8 @@ export function renderEquipment() {
 // shows that side by side.
 
 export function renderAllHalls() {
-  const host = document.getElementById('allhalls-body');
-  const sub = document.getElementById('allhalls-sub');
+  const host = inp('allhalls-body');
+  const sub = inp('allhalls-sub');
   if (!host) return;
   const sla = state.slaProfiles[state.activeSla];
   let breaches = 0;

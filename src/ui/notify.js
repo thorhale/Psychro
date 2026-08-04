@@ -24,7 +24,7 @@ function ensureHost() {
   .ntf-toast.ntf-warn { border-color: rgba(240,165,0,.6); }
   .ntf-toast.ntf-error { border-color: rgba(248,81,73,.6); background: #3a1f24; }
   .ntf-toast button { margin-left: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid #2c4a66;
-    background: #13263a; color: #00a9ce; font: inherit; cursor: pointer; }
+    background: #13263a; color: var(--brand-accent, #10a8c6); font: inherit; cursor: pointer; }
   .ntf-scrim { position: fixed; inset: 0; background: rgba(4,10,18,.6); z-index: 9998;
     display: flex; align-items: center; justify-content: center; padding: 20px; }
   .ntf-dialog { background: #13263a; border: 1px solid #2c4a66; border-radius: 10px; padding: 18px;
@@ -34,7 +34,7 @@ function ensureHost() {
   .ntf-actions { display: flex; gap: 8px; justify-content: flex-end; }
   .ntf-actions button { padding: 8px 16px; border-radius: 7px; border: 1px solid #2c4a66;
     background: #1f3a52; color: #e6edf3; font: 600 .8rem inherit; cursor: pointer; }
-  .ntf-actions button.ntf-primary { background: #00a9ce; border-color: #00a9ce; color: #04121e; }
+  .ntf-actions button.ntf-primary { background: var(--brand-accent, #10a8c6); border-color: var(--brand-accent, #10a8c6); color: #04121e; }
   .ntf-actions button.ntf-danger { background: #f85149; border-color: #f85149; color: #fff; }
   `;
   document.head.appendChild(style);

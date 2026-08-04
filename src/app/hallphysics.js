@@ -8,6 +8,7 @@
 import { specificVolume, humidityRatio } from '../core/psychro.js';
 import { fToC, ft3ToM3, lbToKg } from '../core/units.js';
 import { state } from './state.js';
+import { inp } from '../ui/dom.js';
 
 /** Specific heat of equipment steel, kJ/kg·K — the usual planning figure. */
 const C_EQUIPMENT = 0.5;
@@ -34,7 +35,7 @@ export function thermalC() {
   const mda = ft3ToM3(state.hall.hallVolFt3) / v;
   const cAir = mda * (1.006 + 1.86 * W0);
   const massLb = parseFloat(
-    /** @type {HTMLInputElement|null} */ (document.getElementById('rc-mass'))?.value ?? '',
+    /** @type {HTMLInputElement|null} */ (inp('rc-mass'))?.value ?? '',
   );
   const cEq = massLb > 0 ? lbToKg(massLb) * C_EQUIPMENT : 0;
   return { c: cAir + cEq, airOnly: !(massLb > 0) };

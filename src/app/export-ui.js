@@ -10,6 +10,7 @@
  */
 
 import { state } from './state.js';
+import { BRAND } from '../config/brand.js';
 import { toast } from '../ui/notify.js';
 import { dispTs, dispDeltaT, tLabel, deltaLabel } from '../ui/format.js';
 import { deriveStateF } from '../core/derive.js';
@@ -17,6 +18,7 @@ import { fmtHrs } from '../core/planner.js';
 import { drawQr } from '../lib/qr.js';
 import { logError } from '../lib/errors.js';
 import { VERSION_LABEL } from './version.js';
+import { inp, canvasEl } from '../ui/dom.js';
 
 /**
  * The few things only the entry point can answer: how a file should be named,
@@ -45,7 +47,7 @@ export function wireExport(callbacks) {
 }
 
 function buildExportCanvas() {
-  const src = document.getElementById('psychCanvas');
+  const src = canvasEl('psychCanvas');
   const scale = 2;                       // crisp on retina / when embedded
   const W = 1000, headH = 150, chartH = 560, footH = 70;
   const H = headH + chartH + footH;
@@ -58,14 +60,14 @@ function buildExportCanvas() {
 
   // Header band (Stream navy → teal underline)
   const grad = x.createLinearGradient(0, 0, W, 0);
-  grad.addColorStop(0, '#1a3a5c'); grad.addColorStop(1, '#13263a');
+  grad.addColorStop(0, BRAND.primary); grad.addColorStop(1, BRAND.primaryDark);
   x.fillStyle = grad; x.fillRect(0, 0, W, headH);
-  x.fillStyle = '#00a9ce'; x.fillRect(0, headH - 4, W, 4);
+  x.fillStyle = BRAND.accent; x.fillRect(0, headH - 4, W, 4);
 
   x.fillStyle = '#fff'; x.font = '800 26px -apple-system,Segoe UI,sans-serif';
   x.textBaseline = 'top';
   x.fillText('STREAM', 28, 22);
-  x.fillStyle = '#00a9ce'; x.font = '600 12px -apple-system,Segoe UI,sans-serif';
+  x.fillStyle = BRAND.accent; x.font = '600 12px -apple-system,Segoe UI,sans-serif';
   x.fillText('DATA CENTERS', 130, 30);
   x.fillStyle = '#fff'; x.font = '700 20px -apple-system,Segoe UI,sans-serif';
   x.fillText('Hall Environment Planner', 28, 60);
@@ -102,8 +104,8 @@ function buildExportCanvas() {
   }
 
   // Footer
-  x.fillStyle = '#13263a'; x.fillRect(0, H - footH, W, footH);
-  x.fillStyle = '#00a9ce'; x.fillRect(0, H - footH, W, 3);
+  x.fillStyle = BRAND.primaryDark; x.fillRect(0, H - footH, W, footH);
+  x.fillStyle = BRAND.accent; x.fillRect(0, H - footH, W, 3);
   x.fillStyle = '#9db8d0'; x.font = '11px -apple-system,Segoe UI,sans-serif';
   x.fillText('ASHRAE TC 9.9 psychrometrics · barometric pressure corrected for site elevation · generated ' + new Date().toLocaleString(), 28, H - footH + 22);
   x.fillStyle = '#6f8aa3'; x.font = '10px -apple-system,Segoe UI,sans-serif';
@@ -130,8 +132,8 @@ function buildPlacardCanvas() {
   // white with bold weight survives any printer.
   x.fillStyle = '#ffffff'; x.fillRect(0, 0, W, H);
   // Header band
-  x.fillStyle = '#1a3a5c'; x.fillRect(0, 0, W, 64);
-  x.fillStyle = '#00a9ce'; x.fillRect(0, 64, W, 3);
+  x.fillStyle = BRAND.primary; x.fillRect(0, 0, W, 64);
+  x.fillStyle = BRAND.accent; x.fillRect(0, 64, W, 3);
   x.fillStyle = '#ffffff'; x.font = 'bold 20px sans-serif'; x.textAlign = 'left';
   x.fillText('HALL ENVIRONMENT LIMITS', 24, 30);
   x.fillStyle = '#cfe3f2'; x.font = '12px sans-serif';
@@ -148,7 +150,10 @@ function buildPlacardCanvas() {
   );
 
   // Do-not-cross table from the active SLA
-  const sla = state.slaProfiles[state.activeSla] || {};
+  // An empty placard is better than a wrong one: with no profile active the
+  // table below simply has no rows to print.
+  const sla = /** @type {SlaProfile|undefined} */ (state.slaProfiles[state.activeSla]);
+  if (!sla) return c;
   const U = tLabel();
   const rows = [
     ['Temperature', `${dispTs(sla.tMinF)} ${U}`, `${dispTs(sla.tMaxF)} ${U}`],
@@ -158,7 +163,7 @@ function buildPlacardCanvas() {
     ...(sla.maxDrhHr != null ? [['Ramp: RH', '—', `${sla.maxDrhHr}%/hr`]] : []),
   ];
   let ty = 156;
-  x.fillStyle = '#00707f'; x.font = 'bold 13px sans-serif';
+  x.fillStyle = BRAND.accentDark; x.font = 'bold 13px sans-serif';
   x.fillText(`DO NOT CROSS — ${sla.name || 'SLA'}`, 24, ty);
   ty += 10;
   x.font = '13px monospace';
@@ -178,7 +183,7 @@ function buildPlacardCanvas() {
 
   // Envelope snapshot — blit the live chart, framed so the dark chart reads
   // as a figure on the white page instead of a hole in it.
-  const src = document.getElementById('psychCanvas');
+  const src = canvasEl('psychCanvas');
   const chartH = 330;
   try {
     x.drawImage(src, 24, ty, W - 48, chartH);
@@ -207,7 +212,7 @@ function buildPlacardCanvas() {
   return c;
 }
 
-document.getElementById('export-placard')?.addEventListener('click', () => {
+inp('export-placard')?.addEventListener('click', () => {
   try {
     exportPdfJpeg(buildPlacardCanvas(), { portrait: true, filename: shell.exportName('placard', 'pdf') });
   } catch (e) {
@@ -216,7 +221,7 @@ document.getElementById('export-placard')?.addEventListener('click', () => {
   }
 });
 
-document.getElementById('export-png').addEventListener('click', () => {
+inp('export-png').addEventListener('click', () => {
   try {
     const c = buildExportCanvas();
     c.toBlob(blob => {
@@ -227,7 +232,7 @@ document.getElementById('export-png').addEventListener('click', () => {
     }, 'image/png');
   } catch (e) { logError('export-png', e); toast('PNG export failed: ' + e.message, { kind: 'error' }); }
 });
-document.getElementById('export-pdf').addEventListener('click', () => {
+inp('export-pdf').addEventListener('click', () => {
   try {
     const c = buildExportCanvas();
     exportPdfJpeg(c);   // dependency-free single-page PDF (DCTDecode/JPEG)

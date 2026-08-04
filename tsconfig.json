@@ -12,6 +12,6 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["src/core/**/*.js", "src/state/**/*.js", "src/lib/**/*.js", "src/platform/**/*.js", "src/config/**/*.js", "src/ui/**/*.js", "src/app/state.js", "src/app/hallphysics.js", "src/app/equipment-ui.js"],
+  "include": ["src/core/**/*.js", "src/state/**/*.js", "src/lib/**/*.js", "src/platform/**/*.js", "src/config/**/*.js", "src/ui/**/*.js", "src/app/**/*.js", "src/types/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]
 }

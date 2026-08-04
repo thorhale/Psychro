@@ -9,10 +9,25 @@
  */
 
 /**
+ * @typedef {object} BriefPoint  a deriveStateF result, as the briefing reads it
+ * @property {number} tempF
+ * @property {number} rh
+ * @property {number|null} [tdpF]
+ * @property {number} [Wg]
+ *
+ * @typedef {object} BriefPlan  planMove()-shaped
+ * @property {number} hours
+ * @property {string} [binding]
+ * @property {{label?:string, waterLb?:number}|null} [moistCap]
+ * @property {boolean} [needsVol]
+ * @property {boolean} [needsTempRate]
+ */
+
+/**
  * @param {object} p
- * @param {object} p.a        deriveStateF result for Current
- * @param {object} p.b        deriveStateF result for Target
- * @param {object} p.plan     planMove()-shaped: {hours, binding, moistCap}
+ * @param {BriefPoint} p.a    deriveStateF result for Current
+ * @param {BriefPoint} p.b    deriveStateF result for Target
+ * @param {BriefPlan} p.plan  planMove()-shaped: {hours, binding, moistCap}
  * @param {{name?:string,siteName?:string,elevFt?:number}} p.hall
  * @param {{name?:string}|null} p.sla
  * @param {{aOk:boolean,bOk:boolean,aDetail?:string,bDetail?:string}} p.verdicts

@@ -23,11 +23,17 @@
 <title>Stream Hall Environment Planner</title>
 <style>
   :root {
-    /* Stream Data Centers official palette: deep navy + teal accent */
+    /* Brand palette. These literals are the no-JavaScript fallback; the real
+       values are SAMPLED from the logo artwork by scripts/sample-brand-colors.mjs
+       into src/config/brand.js, and applyBrand() overrides them at boot. Swapping
+       the branding means new artwork + `npm run brand:sample -- --write`, not
+       editing hex codes here. */
     --bg:#0d1b2a; --surface:#13263a; --border:#1f3a52;
-    --accent:#00a9ce; --accent2:#00a9ce; --danger:#f85149;
+    --accent:#10a8c6; --accent2:#10a8c6; --danger:#f85149;
     --ok:#3fb950; --warn:#f0a500; --text:#e6edf3; --muted:#7d96ad;
-    --stream-navy:#1a3a5c; --stream-teal:#00a9ce;
+    --stream-navy:#193c76; --stream-teal:#10a8c6;
+    --brand-primary:#193c76; --brand-primary-dark:#11284e; --brand-primary-light:#4c6794;
+    --brand-accent:#10a8c6; --brand-accent-dark:#0b758b;
     --mono:'Courier New',monospace; --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   }
   * { box-sizing:border-box; margin:0; padding:0; }
@@ -477,10 +483,10 @@
 
 <div style="background:linear-gradient(135deg,#1a3a5c 0%,#13263a 100%); margin:-20px -16px 18px; padding:14px 16px; border-bottom:3px solid var(--stream-teal);">
   <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-    <span style="font-family:var(--sans); font-weight:800; font-size:1.1rem; letter-spacing:.18em; color:#fff;">STREAM</span>
-    <span style="font-size:.6rem; font-weight:600; letter-spacing:.2em; color:var(--stream-teal); border-left:1px solid rgba(255,255,255,.3); padding-left:10px;">DATA CENTERS</span>
+    <span style="font-family:var(--sans); font-weight:800; font-size:1.1rem; letter-spacing:.18em; color:#fff;" data-brand="company">STREAM</span>
+    <span style="font-size:.6rem; font-weight:600; letter-spacing:.2em; color:var(--stream-teal); border-left:1px solid rgba(255,255,255,.3); padding-left:10px;" data-brand="companySub">DATA CENTERS</span>
   </div>
-  <h1 style="color:#fff; margin-bottom:2px;">Hall Environment Planner</h1>
+  <h1 style="color:#fff; margin-bottom:2px;" data-brand="product">Hall Environment Planner</h1>
   <p style="color:#9db8d0; font-size:.72rem; margin:0;">Plan temperature &amp; humidity moves within SLA · capability-aware timing · ASHRAE psychrometrics</p>
 </div>
 
@@ -943,8 +949,8 @@
 <script type="module" src="./src/app/main.js"></script>
 <footer style="margin:40px -16px -20px; padding:24px 16px calc(24px + env(safe-area-inset-bottom, 0px)); text-align:center; background:linear-gradient(135deg,#1a3a5c 0%,#13263a 100%); border-top:3px solid var(--stream-teal); line-height:1.6;">
   <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:8px;">
-    <span style="font-weight:800; font-size:1rem; letter-spacing:.18em; color:#fff;">STREAM</span>
-    <span style="font-size:.55rem; font-weight:600; letter-spacing:.2em; color:var(--stream-teal); border-left:1px solid rgba(255,255,255,.3); padding-left:10px;">DATA CENTERS</span>
+    <span style="font-weight:800; font-size:1rem; letter-spacing:.18em; color:#fff;" data-brand="company">STREAM</span>
+    <span style="font-size:.55rem; font-weight:600; letter-spacing:.2em; color:var(--stream-teal); border-left:1px solid rgba(255,255,255,.3); padding-left:10px;" data-brand="companySub">DATA CENTERS</span>
   </div>
   <div style="color:#9db8d0; font-size:.8rem; margin-bottom:10px;">Hall Environment Planner · Critical Engineering · ASHRAE TC 9.9</div>
   <div style="font-size:.72rem; color:#9db8d0; line-height:1.5;">

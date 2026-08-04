@@ -16,6 +16,7 @@ import { toast, copyText } from '../ui/notify.js';
 import { tU, tLabel, dispT1 } from '../ui/format.js';
 import { checkSLA as checkSLACore } from '../core/envelopes.js';
 import { SCENARIOS, refereeRun, TRAINER_VERSION } from '../core/trainer.js';
+import { inp, canvasEl } from '../ui/dom.js';
 
 // The training hall is FIXED — same volume, same plant rates, same SLA, same
 // standard sea-level pressure for everyone — so a challenge code reproduces
@@ -36,31 +37,31 @@ const trScenario = () =>
   SCENARIOS.find((s) => s.id === trState.scenarioId) || SCENARIOS[0];
 
 export function renderTrainingBrief() {
-  const el = document.getElementById('tr-brief');
+  const el = inp('tr-brief');
   if (!el) return;
   const s = trScenario();
   el.innerHTML =
     `<strong>${s.title}.</strong> ${s.brief}<br>` +
     `<span class="cap-hint">Hall starts at ${dispT1(s.start.tempF)} ${tLabel()} / ${s.start.rh}% RH · ` +
     `fault seed ${trState.seed} · the referee runs ${s.simHours} hours.</span>`;
-  const share = document.getElementById('tr-share');
+  const share = inp('tr-share');
   if (share) share.style.display = '';
-  const sum = document.getElementById('tr-summary');
+  const sum = inp('tr-summary');
   if (sum) sum.textContent = `${s.title} · seed ${trState.seed}`;
 }
 
 /** A new scenario or seed is a new challenge — clear the old run's verdict. */
 function trNewChallenge() {
   renderTrainingBrief();
-  const res = document.getElementById('tr-result');
+  const res = inp('tr-result');
   if (res) res.style.display = 'none';
-  const spark = document.getElementById('tr-spark');
+  const spark = inp('tr-spark');
   if (spark) spark.style.display = 'none';
 }
 
 /** Draw the run's temp + RH traces, with the breach minute marked in red. */
 function drawTrainingSpark(r) {
-  const canvas = document.getElementById('tr-spark');
+  const canvas = canvasEl('tr-spark');
   if (!canvas) return;
   canvas.style.display = 'block';
   const dpr = window.devicePixelRatio || 1;
@@ -113,7 +114,7 @@ function runTraining(target) {
     checkSla: trCheckSla,
     pressure: TRAINING_P,
   });
-  const res = document.getElementById('tr-result');
+  const res = inp('tr-result');
   if (!res) return;
   const maxScore = r.totalMinutes + 30;
   let verdict;
@@ -168,9 +169,9 @@ export function applyTrainingFromUrl() {
   }
   trState.scenarioId = s.id;
   trState.seed = parseInt(m[3], 10);
-  const sel = document.getElementById('tr-scenario');
+  const sel = inp('tr-scenario');
   if (sel) sel.value = s.id;
-  const seedEl = document.getElementById('tr-seed');
+  const seedEl = inp('tr-seed');
   if (seedEl) seedEl.value = String(trState.seed);
   renderTrainingBrief();
   const details = sel?.closest('details');
@@ -186,7 +187,7 @@ export function applyTrainingFromUrl() {
 }
 
 (function initTraining() {
-  const sel = document.getElementById('tr-scenario');
+  const sel = inp('tr-scenario');
   if (!sel) return;
   sel.innerHTML = SCENARIOS.map((s) => `<option value="${s.id}">${s.title}</option>`).join('');
   sel.value = trState.scenarioId;
@@ -194,28 +195,28 @@ export function applyTrainingFromUrl() {
     trState.scenarioId = sel.value;
     trNewChallenge();
   });
-  document.getElementById('tr-seed')?.addEventListener('input', function () {
+  inp('tr-seed')?.addEventListener('input', function () {
     const v = parseInt(this.value, 10);
     trState.seed = isNaN(v) || v < 0 ? 0 : Math.min(999999999, v);
     trNewChallenge();
   });
-  document.getElementById('tr-reroll')?.addEventListener('click', () => {
+  inp('tr-reroll')?.addEventListener('click', () => {
     trState.seed = Math.floor(Math.random() * 100000);
-    const seedEl = document.getElementById('tr-seed');
+    const seedEl = inp('tr-seed');
     if (seedEl) seedEl.value = String(trState.seed);
     trNewChallenge();
   });
-  document.getElementById('tr-commit')?.addEventListener('click', () => {
-    const tv = parseFloat(document.getElementById('tr-temp')?.value);
-    const rv = parseFloat(document.getElementById('tr-rh')?.value);
+  inp('tr-commit')?.addEventListener('click', () => {
+    const tv = parseFloat(inp('tr-temp')?.value);
+    const rv = parseFloat(inp('tr-rh')?.value);
     if (isNaN(tv) || isNaN(rv)) {
       toast('Enter both a target temperature and a target RH first.', { kind: 'warn' });
       return;
     }
     runTraining({ tempF: tU().toF(tv), rh: Math.min(99, Math.max(1, rv)) });
   });
-  document.getElementById('tr-idle')?.addEventListener('click', () => runTraining(null));
-  document.getElementById('tr-share')?.addEventListener('click', () => {
+  inp('tr-idle')?.addEventListener('click', () => runTraining(null));
+  inp('tr-share')?.addEventListener('click', () => {
     copyText(trainingShareUrl(), 'Challenge code');
   });
   renderTrainingBrief();
