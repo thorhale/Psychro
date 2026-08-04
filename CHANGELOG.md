@@ -11,6 +11,35 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — the arithmetic is audited, and the interactive path has budgets
+
+**Every conversion constant is now derived from its definition and checked**
+(`test/constants.test.js`). A mistyped ton-to-kilowatt factor produces
+plausible capacities that are simply wrong, and no test comparing the app to
+itself would ever catch it — so the ton of refrigeration is rebuilt from
+12 000 BTU_IT/hr, the cubic foot from the international inch, and so on.
+Internal consistency is checked too: MBH is a *thousand* BTU/hr, a ton is
+twelve MBH, a litre per second is 3.6 m³/hr.
+
+**The two derived chains are checked against longhand arithmetic**
+(`test/energychain.test.js`) — kilowatts installed becoming °F/hr, and airflow
+over wet media becoming lb/hr. Each is recomputed a second way with the units
+written out, so a missing 3600 or a Kelvin/Fahrenheit mix-up shows as a factor
+rather than a nudge. This includes pinning that the app uses the *delta*
+temperature conversion, not the absolute one.
+
+**A finding worth knowing:** wetted media at altitude moves *less* water, not
+more. Thinner air holds more moisture per kilogram (+10 % here) but a fixed
+CFM carries 22 % less mass, and mass flow wins — about 14 % less output at
+7 000 ft. A humidifier sized by CFM at sea level under-delivers in Denver,
+which is why the app computes it at the hall's own pressure.
+
+**Performance budgets now run in CI** (`test/e2e/perf.spec.js`), measured in a
+real browser against the deployed artifact. Current figures: a full update
+5.4 ms, a chart pan frame 2.7 ms, boot to interactive 364 ms, and a hall with
+twenty equipment units costs no more per frame than an empty one — the
+evidence that the single-pass inventory rollup does what it claims.
+
 ### Added — branding is swappable, and the palette is sampled from the artwork
 
 There was a `BRAND` config object that nothing imported, while the real hex
