@@ -19,6 +19,7 @@ import { saturationHumidityRatio, wetBulb } from '../core/psychro.js';
 import { ASHRAE_ENVELOPES, envelopePolygon, slaPolygon } from '../core/envelopes.js';
 import { fmtHrs } from '../core/planner.js';
 import { deriveState } from '../core/derive.js';
+import { inp, canvasEl } from '../ui/dom.js';
 
 /**
  * What only the entry point can answer: the live plan, the moisture model,
@@ -141,7 +142,7 @@ function haloText(ctx, text, x, y, color, angle) {
 
 export function drawChart() {
   const p = state.pressure;
-  const canvas = document.getElementById('psychCanvas');
+  const canvas = canvasEl('psychCanvas');
   const dispW = canvas.parentElement.clientWidth || 800;
   const dpr = Math.min(2, window.devicePixelRatio||1);
   const W = dispW, H = Math.round(W*0.62);
@@ -617,7 +618,7 @@ function centerView() {
 }
 
 (function attachChartInteractions(){
-  const canvas = document.getElementById('psychCanvas');
+  const canvas = canvasEl('psychCanvas');
   function localXY(e){
     const r = canvas.getBoundingClientRect();
     const cx = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
@@ -636,9 +637,9 @@ function centerView() {
   // Mouse: follows the cursor. Touch: a still tap pins it, the next tap (or
   // any pan/pinch) dismisses it — a phone in the hall could previously only
   // pan and zoom while the hint promised hover and modifier clicks.
-  const vline = document.getElementById('ch-vline');
-  const hline = document.getElementById('ch-hline');
-  const tip   = document.getElementById('chart-tip');
+  const vline = inp('ch-vline');
+  const hline = inp('ch-hline');
+  const tip   = inp('chart-tip');
   function hideHover() {
     if (vline) vline.style.display = 'none';
     if (hline) hline.style.display = 'none';
@@ -795,10 +796,10 @@ function centerView() {
   function touchDistance(e){ const a=e.touches[0],b=e.touches[1]; return Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY); }
   function touchMidpoint(e,canvas){ const r=canvas.getBoundingClientRect(); const a=e.touches[0],b=e.touches[1]; return [((a.clientX+b.clientX)/2)-r.left, ((a.clientY+b.clientY)/2)-r.top]; }
 
-  document.getElementById('zoom-in').onclick = ()=>zoomCenter(0.8);
-  document.getElementById('zoom-out').onclick = ()=>zoomCenter(1/0.8);
-  document.getElementById('zoom-sla').onclick = zoomToSLA;
-  document.getElementById('zoom-plan').onclick = zoomToPlan;
-  document.getElementById('zoom-center').onclick = centerView;
-  document.getElementById('zoom-reset').onclick = ()=>{ resetView(); drawChart(); };
+  inp('zoom-in').onclick = ()=>zoomCenter(0.8);
+  inp('zoom-out').onclick = ()=>zoomCenter(1/0.8);
+  inp('zoom-sla').onclick = zoomToSLA;
+  inp('zoom-plan').onclick = zoomToPlan;
+  inp('zoom-center').onclick = centerView;
+  inp('zoom-reset').onclick = ()=>{ resetView(); drawChart(); };
 })();

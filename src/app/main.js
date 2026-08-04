@@ -20,6 +20,7 @@ import {
   dewPoint,
   specificVolume,
 } from '../core/psychro.js';
+import { applyBrand } from '../config/brand.js';
 import { state } from './state.js';
 import { thermalC, currentW } from './hallphysics.js';
 import {
@@ -87,6 +88,7 @@ import { runSelfTest } from './selftest.js';
 import { VERSION_LABEL } from './version.js';
 import { PRIVACY_TITLE, PRIVACY_TEXT } from './privacy.js';
 import { registerServiceWorker, initInstallBanner } from './pwa.js';
+import { inp } from '../ui/dom.js';
 
 installGlobalHandlers();
 registerServiceWorker();
@@ -107,7 +109,7 @@ const humidityRatioGPw = (pw, p, tc) => humidityRatioFromPw(pw, p, tc) * 1000;
 let quotaWarned = false;
 function persistJSON(key, value) {
   const r = storage.setJSON(key, value);
-  if (!r.ok && r.quota && !quotaWarned) {
+  if (r.ok === false && r.quota && !quotaWarned) {
     quotaWarned = true;
     toast('Device storage is full — changes are NOT being saved. Export a save file now to avoid losing work.', {
       kind: 'error',
@@ -195,34 +197,34 @@ function applyElevation() {
   state.pressure = measured ? state.hall.baroKpa : pressureFromAltitude(ft);
   // One decimal, not three: even a measured value drifts with the weather.
   const inHg = state.pressure * 0.2953;
-  const pr = document.getElementById('pressure-readout');
+  const pr = inp('pressure-readout');
   if (pr) pr.innerHTML = `${state.pressure.toFixed(1)} kPa <span class="sub">(${inHg.toFixed(2)} inHg · ${measured ? 'measured on site — clear the barometer field to fall back to elevation' : 'standard atmosphere at elevation — weather swings ±2 kPa'})</span>`;
-  const fp = document.getElementById('fn-pressure');
+  const fp = inp('fn-pressure');
   if (fp) fp.textContent = `${state.pressure.toFixed(1)} kPa`;
-  const chipLabel = document.getElementById('chip-label');
+  const chipLabel = inp('chip-label');
   if (chipLabel) {
     const site = state.hall.siteName ? `${state.hall.siteName} · ` : '';
     chipLabel.textContent = `${site}${ft.toLocaleString()} ft`;
   }
   // keep the chip's editable field in sync (unless it's the one being typed in)
-  const ei = document.getElementById('chip-elev-input');
+  const ei = inp('chip-elev-input');
   if (ei && document.activeElement !== ei) ei.value = ft;
 }
 
 // Elevation/site chip open/close
-document.getElementById('chip-toggle').addEventListener('click', (e) => {
+inp('chip-toggle').addEventListener('click', (e) => {
   e.stopPropagation();
-  document.getElementById('chip-panel').classList.toggle('open');
+  inp('chip-panel').classList.toggle('open');
 });
 document.addEventListener('click', (e) => {
-  const chip = document.getElementById('chip-panel');
-  if (chip && chip.classList.contains('open') && !e.target.closest('.site-chip')) {
+  const chip = inp('chip-panel');
+  if (chip && chip.classList.contains('open') && !(/** @type {Element} */ (e.target)).closest('.site-chip')) {
     chip.classList.remove('open');
   }
 });
 // Editable elevation directly in the chip — updates the active SLA profile
 // and recomputes barometric pressure (and every humidity value) live.
-document.getElementById('chip-elev-input').addEventListener('input', function() {
+inp('chip-elev-input').addEventListener('input', function() {
   // Accept a leading minus and digits; tolerate partial entry like "-" while typing.
   const raw = this.value.trim();
   if (raw === '' || raw === '-') return;          // wait for a real number
@@ -231,7 +233,7 @@ document.getElementById('chip-elev-input').addEventListener('input', function() 
   v = Math.max(-15000, Math.min(20000, Math.round(v)));  // clamp to valid range
   state.hall.elevFt = v;
   applyElevation();
-  const se = document.getElementById('hall-elev'); if (se && document.activeElement !== se) se.value = v;
+  const se = inp('hall-elev'); if (se && document.activeElement !== se) se.value = String(v);
   update();
 });
 
@@ -312,8 +314,8 @@ function syncAllControls(skipInput) {
   const sla = state.slaProfiles[state.activeSla];
   const bLo = Math.max(32, Math.round(clampF(sla.tMinF)));
   const bHi = Math.min(130, Math.round(clampF(sla.tMaxF)));
-  const bt = document.getElementById('slider-b-temp');
-  if (bt) { bt.min = bLo; bt.max = Math.max(bLo, bHi); }
+  const bt = inp('slider-b-temp');
+  if (bt) { bt.min = String(bLo); bt.max = String(Math.max(bLo, bHi)); }
 
   setControl('slider-a-temp', 'a-temp', 'slider-a-temp-val', state.aTemp, 'temp', skipInput);
   setControl('slider-a-rh',   'a-rh',   'slider-a-rh-val',   state.aRH,   'rh',   skipInput);
@@ -326,19 +328,19 @@ function syncAllControls(skipInput) {
 function syncControlsExcept(skipInput) { syncAllControls(skipInput); }
 
 function setControl(sliderId, inputId, valId, valF, kind, skipInput) {
-  const slider = document.getElementById(sliderId);
-  const input  = document.getElementById(inputId);
-  const val    = document.getElementById(valId);
+  const slider = inp(sliderId);
+  const input  = inp(inputId);
+  const val    = inp(valId);
   // sliders are bounded; input boxes are free
   const sliderClampF = kind === 'dp' ? clampDpF
     : (sliderId.includes('-b-')) ? clampTargetF : clampF;
   if (kind === 'temp' || kind === 'dp') {
-    if (slider) slider.value = Math.round(sliderClampF(valF));   // slider clamped
+    if (slider) slider.value = String(Math.round(sliderClampF(valF))); // slider clamped
     if (input && inputId !== skipInput)  input.value  = dispTs(valF);  // box: true value
     if (val)    val.textContent = dispTs(valF) + ' ' + tLabel();
   } else {
-    if (slider) slider.value = Math.round(clampRH(valF));
-    if (input && inputId !== skipInput)  input.value  = Math.round(valF);
+    if (slider) slider.value = String(Math.round(clampRH(valF)));
+    if (input && inputId !== skipInput)  input.value  = String(Math.round(valF));
     if (val)    val.textContent = Math.round(valF) + ' %';
   }
 }
@@ -351,10 +353,10 @@ function afterCurrentChange() {
   // Target is fully independent — changing Current never touches it.
   syncAllControls(); update();
 }
-document.getElementById('slider-a-temp').addEventListener('input', function() {
+inp('slider-a-temp').addEventListener('input', function() {
   setTempHoldingDp('a', clampF(parseFloat(this.value))); afterCurrentChange();
 });
-document.getElementById('slider-a-rh').addEventListener('input', function() {
+inp('slider-a-rh').addEventListener('input', function() {
   state.aRH = clampRH(parseFloat(this.value)); afterCurrentChange();
 });
 
@@ -362,52 +364,52 @@ document.getElementById('slider-a-rh').addEventListener('input', function() {
 // dragging one never moves another. (DP is inherently derived from T & RH —
 // setting DP directly adjusts RH at the CURRENT target temp, same as typing
 // an RH value would; it does not touch temperature.)
-document.getElementById('slider-b-temp').addEventListener('input', function() {
+inp('slider-b-temp').addEventListener('input', function() {
   setTempHoldingDp('b', clampTargetF(parseFloat(this.value)));
   syncAllControls(); update();
 });
-document.getElementById('slider-b-rh').addEventListener('input', function() {
+inp('slider-b-rh').addEventListener('input', function() {
   state.bRH = clampRH(parseFloat(this.value));
   syncAllControls(); update();
 });
 
 // ── Typed input boxes — independent, same as sliders. ──
-document.getElementById('a-temp').addEventListener('input', function() {
+inp('a-temp').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
   setTempHoldingDp('a', tU().toF(v));
   syncControlsExcept('a-temp'); update();
 });
-document.getElementById('a-rh').addEventListener('input', function() {
+inp('a-rh').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
   state.aRH = clampRH(v);
   syncControlsExcept('a-rh'); update();
 });
-document.getElementById('b-temp').addEventListener('input', function() {
+inp('b-temp').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
   setTempHoldingDp('b', clampTargetF(tU().toF(v)));
   syncControlsExcept('b-temp'); update();
 });
-document.getElementById('b-rh').addEventListener('input', function() {
+inp('b-rh').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
   state.bRH = clampRH(v);
   syncControlsExcept('b-rh'); update();
 });
 
 // ── Dew point controls: DP sets RH at the fixed dry-bulb (temp untouched). ──
-document.getElementById('slider-a-dp').addEventListener('input', function() {
+inp('slider-a-dp').addEventListener('input', function() {
   state.aRH = rh_from_dpF(state.aTemp, parseFloat(this.value));
   afterCurrentChange();
 });
-document.getElementById('a-dp').addEventListener('input', function() {
+inp('a-dp').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
   state.aRH = rh_from_dpF(state.aTemp, tU().toF(v));
   syncControlsExcept('a-dp'); update();
 });
-document.getElementById('slider-b-dp').addEventListener('input', function() {
+inp('slider-b-dp').addEventListener('input', function() {
   state.bRH = clampRH(rh_from_dpF(state.bTemp, parseFloat(this.value)));
   syncAllControls(); update();
 });
-document.getElementById('b-dp').addEventListener('input', function() {
+inp('b-dp').addEventListener('input', function() {
   const v = parseFloat(this.value); if (isNaN(v)) return;
   state.bRH = clampRH(rh_from_dpF(state.bTemp, tU().toF(v)));
   syncControlsExcept('b-dp'); update();
@@ -420,7 +422,7 @@ document.getElementById('b-dp').addEventListener('input', function() {
 // number indefinitely: type 95 under an 80 °F SLA and the box said 95 while
 // every calculation used 80. Blur (or Enter) reconciles, and says why.
 ['a-temp', 'a-rh', 'b-temp', 'b-rh', 'a-dp', 'b-dp'].forEach((id) => {
-  const el = document.getElementById(id);
+  const el = inp(id);
   if (!el) return;
   el.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.blur(); });
   el.addEventListener('blur', () => {
@@ -468,7 +470,7 @@ function buildTable() {
   });
   const fmt=(n,d)=>(isNaN(n)||n===null)?'—':n.toFixed(d);
   const rhCls=rh=>rh>80?'rh-bad':rh>60?'rh-warn':'rh-ok';
-  const tbody=document.getElementById('tableBody'); tbody.innerHTML='';
+  const tbody=inp('tableBody'); tbody.innerHTML='';
   derived.forEach(d=>{
     const tr=document.createElement('tr'); tr.className=d.cls;
     tr.innerHTML=`
@@ -528,7 +530,7 @@ let resultsExpanded = false;  // persists across re-renders
 
 function updateControlReadout() {
   const p = state.pressure;
-  const el = document.getElementById('control-readout');
+  const el = inp('control-readout');
   if (!el) return;
 
   // Shared derivation (src/core/derive.js); `W` is g/kg here as the copy reads.
@@ -546,7 +548,7 @@ function updateControlReadout() {
   const verb = Math.abs(dRH) < 0.5 ? 'holds' : dRH < 0 ? 'falls' : 'climbs';
   const sameMoisture = Math.abs(dW) < 0.15;
   // Water flag beside the Target controls — the at-a-glance moisture truth.
-  const wf = document.getElementById('wflag');
+  const wf = inp('wflag');
   if (wf) {
     if (Math.abs(dW) >= 0.15) {
       wf.textContent = `${dW > 0 ? '＋' : '−'}${Math.abs(dW).toFixed(1)} g/kg water`;
@@ -648,7 +650,7 @@ function updateControlReadout() {
   // plant. Sliders are always independent; this just tells you what it would
   // take (equipment-wise) to actually execute the Target you've set.
   const deh = !!state.hall.canDehumidify, hum = !!state.hall.canHumidify;
-  const cs = document.getElementById('couple-sub');
+  const cs = inp('couple-sub');
   if (cs) cs.textContent = (deh && hum) ? 'full moisture control'
     : (!deh && !hum) ? 'no moisture control — plan by cooling/warming only'
     : deh ? 'can dehumidify (remove moisture)'
@@ -739,18 +741,18 @@ function updateControlReadout() {
     </div>
     <button class="results-toggle" id="results-toggle">${resultsExpanded?'Hide details ▴':'Show full properties ▾'}</button>`;
 
-  const tog = document.getElementById('results-toggle');
+  const tog = inp('results-toggle');
   if (tog) tog.addEventListener('click', ()=>{ resultsExpanded = !resultsExpanded; updateControlReadout(); });
 }
 
 function refreshSlaSummary() {
-  const el = document.getElementById('sla-summary'); if (!el) return;
+  const el = inp('sla-summary'); if (!el) return;
   const s = state.slaProfiles[state.activeSla];
-  const dp = (s.dpMaxF != null && s.dpMaxF !== '') ? ` · DP≤${dispTs(s.dpMaxF)}${tLabel()}` : '';
+  const dp = (s.dpMaxF != null) ? ` · DP≤${dispTs(s.dpMaxF)}${tLabel()}` : '';
   el.textContent = `${s.name} · ${dispTs(s.tMinF)}–${dispTs(s.tMaxF)}${tLabel()} · ${s.rhMin}–${s.rhMax}%${dp}`;
 }
 function refreshHallSummary() {
-  const el = document.getElementById('hall-summary'); if (!el) return;
+  const el = inp('hall-summary'); if (!el) return;
   const h = state.hall;
   const vol = h.hallVolFt3 > 0 ? ` · ${(h.hallVolFt3/1000).toFixed(0)}k ft³` : '';
   const caps = [h.canDehumidify && 'dehum', h.canHumidify && 'hum'].filter(Boolean).join('+');
@@ -810,7 +812,7 @@ function update() {
   // Evaporative units are computed from the hall's live condition, so their
   // outputs move with it — but this rebuilds the rows' markup, so never do it
   // while someone is typing into one.
-  if (!document.getElementById('equip-panel')?.contains(document.activeElement)) renderEquipment();
+  if (!inp('equip-panel')?.contains(document.activeElement)) renderEquipment();
   renderDomainWarnings();
   if (typeof saveProfiles === 'function') saveProfiles();
 }
@@ -820,7 +822,7 @@ window.addEventListener('resize', update);
 //  SLA PROFILE UI
 // ════════════════════════════════════════════════════════════
 function renderSlaTabs() {
-  const tabs = document.getElementById('sla-tabs');
+  const tabs = inp('sla-tabs');
   tabs.innerHTML = '';
   state.slaProfiles.forEach((sla, i) => {
     const btn = document.createElement('button');
@@ -832,7 +834,7 @@ function renderSlaTabs() {
 }
 
 function renderHallEditor() {
-  const hed = document.getElementById('hall-editor');
+  const hed = inp('hall-editor');
   if (!hed) return;
   syncActualTrailToHall(); // A's measured trajectory is not B's
 
@@ -989,7 +991,7 @@ function renderHallEditor() {
   `;
   // Capability checkboxes are always active (a site characteristic, like elevation).
   const capWire = (id, key) => {
-    const el = document.getElementById(id);
+    const el = inp(id);
     if (el) el.addEventListener('change', function() {
       state.hall[key] = this.checked;   // Target sliders stay wherever they are — no reclamp needed.
       syncAllControls(); update();
@@ -1000,7 +1002,7 @@ function renderHallEditor() {
   capWire('cap-hum', 'canHumidify');
   // Plant rate fields — always editable (a site attribute, like elevation).
   const rateWire = (id, key) => {
-    const el = document.getElementById(id);
+    const el = inp(id);
     if (el) el.addEventListener('input', function() {
       const v = parseFloat(this.value);
       state.hall[key] = (isNaN(v) || v <= 0) ? null : v;
@@ -1012,7 +1014,7 @@ function renderHallEditor() {
   // and clicking one explains itself instead of doing nothing.
   if (ratesAreLive()) {
     for (const id of ['rate-cool', 'rate-warm', 'rate-dehum', 'rate-hum', 'hall-cfm']) {
-      const el = document.getElementById(id);
+      const el = inp(id);
       if (!el) continue;
       el.readOnly = true;
       el.classList.add('cap-derived');
@@ -1032,31 +1034,31 @@ function renderHallEditor() {
 
   // Hall identity fields — name renames the tab; building/site feed the
   // Location/Building filters above the tabs; site/elevation drive pressure.
-  const nameEl = document.getElementById('hall-name');
+  const nameEl = inp('hall-name');
   if (nameEl) nameEl.addEventListener('input', function() {
     state.hall.name = this.value;
     renderHallTabs(); update();
   });
-  const bldEl = document.getElementById('hall-building');
+  const bldEl = inp('hall-building');
   if (bldEl) bldEl.addEventListener('input', function() {
     state.hall.building = this.value;
     // Editing must never filter the hall you're typing in out of view.
     if (state.hallView.bld && this.value.trim() !== state.hallView.bld) state.hallView.bld = '';
     renderHallTabs(); update();
   });
-  const siteEl = document.getElementById('hall-site');
+  const siteEl = inp('hall-site');
   if (siteEl) siteEl.addEventListener('input', function() {
     state.hall.siteName = this.value;
     if (state.hallView.loc && this.value.trim() !== state.hallView.loc) state.hallView.loc = '';
     applyElevation(); renderHallTabs(); update();
   });
-  const elevEl = document.getElementById('hall-elev');
+  const elevEl = inp('hall-elev');
   if (elevEl) elevEl.addEventListener('input', function() {
     const v = parseFloat(this.value); if (isNaN(v)) return;
     state.hall.elevFt = Math.max(-15000, Math.min(20000, Math.round(v)));
     applyElevation(); update();
   });
-  const baroEl = document.getElementById('hall-baro');
+  const baroEl = inp('hall-baro');
   if (baroEl) baroEl.addEventListener('input', function() {
     const v = parseFloat(this.value);
     // Blank or out-of-window clears the override — back to the elevation model.
@@ -1066,7 +1068,7 @@ function renderHallEditor() {
 
   // Real-world factor fields (%): efficiency + per-system capacity derates.
   const pctWire = (id, key, lo, hi, dflt) => {
-    const el = document.getElementById(id);
+    const el = inp(id);
     if (el) el.addEventListener('input', function() {
       const v = parseFloat(this.value);
       state.hall[key] = isNaN(v) ? dflt : Math.max(lo, Math.min(hi, v));
@@ -1083,7 +1085,7 @@ function renderHallEditor() {
   function renderPva() {
     const planEff = planMove();                       // with efficiency
     const planNom = planMove({ nameplate: true });  // nameplate × derates
-    const predEl = document.getElementById('pva-pred');
+    const predEl = inp('pva-pred');
     if (predEl) {
       if (planNom.hours > 0) {
         predEl.innerHTML = `Current move ${dispTs(state.aTemp)}${tLabel()}/${Math.round(state.aRH)}% → ${dispTs(state.bTemp)}${tLabel()}/${Math.round(state.bRH)}%: predicted <strong>${fmtHrs(planEff.hours)}</strong> at ${Math.round(state.hall.effPct ?? 100)}% eff · ${fmtHrs(planNom.hours)} at nameplate · binding: ${planNom.binding}`;
@@ -1091,7 +1093,7 @@ function renderHallEditor() {
         predEl.textContent = 'Set plant rates (and hall volume for moisture) above to get a prediction worth logging against.';
       }
     }
-    const list = document.getElementById('pva-list');
+    const list = inp('pva-list');
     if (!list) return;
     const rs = state.hall.results;
     if (!rs.length) { list.innerHTML = '<div class="scn-empty">No results logged yet for this hall.</div>'; return; }
@@ -1114,19 +1116,19 @@ function renderHallEditor() {
       : `<div class="calc-hint2" style="margin-top:8px">No plant-bound runs yet — every logged run was limited by the SLA ramp, which says nothing about plant efficiency.</div>`;
     list.innerHTML = `<div class="scn-list" style="margin-bottom:0">${rows}</div>${summary}`;
     list.querySelectorAll('[data-pvadel]').forEach(b => b.addEventListener('click', () => {
-      state.hall.results.splice(+b.dataset.pvadel, 1); renderPva(); update();
+      state.hall.results.splice(+(/** @type {HTMLElement} */ (b)).dataset.pvadel, 1); renderPva(); update();
     }));
-    const applyBtn = document.getElementById('pva-apply');
+    const applyBtn = inp('pva-apply');
     if (applyBtn) applyBtn.addEventListener('click', () => {
       state.hall.effPct = Math.max(1, Math.min(150, Math.round(avgEff * 100)));
       renderHallEditor(); update();
     });
   }
-  const pvaLog = document.getElementById('pva-log');
+  const pvaLog = inp('pva-log');
   if (pvaLog) pvaLog.addEventListener('click', () => {
-    const v = parseFloat(document.getElementById('pva-actual').value);
+    const v = parseFloat(inp('pva-actual').value);
     if (!(v > 0)) { toast('Enter the actual duration the move took.', { kind: 'warn' }); return; }
-    const hrs = document.getElementById('pva-unit').value === 'hr' ? v : v / 60;
+    const hrs = inp('pva-unit').value === 'hr' ? v : v / 60;
     const planEff = planMove();
     const planNom = planMove({ nameplate: true });
     if (!(planNom.hours > 0)) { toast('No prediction to compare against — set plant rates (and hall volume for moisture moves) first.', { kind: 'warn', duration: 7000 }); return; }
@@ -1138,14 +1140,14 @@ function renderHallEditor() {
       binding: planNom.binding, slaBound,
       eff: slaBound ? null : planNom.hours / hrs,
     });
-    document.getElementById('pva-actual').value = '';
+    inp('pva-actual').value = '';
     renderPva(); update();
   });
   renderPva();
 
   // ── Trend-CSV import: overlay reality on the chart, feed calibration ──
-  const trendBtn = document.getElementById('trend-import');
-  const trendFile = document.getElementById('trend-file');
+  const trendBtn = inp('trend-import');
+  const trendFile = inp('trend-file');
   if (trendBtn && trendFile) {
     trendBtn.addEventListener('click', () => trendFile.click());
     trendFile.addEventListener('change', () => {
@@ -1177,7 +1179,7 @@ function renderHallEditor() {
     // offer no way to fix it.
     function applyTrendText(text, name, forceUnit) {
       const res = parseTrendCsv(text, forceUnit ? { tempUnit: forceUnit } : {});
-      const out = document.getElementById('trend-res');
+      const out = inp('trend-res');
       if (!res.ok) {
         // textContent, not innerHTML: this message describes a file we did
         // not write and cannot vouch for.
@@ -1186,7 +1188,7 @@ function renderHallEditor() {
           out.textContent = '';
           const warn = document.createElement('span');
           warn.className = 'calc-warn';
-          warn.textContent = res.error;
+          warn.textContent = res.ok ? '' : /** @type {any} */ (res).error;
           out.appendChild(warn);
         }
         toast('Could not read the trend file.', { kind: 'error' });
@@ -1197,7 +1199,7 @@ function renderHallEditor() {
       syncLegend();
 
       const first = res.rows[0], last = res.rows[res.rows.length - 1];
-      const hrs = (last.time - first.time) / 3600000;
+      const hrs = (last.time.getTime() - first.time.getTime()) / 3600000;
       const ratePerHr = hrs > 0 ? (last.tempF - first.tempF) / hrs : 0;
       const unitNote =
         res.tempUnitSource === 'header'
@@ -1241,9 +1243,9 @@ function renderHallEditor() {
             : '') +
           ` <span class="cap-hint" style="display:block;margin-top:4px">Temp unit: <button type="button" class="scn-btn" id="trend-unit-f">°F</button> <button type="button" class="scn-btn" id="trend-unit-c">°C</button> — tap to re-read the file if the guess is wrong.</span>`;
       }
-      document.getElementById('trend-unit-f')?.addEventListener('click', () => applyTrendText(text, name, 'F'));
-      document.getElementById('trend-unit-c')?.addEventListener('click', () => applyTrendText(text, name, 'C'));
-      document.getElementById('trend-to-pva')?.addEventListener('click', () => {
+      inp('trend-unit-f')?.addEventListener('click', () => applyTrendText(text, name, 'F'));
+      inp('trend-unit-c')?.addEventListener('click', () => applyTrendText(text, name, 'C'));
+      inp('trend-to-pva')?.addEventListener('click', () => {
           // Same entry shape as the stopwatch path, endpoints from the trail —
           // renderPva and the efficiency apply-button treat both identically.
           const plan = rampPlanCore({
@@ -1294,7 +1296,7 @@ function renderHallEditor() {
   // correction waiting to be applied to one copy and not the other.
   function runRateCalc() {
     const cs = calcState();
-    const g = id => document.getElementById(id);
+    const g = id => inp(id);
     const num = id => { const v = parseFloat(g(id)?.value); return isNaN(v) ? null : v; };
     // persist shared + temp
     cs.it = num('rc-it'); cs.mass = num('rc-mass');
@@ -1425,7 +1427,7 @@ function renderHallEditor() {
       } else hc.textContent = '—';
     }
     // Apply buttons
-    hed.querySelectorAll('.calc-apply').forEach(b => b.onclick = () => {
+    hed.querySelectorAll('.calc-apply').forEach((/** @type {HTMLElement} */ b) => b.onclick = () => {
       const k = b.dataset.rk;
       state.hall[k] = parseFloat(b.dataset.rv);
       if (k === 'rateDehumLb') state.hall.canDehumidify = true;
@@ -1437,7 +1439,7 @@ function renderHallEditor() {
    'dh-type','dh-qty','dh-each','dh-unit','dh-lqty','dh-lat','dh-latunit',
    'dc-cfm','dc-dp','hc-qty','hc-each','hc-unit',
    'hc-type','hc-cfm','hc-eff','hc-meas'].forEach(id => {
-    const el = document.getElementById(id);
+    const el = inp(id);
     if (el) {
       const ev = el.tagName === 'SELECT' ? 'change' : 'input';
       // These feed more than their own readout: the IT load sets how much
@@ -1493,7 +1495,7 @@ function ensureHallAt(loc, bld) {
 }
 
 function renderHallTabs() {
-  const tabs = document.getElementById('hall-tabs');
+  const tabs = inp('hall-tabs');
   if (!tabs) return;
   const v = state.hallView || (state.hallView = { loc: '', bld: '' });
   const esc = escHtml; // one escaper for the whole app
@@ -1502,7 +1504,7 @@ function renderHallTabs() {
 
   // ── Location: full site catalog grouped by state, one option per city.
   const sites = allSites();
-  const locSel = document.getElementById('hall-loc-filter');
+  const locSel = inp('hall-loc-filter');
   if (locSel) {
     const seen = new Set();
     let html = `<option value="">All locations (${state.hallProfiles.length} hall${state.hallProfiles.length === 1 ? '' : 's'})</option>`;
@@ -1531,7 +1533,7 @@ function renderHallTabs() {
   // ── Building: campus codes from the catalog for this city (even with no
   //    halls yet — the fleet is browsable) plus building names on halls here.
   const inLoc = state.hallProfiles.filter(h => !v.loc || (h.siteName || '').trim() === v.loc);
-  const bldSel = document.getElementById('hall-bld-filter');
+  const bldSel = inp('hall-bld-filter');
   if (bldSel) {
     const names = new Set();
     if (v.loc) sites.filter(s => s.siteName === v.loc).forEach(s => names.add(String(s.code)));
@@ -1568,17 +1570,17 @@ function renderHallTabs() {
     };
     tabs.appendChild(btn);
   });
-  const del = document.getElementById('hall-del');
+  const del = inp('hall-del');
   if (del) del.disabled = state.hallProfiles.length <= 1;
 }
 
-document.getElementById('hall-loc-filter').addEventListener('change', function() {
+inp('hall-loc-filter').addEventListener('change', function() {
   state.hallView.loc = this.value;
   state.hallView.bld = '';
   ensureHallAt(this.value, '');    // fresh site → create Hall 1 there, chart follows
   renderHallTabs(); update();
 });
-document.getElementById('hall-bld-filter').addEventListener('change', function() {
+inp('hall-bld-filter').addEventListener('change', function() {
   if (this.value === BLD_ADD) {
     // Name a new building yourself — it doesn't have to be a campus code.
     // It lives at the chosen location (or the active hall's, if on "All").
@@ -1603,18 +1605,18 @@ document.getElementById('hall-bld-filter').addEventListener('change', function()
 
 // Add-city form (next to the Location picker): saves a custom site to this
 // device, then navigates to it — same flow as picking a catalog location.
-document.getElementById('addcity-toggle').addEventListener('click', () => {
-  const f = document.getElementById('addcity-form');
+inp('addcity-toggle').addEventListener('click', () => {
+  const f = inp('addcity-form');
   f.style.display = f.style.display === 'none' ? 'block' : 'none';
 });
-document.getElementById('ac-cancel').addEventListener('click', () => {
-  document.getElementById('addcity-form').style.display = 'none';
+inp('ac-cancel').addEventListener('click', () => {
+  inp('addcity-form').style.display = 'none';
 });
-document.getElementById('ac-save').addEventListener('click', () => {
-  const code  = document.getElementById('ac-code').value.trim();
-  const city  = document.getElementById('ac-city').value.trim();
-  const stRaw = document.getElementById('ac-state').value.trim();
-  const elev  = parseFloat(document.getElementById('ac-elev').value);
+inp('ac-save').addEventListener('click', () => {
+  const code  = inp('ac-code').value.trim();
+  const city  = inp('ac-city').value.trim();
+  const stRaw = inp('ac-state').value.trim();
+  const elev  = parseFloat(inp('ac-elev').value);
   if (!code || !city || !stRaw) { toast('Site code, city, and state are required.', { kind: 'warn' }); return; }
   if (isNaN(elev)) { toast('Enter a numeric elevation in feet.', { kind: 'warn' }); return; }
   // Title-case the state so it sorts/labels consistently.
@@ -1624,12 +1626,12 @@ document.getElementById('ac-save').addEventListener('click', () => {
   state.hallView.loc = `${city}, ${stAbbr(stName)}`;
   state.hallView.bld = '';
   ensureHallAt(state.hallView.loc, '');
-  document.getElementById('addcity-form').style.display = 'none';
-  ['ac-code', 'ac-city', 'ac-state', 'ac-elev'].forEach(id => { document.getElementById(id).value = ''; });
+  inp('addcity-form').style.display = 'none';
+  ['ac-code', 'ac-city', 'ac-state', 'ac-elev'].forEach(id => { inp(id).value = ''; });
   applyElevation(); renderHallTabs(); renderHallEditor(); update();
 });
 
-document.getElementById('hall-add').addEventListener('click', () => {
+inp('hall-add').addEventListener('click', () => {
   // Seed the new hall from the active view: same location/building as the
   // current selection and that site's elevation, so it appears in the tab
   // list you're looking at instead of vanishing behind the filter. Numbering
@@ -1646,7 +1648,7 @@ document.getElementById('hall-add').addEventListener('click', () => {
   renderHallTabs(); renderHallEditor(); update();
 });
 
-document.getElementById('hall-dup').addEventListener('click', () => {
+inp('hall-dup').addEventListener('click', () => {
   const copy = JSON.parse(JSON.stringify(state.hall));
   copy.name = `${copy.name || 'Hall'} (copy)`;
   copy.results = [];   // logged results belong to the physical hall they came from
@@ -1655,7 +1657,7 @@ document.getElementById('hall-dup').addEventListener('click', () => {
   renderHallTabs(); renderHallEditor(); update();
 });
 
-document.getElementById('hall-del').addEventListener('click', async () => {
+inp('hall-del').addEventListener('click', async () => {
   if (state.hallProfiles.length <= 1) return;
   const ok = await confirmDialog({
     title: 'Delete hall profile?',
@@ -1670,7 +1672,7 @@ document.getElementById('hall-del').addEventListener('click', async () => {
   applyElevation(); renderHallTabs(); renderHallEditor(); syncAllControls(); update();
 });
 
-document.getElementById('hall-export').addEventListener('click', () => {
+inp('hall-export').addEventListener('click', () => {
   const payload = { app:'SDC Hall Environment Planner', kind:'hallProfiles', version:4,
                     exported:new Date().toISOString(), hallProfiles: state.hallProfiles };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
@@ -1681,13 +1683,13 @@ document.getElementById('hall-export').addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
-document.getElementById('hall-import').addEventListener('click', () => document.getElementById('hall-file').click());
-document.getElementById('hall-file').addEventListener('change', function() {
+inp('hall-import').addEventListener('click', () => inp('hall-file').click());
+inp('hall-file').addEventListener('change', function() {
   const file = this.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const data = JSON.parse(e.target.result);
+      const data = JSON.parse(String(e.target.result));
       // Accept: v4 halls file, a full-config export (hallProfiles), a bare
       // array of halls, or a legacy v3 file carrying a single `hall` object.
       const incoming = Array.isArray(data) ? data
@@ -1720,7 +1722,7 @@ document.getElementById('hall-file').addEventListener('change', function() {
 
 function renderSlaEditor() {
   const sla = state.slaProfiles[state.activeSla];
-  const ed = document.getElementById('sla-editor');
+  const ed = inp('sla-editor');
   const lock = sla.locked ? 'disabled' : '';
   // The contract is STORED in °F but EDITED in the active display unit — this
   // is the one card where the customer's numbers get typed in, and it used to
@@ -1738,7 +1740,7 @@ function renderSlaEditor() {
     <div class="sla-field"><label for="sla-tmax">Temp max <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-tmax" value="${showT(sla.tMaxF)}" step="0.5" ${lock}></div>
     <div class="sla-field"><label for="sla-rhmin">RH min %</label><input type="number" id="sla-rhmin" value="${sla.rhMin}" step="1" ${lock}></div>
     <div class="sla-field"><label for="sla-rhmax">RH max %</label><input type="number" id="sla-rhmax" value="${sla.rhMax}" step="1" ${lock}></div>
-    <div class="sla-field"><label for="sla-dpmax">Dew pt cap <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-dpmax" value="${showT(sla.dpMaxF != null && sla.dpMaxF !== '' ? Number(sla.dpMaxF) : null)}" step="0.5" placeholder="none" ${lock}></div>
+    <div class="sla-field"><label for="sla-dpmax">Dew pt cap <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-dpmax" value="${showT(sla.dpMaxF != null ? Number(sla.dpMaxF) : null)}" step="0.5" placeholder="none" ${lock}></div>
     <div class="sla-field"><label for="sla-dthr">Max ΔT /hr ${deltaLabel()}</label><input type="number" id="sla-dthr" value="${showDT(sla.maxDtHr)}" step="0.5" placeholder="none" ${lock}></div>
     <div class="sla-field"><label for="sla-drhhr">Max ΔRH /hr %</label><input type="number" id="sla-drhhr" value="${sla.maxDrhHr ?? ''}" step="1" placeholder="none" ${lock}></div>
   `;
@@ -1746,7 +1748,7 @@ function renderSlaEditor() {
     // conv: display value → canonical °F (absolute or delta); identity for RH.
     const dtToF = (v) => v / deltaFromF(1, state.tempUnit || 'F');
     const bind = (id, key, conv) => {
-      document.getElementById(id).addEventListener('input', function() {
+      inp(id).addEventListener('input', function() {
         if (conv) {
           const v = this.value === '' ? null : parseFloat(this.value);
           sla[key] = (v === null || isNaN(v)) ? null : conv(v);
@@ -1764,10 +1766,10 @@ function renderSlaEditor() {
     bind('sla-dpmax','dpMaxF',(v) => tU().toF(v));
     bind('sla-dthr','maxDtHr',dtToF); bind('sla-drhhr','maxDrhHr',idF);
   }
-  document.getElementById('sla-del').disabled = sla.locked || state.slaProfiles.length <= 1;
+  inp('sla-del').disabled = sla.locked || state.slaProfiles.length <= 1;
 }
 
-document.getElementById('sla-add').addEventListener('click', () => {
+inp('sla-add').addEventListener('click', () => {
   const base = state.slaProfiles[state.activeSla];
   state.slaProfiles.push({
     name: 'Customer ' + (state.slaProfiles.length),
@@ -1779,7 +1781,7 @@ document.getElementById('sla-add').addEventListener('click', () => {
   applyElevation(); renderSlaTabs(); renderSlaEditor(); update();
 });
 
-document.getElementById('sla-del').addEventListener('click', async () => {
+inp('sla-del').addEventListener('click', async () => {
   const sla = state.slaProfiles[state.activeSla];
   if (sla.locked || state.slaProfiles.length <= 1) return;
   // A customer's contract numbers deserve the same one-breath pause the hall
@@ -1802,13 +1804,13 @@ function setAllVisible(on) {
   state.showEnvelopes = on;
   syncLegend(); update();
 }
-document.getElementById('leg-all').addEventListener('click', () => setAllVisible(true));
-document.getElementById('leg-none').addEventListener('click', () => setAllVisible(false));
+inp('leg-all').addEventListener('click', () => setAllVisible(true));
+inp('leg-none').addEventListener('click', () => setAllVisible(false));
 
 // Per-item legend toggles — tap to show/hide that boundary on the chart.
 function syncLegend() {
   document.querySelectorAll('#legend .leg-item').forEach(btn => {
-    btn.classList.toggle('leg-off', !state.visible[btn.dataset.vis]);
+    btn.classList.toggle('leg-off', !state.visible[(/** @type {HTMLElement} */ (btn)).dataset.vis]);
   });
 }
 document.querySelectorAll('#legend .leg-item').forEach(btn => {
@@ -1842,10 +1844,10 @@ function flushProfiles() {
 }
 function saveProfiles() {
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
+  saveTimer = /** @type {any} */ (setTimeout(() => {
     saveTimer = 0;
     persistJSON(LS_KEY_V4, buildStoredState(state));
-  }, 400);
+  }, 400));
 }
 window.addEventListener('pagehide', flushProfiles);
 document.addEventListener('visibilitychange', () => {
@@ -1870,13 +1872,13 @@ function loadProfiles() {
     if (!found) return false;
 
     if (patch.hallProfiles) {
-      state.hallProfiles = patch.hallProfiles;
+      state.hallProfiles = /** @type {any} */ (patch.hallProfiles);
       state.activeHall = patch.activeHall ?? 0;
     }
     if (patch.hall) state.hall = patch.hall; // v3: single hall onto the active slot
     if (patch.hallView) state.hallView = patch.hallView;
     if (patch.slaProfiles) {
-      state.slaProfiles = patch.slaProfiles;
+      state.slaProfiles = /** @type {any} */ (patch.slaProfiles);
       normalizeCaps(state.slaProfiles);
     }
     if (patch.activeSla != null) {
@@ -1892,20 +1894,20 @@ function loadProfiles() {
 
 // (persistence is now called directly inside update())
 
-document.getElementById('sla-export').addEventListener('click', () => {
+inp('sla-export').addEventListener('click', () => {
   const payload = { app:'SDC Hall Environment Planner', version:4, exported:new Date().toISOString(),
                     tempUnit: state.tempUnit, hallProfiles: state.hallProfiles, activeHall: state.activeHall,
                     slaProfiles: state.slaProfiles };
   platformSaveFile('sdc_sla_profiles.json', JSON.stringify(payload, null, 2));
 });
 
-document.getElementById('sla-import').addEventListener('click', () => document.getElementById('sla-file').click());
-document.getElementById('sla-file').addEventListener('change', function() {
+inp('sla-import').addEventListener('click', () => inp('sla-file').click());
+inp('sla-file').addEventListener('change', function() {
   const file = this.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const data = JSON.parse(e.target.result);
+      const data = JSON.parse(String(e.target.result));
       if (!Array.isArray(data.slaProfiles)) throw new Error('No slaProfiles array');
       // v4 files carry the full hall list; v3 files carry a single hall.
       if (Array.isArray(data.hallProfiles) && data.hallProfiles.length) {
@@ -1993,7 +1995,7 @@ function applyScenario(s) {
   syncAllControls(); renderSlaTabs(); renderSlaEditor(); syncLegend(); update();
 }
 function renderScenarios() {
-  const list = document.getElementById('scn-list');
+  const list = inp('scn-list');
   if (!list) return;
   if (!scenarios.length) {
     list.innerHTML = `<div class="scn-empty">No saved scenarios yet. Set up a Current → Target case and tap Save.</div>`;
@@ -2011,9 +2013,9 @@ function renderScenarios() {
       <button class="scn-del" data-del="${i}" title="Delete">✕</button>
     </div>`;
   }).join('');
-  list.querySelectorAll('[data-load]').forEach(b => b.addEventListener('click', () => applyScenario(scenarios[+b.dataset.load])));
-  list.querySelectorAll('.scn-item-main').forEach(b => b.addEventListener('click', () => applyScenario(scenarios[+b.dataset.idx])));
-  list.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+  list.querySelectorAll('[data-load]').forEach((/** @type {HTMLElement} */ b) => b.addEventListener('click', () => applyScenario(scenarios[+b.dataset.load])));
+  list.querySelectorAll('.scn-item-main').forEach((/** @type {HTMLElement} */ b) => b.addEventListener('click', () => applyScenario(scenarios[+b.dataset.idx])));
+  list.querySelectorAll('[data-del]').forEach((/** @type {HTMLElement} */ b) => b.addEventListener('click', async () => {
     const i = +b.dataset.del;
     const ok = await confirmDialog({
       title: 'Delete scenario',
@@ -2026,26 +2028,26 @@ function renderScenarios() {
   }));
 }
 
-document.getElementById('scn-save').addEventListener('click', () => {
-  const inp = document.getElementById('scn-name');
-  scenarios.push(captureScenario(inp.value.trim()));
-  inp.value = '';
+inp('scn-save').addEventListener('click', () => {
+  const nameField = inp('scn-name');
+  scenarios.push(captureScenario(nameField.value.trim()));
+  nameField.value = '';
   persistScenarios(); renderScenarios();
 });
-document.getElementById('scn-name').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('scn-save').click(); });
+inp('scn-name').addEventListener('keydown', e => { if (e.key === 'Enter') inp('scn-save').click(); });
 
 // Export / import scenarios as a shareable file
-document.getElementById('scn-export-file').addEventListener('click', () => {
+inp('scn-export-file').addEventListener('click', () => {
   const payload = { app:'SDC Psychrometric Scenarios', version:1, exported:new Date().toISOString(), scenarios };
   platformSaveFile('sdc_scenarios.json', JSON.stringify(payload, null, 2));
 });
-document.getElementById('scn-import-file').addEventListener('click', () => document.getElementById('scn-file').click());
-document.getElementById('scn-file').addEventListener('change', function() {
+inp('scn-import-file').addEventListener('click', () => inp('scn-file').click());
+inp('scn-file').addEventListener('change', function() {
   const file = this.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const data = JSON.parse(e.target.result);
+      const data = JSON.parse(String(e.target.result));
       const incoming = Array.isArray(data) ? data : data.scenarios;
       if (!Array.isArray(incoming)) throw new Error('No scenarios array');
       // Merge (append) imported scenarios so a colleague's file adds to yours.
@@ -2097,7 +2099,7 @@ function mergeSaveFile(data) {
   // Validate the WHOLE payload before touching state — an import either applies
   // cleanly or not at all (v1 could half-apply then throw).
   const v = validateSaveFile(data);
-  if (!v.ok) throw new Error(v.error);
+  if (!v.ok) throw new Error(/** @type {any} */ (v).error);
   let halls = 0, slas = 0, sites = 0, scns = 0;
   const { logs, regs } = mergeSensorData(v.sensorLog, v.sensorRegistry);
   v.halls.forEach(h => {
@@ -2128,20 +2130,20 @@ function mergeSaveFile(data) {
   return `Loaded: ${halls} hall${halls === 1 ? '' : 's'}, ${slas} SLA${slas === 1 ? '' : 's'}, ${sites} custom site${sites === 1 ? '' : 's'}, ${scns} scenario${scns === 1 ? '' : 's'}${logs ? `, ${logs} sensor check${logs === 1 ? '' : 's'}` : ''}${regs ? `, ${regs} sensor spec${regs === 1 ? '' : 's'}` : ''}.`;
 }
 
-document.getElementById('save-export').addEventListener('click', downloadSaveFile);
-document.getElementById('save-share').addEventListener('click', async () => {
+inp('save-export').addEventListener('click', downloadSaveFile);
+inp('save-share').addEventListener('click', async () => {
   // Native share sheet where available (phones/tablets: AirDrop, Teams,
   // email…); anywhere else the adapter falls back to a plain file download.
   await shareFile(saveFileName(), JSON.stringify(buildSaveFile(), null, 2),
     'Hall Environment Planner save file');
 });
-document.getElementById('save-import').addEventListener('click', () => document.getElementById('save-file').click());
-document.getElementById('save-file').addEventListener('change', function() {
+inp('save-import').addEventListener('click', () => inp('save-file').click());
+inp('save-file').addEventListener('change', function() {
   const file = this.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const data = JSON.parse(e.target.result);
+      const data = JSON.parse(String(e.target.result));
       toast(mergeSaveFile(data), { kind: 'ok', duration: 6000 });
     } catch (err) { logError('load-savefile', err); toast('Could not load save file: ' + err.message, { kind: 'error' }); }
   };
@@ -2216,10 +2218,10 @@ function applyStateFromUrl() {
   return true;
 }
 
-document.getElementById('share-link')?.addEventListener('click', () => {
+inp('share-link')?.addEventListener('click', () => {
   copyText(currentShareUrl(), 'Link');
 });
-document.getElementById('share-qr')?.addEventListener('click', () => {
+inp('share-qr')?.addEventListener('click', () => {
   const url = currentShareUrl();
   imageDialog({
     title: 'Scan to open this exact setup',
@@ -2254,7 +2256,7 @@ function briefingHourly(plan) {
   return out;
 }
 
-document.getElementById('copy-briefing')?.addEventListener('click', () => {
+inp('copy-briefing')?.addEventListener('click', () => {
   const p = state.pressure;
   const a = deriveStateF(state.aTemp, state.aRH, p);
   const b = deriveStateF(state.bTemp, state.bRH, p);
@@ -2282,13 +2284,13 @@ document.getElementById('copy-briefing')?.addEventListener('click', () => {
 // happens on tap-and-hold against the tag; the tag then opens the same deep
 // link the QR carries.
 if ('NDEFReader' in window) {
-  const nfcBtn = document.getElementById('share-nfc');
+  const nfcBtn = inp('share-nfc');
   if (nfcBtn) {
     nfcBtn.style.display = '';
     nfcBtn.addEventListener('click', async () => {
       toast('Hold the phone against the tag…', { kind: 'info', duration: 6000 });
       try {
-        await new window.NDEFReader().write({
+        await new (/** @type {any} */ (window).NDEFReader)().write({
           records: [{ recordType: 'url', data: currentShareUrl() }],
         });
         haptic();
@@ -2318,7 +2320,7 @@ function clearActualTrail() {
   if (!actualTrail) return;
   actualTrail = null;
   state.visible.actual = false;
-  const out = document.getElementById('trend-res');
+  const out = inp('trend-res');
   if (out) { out.style.display = 'none'; out.textContent = ''; }
   syncLegend();
 }
@@ -2331,7 +2333,7 @@ function syncActualTrailToHall() {
 }
 
 function playbackReadout() {
-  const info = document.getElementById('playback-info');
+  const info = inp('playback-info');
   if (!info) return;
   const totalH = planMove().hours;
   if (playback.f <= 0 || totalH <= 0) {
@@ -2353,7 +2355,7 @@ function playbackReadout() {
 function playbackSet(f, fromScrub = false) {
   playback.f = Math.min(1, Math.max(0, f));
   if (!fromScrub) {
-    const scrub = document.getElementById('playback-scrub');
+    const scrub = inp('playback-scrub');
     if (scrub) scrub.value = String(Math.round(playback.f * 1000));
   }
   playbackReadout();
@@ -2363,15 +2365,15 @@ function playbackSet(f, fromScrub = false) {
 function playbackStop() {
   playback.playing = false;
   cancelAnimationFrame(playback.raf);
-  const btn = document.getElementById('playback-toggle');
+  const btn = inp('playback-toggle');
   if (btn) btn.textContent = '▶';
 }
 
-document.getElementById('playback-scrub')?.addEventListener('input', function () {
+inp('playback-scrub')?.addEventListener('input', function () {
   playbackStop();
   playbackSet(Number(this.value) / 1000, true);
 });
-document.getElementById('playback-toggle')?.addEventListener('click', function () {
+inp('playback-toggle')?.addEventListener('click', function () {
   if (playback.playing) {
     playbackStop();
     return;
@@ -2413,7 +2415,7 @@ document.getElementById('playback-toggle')?.addEventListener('click', function (
 const ONBOARD_KEY = 'sdc_psychro_onboard_dismissed_v1';
 
 (function initOnboarding() {
-  const card = document.getElementById('start-here');
+  const card = inp('start-here');
   if (!card) return;
 
   const restore = document.createElement('button');
@@ -2429,14 +2431,14 @@ const ONBOARD_KEY = 'sdc_psychro_onboard_dismissed_v1';
   };
   setDismissed(storage.get(ONBOARD_KEY) === '1');
 
-  document.getElementById('onboard-dismiss')?.addEventListener('click', () => {
+  inp('onboard-dismiss')?.addEventListener('click', () => {
     storage.set(ONBOARD_KEY, '1');
     setDismissed(true);
   });
   restore.addEventListener('click', () => {
     storage.set(ONBOARD_KEY, '0');
     setDismissed(false);
-    card.open = true;
+    /** @type {any} */ (card).open = true;
     card.scrollIntoView({ block: 'start' });
   });
 })();
@@ -2486,6 +2488,9 @@ wireEquipmentUi({
   switchHall: (i) => switchHall(i),
 });
 
+// Branding first: every surface below reads the palette it installs.
+applyBrand();
+
 async function boot() {
   const { restored, platform } = await hydrateFromNative();
   if (restored.length) {
@@ -2508,7 +2513,7 @@ syncAllControls();
 // On desktop there's room to work with the profile panels open — start the
 // Data Hall and Customer SLA sections expanded (mobile keeps them collapsed).
 if (window.matchMedia && matchMedia('(min-width:1120px)').matches) {
-  document.querySelectorAll('.col-left > details.sect').forEach((d, i) => { if (i < 2) d.open = true; });
+  document.querySelectorAll('.col-left > details.sect').forEach((/** @type {HTMLDetailsElement} */ d, i) => { if (i < 2) d.open = true; });
 }
 renderSlaTabs();
 renderSlaEditor();
@@ -2532,8 +2537,8 @@ applyTrainingFromUrl();
 // Run validation on load; render results into a collapsible in-page panel
 (function(){
   const r = runSelfTest();
-  const badge = document.getElementById('selftest-badge');
-  const panel = document.getElementById('selftest-panel');
+  const badge = inp('selftest-badge');
+  const panel = inp('selftest-panel');
   if (!badge) return;
 
   badge.textContent = (r.failed
@@ -2572,7 +2577,7 @@ applyTrainingFromUrl();
     onBack: () => {
       const scrim = document.querySelector('.ntf-scrim');
       if (scrim) { scrim.remove(); return true; }
-      const chip = document.getElementById('chip-panel');
+      const chip = inp('chip-panel');
       if (chip && chip.classList.contains('open')) { chip.classList.remove('open'); return true; }
       const openPanel = document.querySelector('#selftest-panel.open');
       if (openPanel) { openPanel.classList.remove('open'); return true; }
@@ -2584,7 +2589,7 @@ applyTrainingFromUrl();
 boot().catch((err) => {
   logError('boot', err);
   // A failed bootstrap must not leave a blank screen with no explanation.
-  const badge = document.getElementById('selftest-badge');
+  const badge = inp('selftest-badge');
   if (badge) {
     badge.textContent = '⚠ Startup failed — see the error log';
     badge.className = 'selftest-badge st-fail';
@@ -2593,17 +2598,17 @@ boot().catch((err) => {
 
 // ── Version stamp + error log access in the footer ──────────────────────────
 (function initFooterDiagnostics() {
-  const vEl = document.getElementById('app-version');
+  const vEl = inp('app-version');
   if (vEl) vEl.textContent = VERSION_LABEL;
 
   // Google Play requires the privacy policy to be reachable INSIDE the app,
   // not only at the store-console URL. A dialog satisfies that offline, over
   // file://, and in the native shells alike.
-  document.getElementById('privacy-link')?.addEventListener('click', () => {
+  inp('privacy-link')?.addEventListener('click', () => {
     confirmDialog({ title: PRIVACY_TITLE, message: PRIVACY_TEXT, confirmLabel: 'Close' });
   });
 
-  const badge = document.getElementById('errorlog-badge');
+  const badge = inp('errorlog-badge');
   if (!badge) return;
   const render = (count) => {
     badge.style.display = count ? 'inline-flex' : 'none';

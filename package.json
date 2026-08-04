@@ -2,7 +2,7 @@
   "name": "psychro",
   "version": "2.2.0",
   "private": true,
-  "description": "Stream Hall Environment Planner — ASHRAE TC 9.9 psychrometric planning tool for data center halls",
+  "description": "Stream Hall Environment Planner \u2014 ASHRAE TC 9.9 psychrometric planning tool for data center halls",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -22,7 +22,8 @@
     "e2e": "playwright test",
     "e2e:update": "playwright test --update-snapshots",
     "test:e2e": "npm run shareable && npm run verify:bundle && npm run e2e",
-    "test:all": "npm run lint && npm run typecheck && npm test && npm run test:e2e"
+    "test:all": "npm run lint && npm run typecheck && npm test && npm run test:e2e",
+    "brand:sample": "node scripts/sample-brand-colors.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.4.2",

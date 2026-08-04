@@ -181,6 +181,68 @@ describe('validateSaveFile', () => {
     expect(v2.slas).toEqual(v1.slas);
   });
 
+  it("carries a hall's whole inventory, condition history included", () => {
+    // A save file is how one engineer's plant model reaches another, and the
+    // condition history is the part that took months to accumulate. Every
+    // earlier test here used halls with no equipment at all, so nothing said
+    // the inventory survived the trip.
+    const withPlant = {
+      hallProfiles: [{
+        name: 'PHX · Hall 1',
+        elevFt: 1066,
+        rateSource: 'inventory',
+        equipment: [
+          {
+            kind: 'humid', name: 'HUM-1', count: 2, cap: 20, unit: 'lbhr', condPct: 60,
+            hist: [{ d: '2026-01-10', c: 100 }, { d: '2026-06-01', c: 60 }],
+          },
+          { kind: 'air', name: 'AHU-1', count: 4, cap: 10000, unit: 'cfm' },
+          { kind: 'humid', name: 'EVAP-1', evap: { cfm: 9000, effPct: 72 } },
+        ],
+      }],
+    };
+    const v = validateSaveFile(withPlant);
+    expect(v.ok).toBe(true);
+    const [hall] = v.halls;
+    expect(hall.equipment).toHaveLength(3);
+
+    const hum = hall.equipment[0];
+    expect(hum.condPct).toBe(60); //             the derate, not a reset to 100
+    expect(hum.hist).toEqual([ //                the months of readings
+      { d: '2026-01-10', c: 100 },
+      { d: '2026-06-01', c: 60 },
+    ]);
+    // Kinds added after the first inventory shipped survive too, with their
+    // own unit tables rather than falling back to a thermal one.
+    expect(hall.equipment[1].unit).toBe('cfm');
+    // A wetted-media unit keeps the effectiveness someone measured, which is
+    // the whole record of how far its media has scaled.
+    expect(hall.equipment[2].evap).toEqual({ cfm: 9000, effPct: 72 });
+    // And the hall still knows the inventory is what drives its rates.
+    expect(hall.rateSource).toBe('inventory');
+
+    // Stable across a second trip — an imported file can be re-exported.
+    const again = validateSaveFile({ hallProfiles: v.halls });
+    expect(again.halls[0].equipment).toEqual(hall.equipment);
+  });
+
+  it('drops equipment it cannot repair rather than importing a broken unit', () => {
+    const v = validateSaveFile({
+      hallProfiles: [{
+        name: 'Hall',
+        equipment: [
+          null,
+          { kind: 'teleporter', cap: 99 },
+          { kind: 'cool', cap: 30, unit: 'ton', hist: [{ d: 'someday', c: 50 }, { d: '2026-02-01', c: 80 }] },
+        ],
+      }],
+    });
+    const [hall] = v.halls;
+    expect(hall.equipment).toHaveLength(1);
+    // An unusable reading is dropped; the usable one beside it is not.
+    expect(hall.equipment[0].hist).toEqual([{ d: '2026-02-01', c: 80 }]);
+  });
+
   it('filters malformed entries instead of half-applying them', () => {
     const v = validateSaveFile({
       hallProfiles: [null, 'junk', { name: 'OK Hall' }],
