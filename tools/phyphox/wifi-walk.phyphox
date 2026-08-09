@@ -1,0 +1,323 @@
+<phyphox version="1.14" locale="en">
+  <title>WiFi Walk Survey</title>
+  <category>Data centre</category>
+  <icon>WiFi</icon>
+  <description>
+        A waypoint logger built to be joined with a WiFi survey.
+
+        phyphox cannot read WiFi signal strength - it has no access to the radio at all - so this does the half it can do: it stamps each waypoint with an absolute Unix timestamp and records the physical context at that spot, while a separate app records the radio.
+
+        There are two ways to get the signal strength in. By hand: read the dBm off WiFiAnalyzer and type it into the RSSI field before pressing Log waypoint. Automatically: turn on Allow remote access in the phyphox menu, and have a script push values in with
+        /control?cmd=set&amp;buffer=rssi&amp;value=-67
+        which is why RSSI, AP count and channel are editable fields - a buffer has to be editable for the remote interface to write to it.
+
+        Either way you end up with one file whose rows carry a timestamp, a waypoint number and everything else measured at that point.
+    </description>
+
+  <data-containers>
+    <!-- values that can be typed or pushed in over the remote interface -->
+    <container init="1">wpId</container>
+    <container init="-70">rssi</container>
+    <container init="0">apCount</container>
+    <container init="0">channel</container>
+    <container>wpIdNext</container>
+
+    <!-- microphone level -->
+    <container size="8192">recording</container>
+    <container>micRate</container>
+    <container>micCnt</container>
+    <container>micFrom</container>
+    <container size="4096">micBlock</container>
+    <container>micN</container>
+    <container size="4096">micSq</container>
+    <container>micSum</container>
+    <container>micMs</container>
+    <container>micLn</container>
+    <container>micDb</container>
+
+    <!-- physical context -->
+    <container size="64">bAbs</container>
+    <container>bNow</container>
+    <container size="64">pres</container>
+    <container>presNow</container>
+    <container size="64">lux</container>
+    <container>luxNow</container>
+
+    <!-- clock -->
+    <container>now</container>
+    <container>epochOffset</container>
+    <container>epochNow</container>
+
+    <!-- log -->
+    <container init="0">logNow</container>
+    <container size="0">wpEpoch</container>
+    <container size="0">wpNum</container>
+    <container size="0">wpRssi</container>
+    <container size="0">wpAp</container>
+    <container size="0">wpCh</container>
+    <container size="0">wpB</container>
+    <container size="0">wpDb</container>
+    <container size="0">wpP</container>
+    <container size="0">wpLux</container>
+    <container>wpCount</container>
+  </data-containers>
+
+  <input>
+    <audio append="true">
+      <output>recording</output>
+      <output component="rate">micRate</output>
+    </audio>
+    <sensor type="magnetic_field" rate="0" ignoreUnavailable="true">
+      <output component="abs">bAbs</output>
+    </sensor>
+    <sensor type="pressure" rate="0" ignoreUnavailable="true">
+      <output component="value">pres</output>
+    </sensor>
+    <sensor type="light" rate="0" ignoreUnavailable="true">
+      <output component="value">lux</output>
+    </sensor>
+  </input>
+
+  <views>
+    <view label="Survey">
+      <value label="Next waypoint number" size="3" precision="0">
+        <input>wpId</input>
+      </value>
+      <value label="Waypoints recorded" precision="0">
+        <input>wpCount</input>
+      </value>
+      <separator height="0.5"/>
+      <value label="RSSI that will be logged" unit="dBm" size="2" precision="0">
+        <input>rssi</input>
+      </value>
+      <value label="Coverage">
+        <input>rssi</input>
+        <map max="-85">unusable</map>
+        <map max="-75">weak - edge of cell</map>
+        <map max="-67">workable</map>
+        <map max="-55">good</map>
+        <map>strong - you are under an AP</map>
+      </value>
+      <separator height="0.5"/>
+      <button label="Log waypoint">
+        <input type="value">1</input>
+        <output>logNow</output>
+      </button>
+      <separator height="0.5"/>
+      <value label="Magnetic field" unit="uT" precision="2">
+        <input>bNow</input>
+      </value>
+      <value label="Sound level (uncalibrated)" unit="dBFS" precision="1">
+        <input>micDb</input>
+      </value>
+      <value label="Pressure" unit="hPa" precision="2">
+        <input>presNow</input>
+      </value>
+      <value label="Illuminance" unit="lx" precision="0">
+        <input>luxNow</input>
+      </value>
+    </view>
+
+    <view label="Entry">
+      <info label="Type what WiFiAnalyzer shows, then go back and press Log waypoint. Signal strength is negative - -67 is stronger than -85."/>
+      <separator height="0.5"/>
+      <edit label="RSSI" unit="dBm" default="-70" decimal="true" signed="true">
+        <output>rssi</output>
+      </edit>
+      <edit label="Access points visible" default="0" decimal="false">
+        <output>apCount</output>
+      </edit>
+      <edit label="Channel" default="0" decimal="false">
+        <output>channel</output>
+      </edit>
+      <separator height="0.5"/>
+      <info label="The waypoint number advances by itself after each log. Set it here if you need to restart a run or skip a number."/>
+      <edit label="Next waypoint number" default="1" decimal="false">
+        <output>wpId</output>
+      </edit>
+    </view>
+
+    <view label="Trace">
+      <graph label="Magnetic field" labelX="Time" unitX="s" labelY="Flux density" unitY="uT" partialUpdate="true">
+        <input axis="x">wpNum</input>
+        <input axis="y">wpB</input>
+      </graph>
+      <graph label="Logged RSSI by waypoint" labelX="Waypoint" labelY="RSSI" unitY="dBm" style="dots" partialUpdate="true">
+        <input axis="x">wpNum</input>
+        <input axis="y">wpRssi</input>
+      </graph>
+    </view>
+
+    <view label="Notes">
+      <info label="Turn off WiFi scan throttling first"/>
+      <info label="Android limits apps to about four scans every two minutes, which is far too slow to survey while walking - you would get a reading every 30 seconds. Settings, Developer options, Wi-Fi scan throttling, off. If the toggle is missing, Shizuku can do it: settings put global wifi_scan_throttle_enabled 0. WiFiAnalyzer tells you at the top of its screen whether throttling is on, so check there before you start."/>
+      <separator height="0.5"/>
+      <info label="The manual workflow"/>
+      <info label="At each point: read the dBm in WiFiAnalyzer, type it into the Entry tab, come back and press Log waypoint. Slow, but it needs nothing else and the numbers land in one file. Use WiFiAnalyzer's own export at the same points if you want the full list of access points - the merge script joins the two on time."/>
+      <separator height="0.5"/>
+      <info label="The automatic workflow"/>
+      <info label="Enable Allow remote access from the phyphox menu, note the address it shows, and have a script write values in as you walk: /control?cmd=set&amp;buffer=rssi&amp;value=-67 and the same for apCount and channel. Then just press Log waypoint. RSSI, AP count and channel are edit fields specifically so this works - the remote interface writes to editable buffers."/>
+      <separator height="0.5"/>
+      <info label="What this is not"/>
+      <info label="This records signal strength where you stood, not where the access points are. Turning a set of RSSI readings into AP positions or a coverage map is a fitting problem for afterwards, and RSSI-to-distance estimates are badly affected by racks, walls and people - treat any distance an app derives from RSSI as an order of magnitude, not a measurement."/>
+    </view>
+  </views>
+
+  <analysis sleep="0.25">
+    <timer>
+      <output as="out">now</output>
+      <output as="offset1970">epochOffset</output>
+    </timer>
+    <add>
+      <input>now</input>
+      <input>epochOffset</input>
+      <output clear="false">epochNow</output>
+    </add>
+
+    <!-- sound level -->
+    <count>
+      <input clear="false">recording</input>
+      <output>micCnt</output>
+    </count>
+    <formula formula="max([1]-4096,0)">
+      <input>micCnt</input>
+      <output>micFrom</output>
+    </formula>
+    <subrange>
+      <input as="from" clear="false">micFrom</input>
+      <input as="in" clear="false">recording</input>
+      <output clear="false">micBlock</output>
+    </subrange>
+    <count>
+      <input clear="false">micBlock</input>
+      <output>micN</output>
+    </count>
+    <multiply>
+      <input as="factor" clear="false">micBlock</input>
+      <input as="factor">micBlock</input>
+      <output>micSq</output>
+    </multiply>
+    <integrate>
+      <input>micSq</input>
+      <output>micSum</output>
+    </integrate>
+    <formula formula="[1]/max([2],1)+0.000000000001">
+      <input>micSum</input>
+      <input>micN</input>
+      <output>micMs</output>
+    </formula>
+    <log>
+      <input>micMs</input>
+      <output>micLn</output>
+    </log>
+    <formula formula="4.342944819032518*[1]">
+      <input>micLn</input>
+      <output clear="false">micDb</output>
+    </formula>
+
+    <!-- context sensors -->
+    <average>
+      <input as="buffer" clear="false">bAbs</input>
+      <output as="average" clear="false">bNow</output>
+    </average>
+    <average>
+      <input as="buffer" clear="false">pres</input>
+      <output as="average" clear="false">presNow</output>
+    </average>
+    <average>
+      <input as="buffer" clear="false">lux</input>
+      <output as="average" clear="false">luxNow</output>
+    </average>
+
+    <!-- log a waypoint -->
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">epochNow</input>
+      <output clear="false">wpEpoch</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">wpId</input>
+      <output clear="false">wpNum</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">rssi</input>
+      <output clear="false">wpRssi</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">apCount</input>
+      <output clear="false">wpAp</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">channel</input>
+      <output clear="false">wpCh</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">bNow</input>
+      <output clear="false">wpB</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">micDb</input>
+      <output clear="false">wpDb</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">presNow</input>
+      <output clear="false">wpP</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">luxNow</input>
+      <output clear="false">wpLux</output>
+    </if>
+
+    <!-- advance the waypoint number, after it has been logged -->
+    <add>
+      <input clear="false">wpId</input>
+      <input type="value">1</input>
+      <output>wpIdNext</output>
+    </add>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input>wpIdNext</input>
+      <output clear="false">wpId</output>
+    </if>
+    <append>
+      <input type="value">0</input>
+      <output>logNow</output>
+    </append>
+    <count>
+      <input clear="false">wpEpoch</input>
+      <output>wpCount</output>
+    </count>
+  </analysis>
+
+  <export>
+    <set name="Waypoints">
+      <data name="Timestamp (Unix s)">wpEpoch</data>
+      <data name="Waypoint">wpNum</data>
+      <data name="RSSI (dBm)">wpRssi</data>
+      <data name="AP count">wpAp</data>
+      <data name="Channel">wpCh</data>
+      <data name="Magnetic field (uT)">wpB</data>
+      <data name="Sound level (dBFS)">wpDb</data>
+      <data name="Pressure (hPa)">wpP</data>
+      <data name="Illuminance (lx)">wpLux</data>
+    </set>
+  </export>
+</phyphox>

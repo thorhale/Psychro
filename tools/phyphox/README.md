@@ -14,6 +14,7 @@ the planner bundle — nothing here is imported by `src/`, nothing is precached 
 | `emi-survey.phyphox` | live-conductor finder, for routing copper away from power | magnetometer |
 | `hall-survey.phyphox` | barometric trace plus a logged point per location, T and RH typed in | barometer |
 | `sound-level-meter.phyphox` | A/C/Z weighted level, Leq, Lmax/Lmin, peak, noise dose | mic |
+| `wifi-walk.phyphox` | waypoint logger built to be joined with a WiFi survey | mic + magnetometer + barometer |
 
 ## Installing one on a phone
 
@@ -28,10 +29,70 @@ It reads accelerometer, gyroscope, magnetometer, light, pressure, proximity,
 microphone, GPS, camera, and Bluetooth LE from custom devices.
 
 **There is no WiFi.** No RSSI, no scanning — it sits on the phone's sensor
-framework and WiFi is not in it. For a coverage survey you need a separate app,
-or an ESP32 running the phyphox BLE library, scanning APs and notifying RSSI as a
-Bluetooth input. The walk logger is built to make either work: every row carries
-a Unix timestamp, so a separate RSSI log joins to it on time alone.
+framework and WiFi is not in it. See below for the two ways round that.
+
+## The WiFi survey workflow
+
+`wifi-walk.phyphox` plus two scripts. Neither invents a WiFi input; they get the
+radio data in from outside.
+
+**Before anything else, turn off scan throttling.** Android allows about four
+scans every two minutes, so a walking survey would get one reading every 30
+seconds. Developer options → Wi-Fi scan throttling → off. If the toggle is
+missing, Shizuku can do it without a PC:
+
+```
+settings put global wifi_scan_throttle_enabled 0
+```
+
+WiFiAnalyzer prints whether throttling is on at the top of its screen — check
+there before you start walking.
+
+**Route 1, join afterwards.** Walk pressing *Log waypoint* in phyphox, and
+export from WiFiAnalyzer at the same points. Then:
+
+```sh
+python3 tools/phyphox/wifi_merge.py waypoints.csv scan*.txt -o survey.csv
+```
+
+Every access point row is matched to the waypoint you were standing on. The trap
+this is built around: phyphox writes Unix seconds (UTC) and WiFiAnalyzer writes a
+local wall-clock string with no offset on it, so a naive join is silently wrong
+by a whole number of hours and still looks reasonable. The offset is therefore
+measured, not assumed — every whole-hour shift is tried and the one that lines
+the scans up most tightly wins. It is always reported, and `--tz-hours` forces it.
+If nothing lines up within the tolerance it says so and exits non-zero rather
+than emitting a plausible file.
+
+**Route 2, push live.** phyphox's remote interface can write into a buffer:
+
+```
+/control?cmd=set&buffer=rssi&value=-67
+```
+
+`wifi_push.py` scans, picks the AP you name, and pushes RSSI, AP count and
+channel in, so you only have to press *Log waypoint*:
+
+```sh
+python3 tools/phyphox/wifi_push.py --host 192.168.0.14:8080 --bssid 1c:49:7b:66:ee:17
+```
+
+RSSI, AP count and channel are `<edit>` fields in the experiment specifically so
+this works — the remote interface writes to editable buffers. Scan sources:
+`termux` (`termux-wifi-scaninfo`), `rish`/`adb` (`cmd wifi list-scan-results`),
+`nmcli`, `iw`, `netsh`. All five parsers are tested against captured output;
+`--simulate FILE` runs one against a saved capture, and `--dry-run` scans and
+prints without pushing.
+
+**Co-location matters.** RSSI belongs to the radio that measured it, not to the
+room. If you are walking with the phone the scan must come from the phone — so
+route 2 means Termux or a Shizuku shell *on the phone*. Running it on a laptop
+while you walk away with the phone records the laptop's view of the network.
+A laptop source is only correct when it sits beside the phone and neither moves.
+
+**Third option, if you want this properly automatic:** an ESP32 running phyphox's
+BLE library, scanning APs and notifying RSSI as a Bluetooth input. That walks
+with you, needs no shell, and lands the data in phyphox natively. Not built here.
 
 ## Accuracy, and where it runs out
 
@@ -141,6 +202,6 @@ match. Not done here.
 
 ## Status
 
-All seven pass the linter. **None has been run on a phone.** The physics and the
+All eight pass the linter. **None has been run on a phone.** The physics and the
 arithmetic are checked; whether phyphox's parser accepts every construct, and
 whether the sonar behaves in a room full of hard reflective surfaces, is not.
