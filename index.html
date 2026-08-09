@@ -34,6 +34,13 @@
     --stream-navy:#193c76; --stream-teal:#10a8c6;
     --brand-primary:#193c76; --brand-primary-dark:#11284e; --brand-primary-light:#4c6794;
     --brand-accent:#10a8c6; --brand-accent-dark:#0b758b;
+    /* Tints of the accent, so a brand swap carries every hover and highlight
+       with it. These replaced nine uses of a hardcoded #3b9eff — a blue in no
+       brand file, which meant hovering a button changed its hue, not just its
+       value. color-mix keeps them derived rather than re-picked. */
+    --tint-accent: color-mix(in srgb, var(--brand-accent) 10%, transparent);
+    --tint-accent-strong: color-mix(in srgb, var(--brand-accent) 16%, transparent);
+    --tint-accent-line: color-mix(in srgb, var(--brand-accent) 32%, transparent);
     --mono:'Courier New',monospace; --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   }
   * { box-sizing:border-box; margin:0; padding:0; }
@@ -76,7 +83,7 @@
   .ctl-num:focus { border-color:var(--stream-teal); }
   .ctl-unit { font-size:.72rem; color:var(--muted); }
   .ctl-flag { font-size:.66rem; font-family:var(--mono); font-weight:700; margin-left:auto; padding:2px 7px; border-radius:6px; }
-  .ctl-flag.wf-add { color:#7fd8ea; background:rgba(0,169,206,.14); }
+  .ctl-flag.wf-add { color:#7fd8ea; background:var(--tint-accent-strong); }
   .ctl-flag.wf-rem { color:#ffd28a; background:rgba(240,165,0,.14); }
   /* ── Collapsible sections ── */
   details.sect { padding:0; }
@@ -130,13 +137,13 @@
   .load-advisory { border-left:3px solid var(--accent); }
   .load-big { font-size:1rem; color:var(--accent); }
   .ramp-foot { margin-top:8px; padding-top:8px; border-top:1px solid var(--border); font-size:.72rem; font-family:var(--sans); line-height:1.4; }
-  .cap-note { margin-top:12px; padding:10px 12px; border-radius:6px; background:rgba(0,169,206,.08); border-left:3px solid var(--stream-teal); font-size:.76rem; color:#cfe0ee; line-height:1.5; }
+  .cap-note { margin-top:12px; padding:10px 12px; border-radius:6px; background:var(--tint-accent); border-left:3px solid var(--stream-teal); font-size:.76rem; color:#cfe0ee; line-height:1.5; }
   .cap-note strong { color:#fff; }
   .why-note { margin-top:12px; padding:11px 13px; border-radius:6px; font-size:.78rem; line-height:1.5; font-weight:500; }
-  .why-note.why-wet  { background:rgba(59,158,255,.12); border-left:3px solid #4aa3ff; color:#cfe4ff; }
+  .why-note.why-wet  { background:var(--tint-accent-strong); border-left:3px solid #4aa3ff; color:#cfe4ff; }
   .why-note.why-dry  { background:rgba(240,165,0,.12);  border-left:3px solid #f0a500; color:#ffe6b0; }
   .why-note.why-hot  { background:rgba(248,81,73,.12);   border-left:3px solid #f85149; color:#ffc9c5; }
-  .why-note.why-cold { background:rgba(59,158,255,.12); border-left:3px solid #4aa3ff; color:#cfe4ff; }
+  .why-note.why-cold { background:var(--tint-accent-strong); border-left:3px solid #4aa3ff; color:#cfe4ff; }
   .ramp-ok { color:var(--ok); }
   .ramp-bad { color:var(--warn); }
 
@@ -177,35 +184,50 @@
   .sla-tab { padding:5px 12px; border-radius:5px 5px 0 0; border:1px solid var(--border); border-bottom:none; background:transparent; color:var(--muted); font-size:.72rem; font-weight:600; cursor:pointer; font-family:var(--sans); transition:all .12s; }
   .sla-tab.active { background:rgba(255,255,255,.08); color:var(--text); border-color:rgba(255,255,255,.4); }
   .sla-tab.locked::after { content:' 🔒'; font-size:.6rem; }
-  .sla-tab-add { padding:5px 10px; border-radius:5px; border:1px dashed var(--border); background:transparent; color:var(--accent2); font-size:.72rem; font-weight:700; cursor:pointer; font-family:var(--sans); transition:all .12s; white-space:nowrap; }
-  .sla-tab-add:hover { border-color:var(--accent2); border-style:solid; background:rgba(59,158,255,.08); }
+  /* ── One button ────────────────────────────────────────────────────────
+     There were four systems here — .scn-btn, .sla-tab-btn, .sla-tab-add and
+     .calc-apply — with three border radii, three font sizes and three
+     paddings between them, so one row of related actions rendered in five
+     visual weights. They now share a shape and differ only in EMPHASIS:
+     primary is filled, danger is red, everything else is quiet. */
+  .scn-btn, .sla-tab-btn, .sla-tab-add, .calc-apply {
+    padding:7px 13px; border-radius:6px; border:1px solid var(--border);
+    background:var(--surface); color:var(--text);
+    font-family:var(--sans); font-size:.75rem; font-weight:600;
+    white-space:nowrap; cursor:pointer; transition:all .12s;
+  }
+  .scn-btn:hover, .sla-tab-btn:hover, .sla-tab-add:hover, .calc-apply:hover {
+    border-color:var(--brand-accent); background:var(--tint-accent);
+  }
+  .scn-btn:disabled, .sla-tab-btn:disabled, .sla-tab-add:disabled {
+    opacity:.35; cursor:not-allowed;
+  }
+  /* The one action a card is actually FOR. At most one per card. */
+  .sla-tab-add { border-style:dashed; }
+  .sla-tab-add:hover { border-style:solid; }
   .tab-actions { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-left:auto; }
-  .sla-tab-btn { padding:5px 10px; border-radius:5px; border:1px solid var(--border); background:transparent; color:var(--accent2); font-size:.7rem; font-weight:600; cursor:pointer; font-family:var(--sans); white-space:nowrap; transition:all .12s; }
-  .sla-tab-btn:hover { border-color:var(--accent2); background:rgba(59,158,255,.08); }
-  .sla-tab-btn:disabled { opacity:.35; cursor:not-allowed; }
   .sla-tab-danger { color:var(--danger); }
-  .sla-tab-danger:hover { border-color:var(--danger); background:rgba(248,81,73,.08); }
+  .sla-tab-danger:hover { border-color:var(--danger); background:color-mix(in srgb, var(--danger) 10%, transparent); }
   .hall-filter-row { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
   .hall-filter { display:flex; flex-direction:column; gap:3px; flex:1; min-width:140px; }
-  .hall-filter label { font-size:.62rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .hall-filter label { font-size:.68rem; color:var(--muted); letter-spacing:0; }
   .sla-editor { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:12px; }
   .sla-field { display:flex; flex-direction:column; gap:4px; }
-  .sla-field label { font-size:.65rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .sla-field label { font-size:.7rem; color:var(--muted); letter-spacing:0; }
   /* A hint inside a field label is a sentence, not a heading: uppercasing it
      with the label turned "optional — a barometer beats the elevation
      estimate" into three lines of shouting above a single input. */
-  .sla-field label .cap-hint { text-transform:none; letter-spacing:0; font-size:.62rem; opacity:.85; }
+  .sla-field label .cap-hint { font-size:.66rem; opacity:.8; }
   /* Unit symbols are case-significant: kPa is not KPA, and an engineer reads
      the difference as sloppiness. Exempt them from the label's uppercasing. */
-  .sla-field label .u { text-transform:none; letter-spacing:0; }
   .sla-field input { background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-family:var(--mono); font-size:.85rem; padding:5px 8px; outline:none; -moz-appearance:textfield; }
   .sla-field input::-webkit-inner-spin-button { -webkit-appearance:none; }
   .sla-field input:focus { border-color:var(--accent); }
   .sla-field input:disabled { opacity:.5; cursor:not-allowed; }
   .sla-select { background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-family:var(--sans); font-size:.82rem; padding:6px 8px; outline:none; cursor:pointer; width:100%; }
   .sla-select:focus { border-color:var(--accent); }
-  .sla-caps { grid-column:1 / -1; margin-top:8px; padding:10px 12px; background:rgba(0,169,206,.06); border:1px solid rgba(0,169,206,.25); border-radius:6px; }
-  .sla-caps-label { font-size:.66rem; color:var(--stream-teal); font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px; }
+  .sla-caps { grid-column:1 / -1; margin-top:8px; padding:10px 12px; background:var(--tint-accent); border:1px solid var(--tint-accent-line); border-radius:6px; }
+  .sla-caps-label { font-size:.72rem; color:var(--text); font-weight:700; letter-spacing:0; margin-bottom:8px; }
   .cap-check { display:flex; align-items:center; gap:8px; font-size:.82rem; color:var(--text); font-weight:600; padding:4px 0; cursor:pointer; }
   .cap-check input { width:16px; height:16px; accent-color:var(--stream-teal); cursor:pointer; flex:none; }
   .cap-hint { font-size:.66rem; color:var(--muted); font-weight:400; }
@@ -230,7 +252,7 @@
   .calc-sel { padding:7px 6px; font-size:.8rem; }
   .calc-res { font-family:var(--mono); font-size:.82rem; color:var(--text); margin:8px 0 2px; }
   .calc-res strong { color:var(--stream-teal); }
-  .calc-apply { margin-left:8px; padding:4px 12px; border-radius:8px; border:1px solid var(--stream-teal); background:rgba(0,169,206,.12); color:var(--stream-teal); font-size:.72rem; font-weight:700; cursor:pointer; }
+  .calc-apply { margin-left:8px; border-color:var(--brand-accent); background:var(--tint-accent-strong); color:var(--brand-accent); font-weight:700; }
   .calc-detail { font-size:.72rem; color:#cfe0ee; margin-top:6px; line-height:1.5; }
   .calc-warn { font-size:.74rem; color:var(--warn); line-height:1.5; }
   .calc-note { font-size:.66rem; color:var(--muted); margin-top:10px; line-height:1.5; }
@@ -257,7 +279,7 @@
   .sv-tab { background:var(--bg); border:1px solid var(--border); color:var(--muted);
     border-radius:6px; padding:5px 10px; font:600 .68rem var(--sans); cursor:pointer; }
   .sv-tab[aria-selected="true"] { color:var(--stream-teal); border-color:var(--stream-teal);
-    background:rgba(0,169,206,.08); }
+    background:var(--tint-accent); }
   .sv-pane { display:none; }
   .sv-pane.active { display:block; }
   .sv-hint { color:var(--muted); font-size:.7rem; margin-top:6px; line-height:1.5; }
@@ -272,7 +294,7 @@
   .scn-btn:disabled { opacity:.35; cursor:not-allowed; }
   .calc-typesel { width:100%; margin-bottom:8px; }
   .dh-pane { margin-bottom:2px; }
-  .cap-explain { font-size:.72rem; color:#cfe0ee; line-height:1.45; margin-bottom:10px; }
+  .cap-explain { font-size:.68rem; color:var(--muted); line-height:1.5; margin-bottom:12px; max-width:62ch; }
   /* Add-city form */
   .sla-addcity { grid-column:1 / -1; margin-top:-4px; margin-bottom:4px; }
   .addcity-toggle { background:none; border:none; color:var(--stream-teal); font-size:.78rem; font-weight:600; font-family:var(--sans); cursor:pointer; padding:4px 0; }
@@ -289,18 +311,16 @@
   .scn-input { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:var(--sans); font-size:.85rem; padding:8px 10px; outline:none; }
   .scn-input:focus { border-color:var(--stream-teal); }
   .scn-input::placeholder { color:var(--muted); }
-  .scn-btn { padding:8px 14px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:.8rem; font-weight:600; font-family:var(--sans); cursor:pointer; transition:all .12s; }
-  .scn-btn:hover { border-color:var(--stream-teal); }
-  .scn-btn-primary { background:var(--stream-teal); border-color:var(--stream-teal); color:#062a33; font-weight:700; }
-  .scn-btn-primary:hover { filter:brightness(1.08); }
-  .scn-btn-img { background:rgba(0,169,206,.1); border-color:rgba(0,169,206,.3); color:var(--stream-teal); }
+  .scn-btn-primary { background:var(--brand-accent); border-color:var(--brand-accent); color:#052730; font-weight:700; }
+  .scn-btn-primary:hover { background:var(--brand-accent); filter:brightness(1.08); }
+  .scn-btn-img { background:var(--tint-accent); border-color:var(--tint-accent-line); color:var(--brand-accent); }
   .scn-list { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
   .scn-item { display:flex; align-items:center; gap:8px; padding:9px 12px; border-radius:7px; background:var(--surface); border:1px solid var(--border); }
   .scn-item-main { flex:1; cursor:pointer; }
   .scn-item-name { font-size:.84rem; font-weight:600; color:var(--text); }
   .scn-item-detail { font-size:.7rem; color:var(--muted); font-family:var(--mono); margin-top:2px; }
   .scn-item:hover { border-color:var(--stream-teal); }
-  .scn-load { font-size:.72rem; color:var(--stream-teal); font-weight:700; padding:4px 8px; border:1px solid rgba(0,169,206,.3); border-radius:5px; background:none; cursor:pointer; }
+  .scn-load { font-size:.72rem; color:var(--stream-teal); font-weight:700; padding:4px 8px; border:1px solid var(--tint-accent-line); border-radius:5px; background:none; cursor:pointer; }
   .scn-del { font-size:.9rem; color:var(--danger); background:none; border:none; cursor:pointer; padding:2px 6px; }
   .scn-empty { font-size:.76rem; color:var(--muted); padding:10px; text-align:center; background:var(--surface); border:1px dashed var(--border); border-radius:6px; margin-bottom:12px; }
   .scn-actions { display:flex; gap:8px; flex-wrap:wrap; }
@@ -309,7 +329,7 @@
   .sla-field.name-field { grid-column:1 / -1; }
   .sla-actions { display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap; }
   .sla-btn { padding:5px 12px; border-radius:5px; border:1px solid var(--border); background:transparent; color:var(--accent2); font-size:.72rem; font-weight:600; cursor:pointer; font-family:var(--sans); transition:all .12s; }
-  .sla-btn:hover { border-color:var(--accent2); background:rgba(59,158,255,.08); }
+  .sla-btn:hover { border-color:var(--accent2); background:var(--tint-accent); }
   .sla-btn-danger { color:var(--danger); }
   .sla-btn-danger:hover { border-color:var(--danger); background:rgba(248,81,73,.08); }
   .sla-btn:disabled { opacity:.35; cursor:not-allowed; }
@@ -317,7 +337,7 @@
   .badge-ok { background:rgba(63,185,80,.1); border:1px solid rgba(63,185,80,.35); color:var(--ok); }
   .badge-warn { background:rgba(210,153,34,.1); border:1px solid rgba(210,153,34,.35); color:var(--warn); }
   .badge-bad { background:rgba(248,81,73,.1); border:1px solid rgba(248,81,73,.35); color:var(--danger); }
-  .badge-info { background:rgba(59,158,255,.1); border:1px solid rgba(59,158,255,.35); color:var(--accent2); }
+  .badge-info { background:var(--tint-accent); border:1px solid var(--tint-accent-line); color:var(--accent2); }
 
   .psych-wrap { width:100%; }
   #psychCanvas { width:100%; height:auto; display:block; border-radius:4px; cursor:grab; touch-action:none; }
@@ -325,7 +345,7 @@
   .chart-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; flex-wrap:wrap; }
   .zoom-toolbar { display:flex; gap:4px; }
   .zoom-btn { min-width:30px; height:28px; padding:0 8px; border-radius:5px; border:1px solid var(--border); background:transparent; color:var(--muted); font-size:.8rem; font-weight:700; cursor:pointer; font-family:var(--sans); transition:all .12s; }
-  .zoom-btn:hover { border-color:var(--accent2); color:var(--accent2); background:rgba(59,158,255,.08); }
+  .zoom-btn:hover { border-color:var(--accent2); color:var(--accent2); background:var(--tint-accent); }
   .zoom-hint { font-size:.63rem; color:var(--muted); margin-bottom:10px; }
   .legend { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
   .leg-item { display:flex; align-items:center; gap:6px; font-size:.7rem; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:4px 9px; cursor:pointer; font-family:var(--sans); transition:all .12s; }
@@ -354,7 +374,7 @@
   .zOut { background:rgba(125,133,144,.15); color:#7d8590; }
 
   .formula-note { font-size:.63rem; color:var(--muted); line-height:1.5; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
-  .formula-note code { font-family:var(--mono); color:var(--accent2); background:rgba(59,158,255,.08); padding:1px 4px; border-radius:3px; }
+  .formula-note code { font-family:var(--mono); color:var(--accent2); background:var(--tint-accent); padding:1px 4px; border-radius:3px; }
 
   /* ── Masthead ──────────────────────────────────────────────────────────
      A strip, not a billboard. It used to stack company, product and tagline
@@ -452,7 +472,7 @@
 
   /* ── Install-app banner (PWA) ── */
   .install-banner { display:none; align-items:center; gap:12px; margin:0 -16px 16px; padding:10px 16px;
-    background:linear-gradient(135deg,rgba(0,169,206,.16),rgba(0,169,206,.06)); border-bottom:1px solid rgba(0,169,206,.35); }
+    background:linear-gradient(135deg,var(--tint-accent-strong),var(--tint-accent)); border-bottom:1px solid var(--tint-accent-line); }
   .install-banner.show { display:flex; }
   .install-icon { width:34px; height:34px; border-radius:8px; flex:none; }
   .install-copy { flex:1; min-width:0; }
@@ -461,10 +481,10 @@
   .install-actions { display:flex; gap:8px; flex:none; align-items:center; }
   .install-btn { padding:7px 14px; border-radius:6px; border:none; background:var(--stream-teal); color:#062a33; font-size:.78rem; font-weight:700; font-family:var(--sans); cursor:pointer; white-space:nowrap; }
   .install-btn:hover { filter:brightness(1.08); }
-  .install-alt { padding:7px 12px; border-radius:6px; border:1px solid rgba(0,169,206,.5); background:transparent;
+  .install-alt { padding:7px 12px; border-radius:6px; border:1px solid var(--tint-accent-line); background:transparent;
     color:var(--stream-teal); font-size:.76rem; font-weight:700; font-family:var(--sans); cursor:pointer;
     white-space:nowrap; text-decoration:none; }
-  .install-alt:hover { background:rgba(0,169,206,.12); }
+  .install-alt:hover { background:var(--tint-accent-strong); }
   /* Onboarding is for the FIRST visit. It sits above the tool, so it stays
      visually quiet and can be dismissed for good once it has done its job. */
   .onboard { border-style:dashed; }
@@ -492,7 +512,7 @@
   @media (max-width:560px) { .eq-totals { grid-template-columns:1fr; } }
   /* A rate the inventory is producing: still legible, visibly not yours to
      type into. Readonly rather than disabled so the number stays selectable. */
-  .cap-rate.cap-derived { background:rgba(0,169,206,.08); border-color:var(--stream-teal);
+  .cap-rate.cap-derived { background:var(--tint-accent); border-color:var(--stream-teal);
     color:var(--stream-teal); cursor:default; }
   .eq-live { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px;
     padding-top:8px; border-top:1px solid var(--border); font-size:.72rem; color:var(--muted); }
@@ -512,9 +532,9 @@
     border:1px solid var(--border); background:var(--bg); color:var(--text);
     font-family:var(--sans); font-size:.78rem; cursor:pointer; transition:all .12s; }
   .hall-row:hover { border-color:var(--accent2); }
-  .hall-row.is-active { border-color:var(--stream-teal); background:rgba(0,169,206,.07); }
+  .hall-row.is-active { border-color:var(--stream-teal); background:var(--tint-accent); }
   .hall-row .hr-name { font-weight:700; }
-  .hall-row .hr-meta { color:var(--muted); font-size:.68rem; font-family:var(--mono); }
+  .hall-row .hr-meta { color:var(--muted); font-size:.7rem; }
   /* Plant trouble in this hall — same size as the other meta lines, but it is
      the one thing on the row worth interrupting a scan for. */
   .hall-row .hr-plant { color:var(--warn); font-size:.68rem; font-family:var(--mono); }

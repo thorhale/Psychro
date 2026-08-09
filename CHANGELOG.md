@@ -11,6 +11,30 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — typography and buttons
+
+- **One button, four emphases.** There were four button systems —
+  `.scn-btn`, `.sla-tab-btn`, `.sla-tab-add`, `.calc-apply` — with three
+  border radii, three font sizes and three paddings between them, so a single
+  row of related actions rendered in five visual weights. They now share one
+  shape and differ only in emphasis: primary is filled, danger is red, the
+  rest are quiet.
+- **Field labels are sentence case.** A caps eyebrow works on a two-word
+  section title; on "Location sets site + elevation" it is a sentence in a
+  raincoat. Two CSS rules existed purely to undo the uppercase on nested
+  spans — both gone.
+- **Explanatory prose is reference material, not a heading.** The blocks
+  inside form cards were near body-text weight and colour, competing with the
+  fields they describe. Muted, smaller, and capped at 62 characters a line.
+- **Monospace is for columns of figures.** The hall-row meta line mixed a
+  place name and a plain-English "no plant rates" with two numbers; the
+  numbers were not in a column, so the prose was paying for nothing. The
+  condition column across rows *is* aligned, and stays mono.
+- **Hover tints come from the brand.** Nine rules used `rgba(59,158,255,…)` —
+  a blue in no brand file — so hovering a button changed its hue, not just
+  its value. Tints are now `color-mix` against `--brand-accent` and follow a
+  brand swap with everything else.
+
 ### Changed — field-first layout
 
 The app opens on a phone with a logo, four closed drawers, and the chart —
