@@ -1,0 +1,306 @@
+<phyphox version="1.14" locale="en">
+  <title>Busway Load Indicator</title>
+  <category>Data centre</category>
+  <icon>BUS</icon>
+  <description>
+        A non-contact, relative current indicator. The magnetic field around a conductor is proportional to the current in it, so holding the phone at a FIXED standoff from a busway, a feed whip or a cable tray and reading the field tells you how heavily that run is loaded relative to another one.
+
+        Workflow: press Set baseline in a quiet spot away from the run to capture the ambient field, then hold the phone against a fixed reference point on the run and press Log section. Repeat down the busway, or capture feed A and feed B to compare them.
+
+        This is a comparison instrument, not an ammeter. The reading depends on how far the phone is from the conductor and on the geometry of the bars inside the housing, so numbers are only meaningful against other numbers taken the same way, at the same standoff, on the same run.
+    </description>
+
+  <data-containers>
+    <container size="3000">bx</container>
+    <container size="3000">by</container>
+    <container size="3000">bz</container>
+    <container size="3000">babs</container>
+    <container size="3000">bt</container>
+
+    <container>cnt</container>
+    <container>lastFrom</container>
+    <container>winFrom</container>
+    <container>bLast</container>
+    <container size="64">win</container>
+    <container>bMean</container>
+    <container>bAc</container>
+
+    <container init="0">baseline</container>
+    <container>delta</container>
+
+    <container init="0">setBase</container>
+    <container init="0">logNow</container>
+    <container init="0">grabA</container>
+    <container init="0">grabB</container>
+
+    <container init="0">feedA</container>
+    <container init="0">feedB</container>
+    <container>abDiff</container>
+    <container>abSum</container>
+    <container>abImbalance</container>
+
+    <container>now</container>
+    <container>epochOffset</container>
+    <container>epochNow</container>
+
+    <container size="0">logEpoch</container>
+    <container size="0">logField</container>
+    <container size="0">logDelta</container>
+    <container size="0">logAc</container>
+    <container>logCount</container>
+  </data-containers>
+
+  <input>
+    <sensor type="magnetic_field" rate="0">
+      <output component="x">bx</output>
+      <output component="y">by</output>
+      <output component="z">bz</output>
+      <output component="abs">babs</output>
+      <output component="t">bt</output>
+    </sensor>
+  </input>
+
+  <views>
+    <view label="Measure">
+      <value label="Field above baseline" unit="uT" size="3" precision="2">
+        <input>delta</input>
+      </value>
+      <value label="Total field" unit="uT" precision="2">
+        <input>bMean</input>
+      </value>
+      <value label="Ambient baseline" unit="uT" precision="2">
+        <input>baseline</input>
+      </value>
+      <value label="AC activity" unit="uT" precision="3">
+        <input>bAc</input>
+      </value>
+      <value label="Energised?">
+        <input>bAc</input>
+        <map max="0.3">no fluctuation - dead, DC, or too far away</map>
+        <map max="1">slight fluctuation</map>
+        <map>fluctuating - alternating current nearby</map>
+      </value>
+      <separator height="0.5"/>
+      <info label="Stand clear of the run, let the reading settle, then press this."/>
+      <button label="Set baseline here">
+        <input type="value">1</input>
+        <output>setBase</output>
+      </button>
+      <separator height="0.5"/>
+      <info label="Now hold the phone against the run at a repeatable spot and press this at each section."/>
+      <button label="Log section">
+        <input type="value">1</input>
+        <output>logNow</output>
+      </button>
+      <value label="Sections logged" precision="0">
+        <input>logCount</input>
+      </value>
+      <button label="Clear the log">
+        <input type="empty"/>
+        <output>logEpoch</output>
+        <input type="empty"/>
+        <output>logField</output>
+        <input type="empty"/>
+        <output>logDelta</output>
+        <input type="empty"/>
+        <output>logAc</output>
+      </button>
+    </view>
+
+    <view label="A / B feeds">
+      <info label="Hold the phone at the SAME spot and standoff on each feed. Anything else and the comparison is meaningless."/>
+      <separator height="0.5"/>
+      <value label="Reading now" unit="uT" precision="2">
+        <input>delta</input>
+      </value>
+      <button label="Capture as feed A">
+        <input type="value">1</input>
+        <output>grabA</output>
+      </button>
+      <button label="Capture as feed B">
+        <input type="value">1</input>
+        <output>grabB</output>
+      </button>
+      <separator height="0.5"/>
+      <value label="Feed A" unit="uT" precision="2">
+        <input>feedA</input>
+      </value>
+      <value label="Feed B" unit="uT" precision="2">
+        <input>feedB</input>
+      </value>
+      <value label="A minus B" unit="uT" precision="2">
+        <input>abDiff</input>
+      </value>
+      <value label="Imbalance" unit="%" precision="1">
+        <input>abImbalance</input>
+      </value>
+      <value label="Verdict">
+        <input>abImbalance</input>
+        <map min="-10" max="10">feeds within 10 % of each other</map>
+        <map min="-25" max="25">noticeably uneven</map>
+        <map>strongly uneven - worth checking the metering</map>
+      </value>
+    </view>
+
+    <view label="Trace">
+      <graph label="Total field" labelX="Time" unitX="s" labelY="Flux density" unitY="uT" partialUpdate="true">
+        <input axis="x">bt</input>
+        <input axis="y">babs</input>
+      </graph>
+      <info label="Walk the length of the run with the phone at a constant standoff. Steps in this trace are section joints, tap-off boxes and changes in load."/>
+    </view>
+
+    <view label="Notes">
+      <info label="What the number means"/>
+      <info label="Field falls off roughly as 1/distance from a single conductor, and faster than that from the closely spaced bars in a busway housing where the phases partly cancel. Standoff therefore dominates everything: a centimetre of difference can outweigh a real change in load. Rest the phone against a physical feature you can find again."/>
+      <separator height="0.5"/>
+      <info label="Because the phases cancel, a balanced three-phase busway reads LOW even at high current. A high reading can mean heavy load, or it can mean imbalance or a poorly arranged tap-off. Treat this as a pointer to something worth metering properly, not as the measurement."/>
+      <separator height="0.5"/>
+      <info label="The AC activity figure comes from the fluctuation of the field. The magnetometer samples at 50 to 100 Hz, so mains aliases and there is deliberately no frequency shown - but a fluctuating field still reliably means alternating current nearby, which is what tells an energised run from a steel obstruction."/>
+    </view>
+  </views>
+
+  <analysis sleep="0.1">
+    <timer>
+      <output as="out">now</output>
+      <output as="offset1970">epochOffset</output>
+    </timer>
+    <add>
+      <input>now</input>
+      <input>epochOffset</input>
+      <output>epochNow</output>
+    </add>
+
+    <count>
+      <input clear="false">babs</input>
+      <output clear="false">cnt</output>
+    </count>
+    <formula formula="max([1]-1,0)">
+      <input clear="false">cnt</input>
+      <output>lastFrom</output>
+    </formula>
+    <subrange>
+      <input as="from" clear="false">lastFrom</input>
+      <input as="in" clear="false">babs</input>
+      <output>bLast</output>
+    </subrange>
+    <formula formula="max([1]-64,0)">
+      <input clear="false">cnt</input>
+      <output>winFrom</output>
+    </formula>
+    <subrange>
+      <input as="from" clear="false">winFrom</input>
+      <input as="in" clear="false">babs</input>
+      <output>win</output>
+    </subrange>
+    <average>
+      <input as="buffer">win</input>
+      <output as="average" clear="false">bMean</output>
+      <output as="stddev" clear="false">bAc</output>
+    </average>
+
+    <!-- baseline capture and the field above it -->
+    <if equal="true">
+      <input clear="false">setBase</input>
+      <input type="value">1</input>
+      <input clear="false">bMean</input>
+      <output>baseline</output>
+    </if>
+    <append>
+      <input type="value">0</input>
+      <output>setBase</output>
+    </append>
+    <subtract>
+      <input clear="false">bMean</input>
+      <input clear="false">baseline</input>
+      <output clear="false">delta</output>
+    </subtract>
+
+    <!-- A/B capture -->
+    <if equal="true">
+      <input clear="false">grabA</input>
+      <input type="value">1</input>
+      <input clear="false">delta</input>
+      <output>feedA</output>
+    </if>
+    <append>
+      <input type="value">0</input>
+      <output>grabA</output>
+    </append>
+    <if equal="true">
+      <input clear="false">grabB</input>
+      <input type="value">1</input>
+      <input clear="false">delta</input>
+      <output>feedB</output>
+    </if>
+    <append>
+      <input type="value">0</input>
+      <output>grabB</output>
+    </append>
+    <subtract>
+      <input clear="false">feedA</input>
+      <input clear="false">feedB</input>
+      <output clear="false">abDiff</output>
+    </subtract>
+    <add>
+      <input clear="false">feedA</input>
+      <input clear="false">feedB</input>
+      <output>abSum</output>
+    </add>
+    <formula formula="200*[1]/max(abs([2]),0.000001)">
+      <input clear="false">abDiff</input>
+      <input>abSum</input>
+      <output>abImbalance</output>
+    </formula>
+
+    <!-- section log -->
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">epochNow</input>
+      <output clear="false">logEpoch</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">bMean</input>
+      <output clear="false">logField</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">delta</input>
+      <output clear="false">logDelta</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">bAc</input>
+      <output clear="false">logAc</output>
+    </if>
+    <append>
+      <input type="value">0</input>
+      <output>logNow</output>
+    </append>
+    <count>
+      <input clear="false">logEpoch</input>
+      <output>logCount</output>
+    </count>
+  </analysis>
+
+  <export>
+    <set name="Section log">
+      <data name="Timestamp (Unix s)">logEpoch</data>
+      <data name="Total field (uT)">logField</data>
+      <data name="Above baseline (uT)">logDelta</data>
+      <data name="AC activity (uT)">logAc</data>
+    </set>
+    <set name="Walk trace">
+      <data name="Time (s)">bt</data>
+      <data name="Total field (uT)">babs</data>
+      <data name="Bx (uT)">bx</data>
+      <data name="By (uT)">by</data>
+      <data name="Bz (uT)">bz</data>
+    </set>
+  </export>
+</phyphox>

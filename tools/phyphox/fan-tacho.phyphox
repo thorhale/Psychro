@@ -1,0 +1,447 @@
+<phyphox version="1.14" locale="en">
+  <title>Fan Tacho and Bearing Check</title>
+  <category>Data centre</category>
+  <icon>RPM</icon>
+  <description>
+        Reads fan speed two ways and looks for the early signs of a failing bearing.
+
+        Sound: the microphone spectrum is searched inside a frequency band you set, and the strongest tone is taken as the blade-passing frequency. Divide by the number of blades and you have shaft speed in RPM, without a strobe and without opening anything.
+
+        Vibration: rest the phone on the unit's frame. The accelerometer gives an overall vibration level, the strongest low-frequency peak (which is the once-per-revolution imbalance), and the crest factor - the ratio of peak to RMS. A healthy machine sits near a crest factor of about 1.4 to 3. Rolling-element bearing damage produces short sharp impacts that lift the crest factor well before the overall level moves, which is what makes it an early warning.
+
+        Both are comparative. Take a reading on every identical unit in the row and look for the odd one out - that is far more reliable than any absolute threshold.
+    </description>
+
+  <data-containers>
+    <!-- microphone -->
+    <container size="32768">recording</container>
+    <container>micRate</container>
+    <container>micCnt</container>
+    <container>micFrom</container>
+    <container size="16384">micBlock</container>
+    <container>micN</container>
+    <container size="16384">micWinU</container>
+    <container size="16384">micWin</container>
+    <container size="16384">micWindowed</container>
+    <container size="16384">micRe</container>
+    <container size="16384">micIm</container>
+    <container>micNHalf</container>
+    <container>micNHalf1</container>
+    <container>micRateHalf</container>
+    <container size="8193">micFreq</container>
+    <container size="8192">micHalfF</container>
+    <container size="8192">micHalfRe</container>
+    <container size="8192">micHalfIm</container>
+    <container size="8192">micMag</container>
+
+    <!-- search band -->
+    <container init="50">fMin</container>
+    <container init="2000">fMax</container>
+    <container>iFrom</container>
+    <container>iTo</container>
+    <container size="8192">bandF</container>
+    <container size="8192">bandMag</container>
+    <container>micPeak</container>
+    <container>micPeakMag</container>
+
+    <container init="9">blades</container>
+    <container>shaftHz</container>
+    <container>rpmMic</container>
+
+    <!-- accelerometer -->
+    <container size="512">vibX</container>
+    <container size="512">vibY</container>
+    <container size="512">vibZ</container>
+    <container size="512">vibAbs</container>
+    <container size="512">vibT</container>
+    <container>vibCnt</container>
+    <container>vibT0</container>
+    <container>vibTLast</container>
+    <container>vibSpan</container>
+    <container>vibRate</container>
+    <container>vibMean</container>
+    <container>vibRms</container>
+    <container size="512">vibDetrend</container>
+    <container size="512">vibAbsDev</container>
+    <container>vibPeakAmp</container>
+    <container>vibCrest</container>
+
+    <container size="512">vibWinU</container>
+    <container size="512">vibWin</container>
+    <container size="512">vibWindowed</container>
+    <container size="512">vibRe</container>
+    <container size="512">vibIm</container>
+    <container>vibNHalf</container>
+    <container>vibNHalf1</container>
+    <container>vibRateHalf</container>
+    <container size="257">vibFreq</container>
+    <container size="256">vibHalfF</container>
+    <container size="256">vibHalfRe</container>
+    <container size="256">vibHalfIm</container>
+    <container size="256">vibMag</container>
+    <container>vibIFrom</container>
+    <container size="256">vibBandF</container>
+    <container size="256">vibBandMag</container>
+    <container>vib1x</container>
+    <container>rpmVib</container>
+  </data-containers>
+
+  <input>
+    <audio append="true">
+      <output>recording</output>
+      <output component="rate">micRate</output>
+    </audio>
+    <sensor type="accelerometer" rate="0">
+      <output component="x">vibX</output>
+      <output component="y">vibY</output>
+      <output component="z">vibZ</output>
+      <output component="abs">vibAbs</output>
+      <output component="t">vibT</output>
+    </sensor>
+  </input>
+
+  <views>
+    <view label="Fan speed (sound)">
+      <info label="Hold the phone in the airflow path, roughly a hand's width from the fan guard. Set the band to bracket the tone you can hear."/>
+      <separator height="0.5"/>
+      <value label="Strongest tone in band" unit="Hz" size="2" precision="1">
+        <input>micPeak</input>
+      </value>
+      <value label="Shaft speed" unit="RPM" size="3" precision="0">
+        <input>rpmMic</input>
+      </value>
+      <value label="Shaft rate" unit="Hz" precision="2">
+        <input>shaftHz</input>
+      </value>
+      <separator height="0.5"/>
+      <edit label="Blades on the impeller" default="9" decimal="false">
+        <output>blades</output>
+      </edit>
+      <edit label="Search from" unit="Hz" default="50" decimal="false">
+        <output>fMin</output>
+      </edit>
+      <edit label="Search to" unit="Hz" default="2000" decimal="false">
+        <output>fMax</output>
+      </edit>
+      <separator height="0.5"/>
+      <graph label="Sound spectrum" logX="true" logY="true" labelX="Frequency" unitX="Hz" labelY="Magnitude" unitY="a.u.">
+        <input axis="x">micHalfF</input>
+        <input axis="y">micMag</input>
+      </graph>
+    </view>
+
+    <view label="Vibration">
+      <info label="Rest the phone flat on the frame of the unit, not on the floor and not held in your hand. Stay still while it reads."/>
+      <separator height="0.5"/>
+      <value label="Overall vibration (RMS)" unit="m/s^2" size="2" precision="3">
+        <input>vibRms</input>
+      </value>
+      <value label="Crest factor" unit="x" size="2" precision="2">
+        <input>vibCrest</input>
+      </value>
+      <value label="Bearing verdict">
+        <input>vibCrest</input>
+        <map max="3">smooth - no impulsive content</map>
+        <map max="4.5">some impulsiveness - note it and re-check later</map>
+        <map max="6">impulsive - compare against an identical healthy unit</map>
+        <map>strongly impulsive - inspect the bearing</map>
+      </value>
+      <separator height="0.5"/>
+      <value label="Imbalance peak (1x)" unit="Hz" precision="2">
+        <input>vib1x</input>
+      </value>
+      <value label="Implied shaft speed" unit="RPM" precision="0">
+        <input>rpmVib</input>
+      </value>
+      <separator height="0.5"/>
+      <value label="Accelerometer sample rate" unit="Hz" precision="1">
+        <input>vibRate</input>
+      </value>
+      <value label="Highest frequency visible" unit="Hz" precision="1">
+        <input>vibRateHalf</input>
+      </value>
+      <graph label="Vibration spectrum" labelX="Frequency" unitX="Hz" labelY="Magnitude" unitY="a.u.">
+        <input axis="x">vibHalfF</input>
+        <input axis="y">vibMag</input>
+      </graph>
+    </view>
+
+    <view label="Notes">
+      <info label="Reading the sound number"/>
+      <info label="What the microphone finds is the loudest tone in the band, which is normally blade passing: shaft speed multiplied by blade count. If the RPM comes out at an implausible multiple of what you expect, the peak found was a harmonic - narrow the search band around the fundamental."/>
+      <info label="A variable speed fan under PWM control can produce a switching tone as well, often a clean high whistle that has nothing to do with shaft speed. If the number will not settle, look at the spectrum and pick the band by eye."/>
+      <separator height="0.5"/>
+      <info label="Reading the vibration numbers"/>
+      <info label="Phone accelerometers sample at roughly 100 to 500 Hz, so the highest frequency visible is 50 to 250 Hz. That covers imbalance and looseness. It does NOT reach the bearing defect frequencies proper, which live in the kilohertz - this is why the crest factor matters, since it senses the impacts in the time domain without needing to resolve their frequency."/>
+      <info label="Overall RMS here is acceleration, not the velocity in mm/s that ISO 10816 severity charts are drawn in, so do not read it against those charts. Compare unit to unit instead."/>
+      <separator height="0.5"/>
+      <info label="A phone resting on a frame also picks up everything else bolted to that frame, including neighbouring units and the floor. If two adjacent machines read the same, suspect the structure rather than believing both."/>
+    </view>
+  </views>
+
+  <analysis sleep="0.25">
+
+    <!-- newest block of audio -->
+    <count>
+      <input clear="false">recording</input>
+      <output>micCnt</output>
+    </count>
+    <formula formula="max([1]-16384,0)">
+      <input>micCnt</input>
+      <output>micFrom</output>
+    </formula>
+    <subrange>
+      <input as="from" clear="false">micFrom</input>
+      <input as="in" clear="false">recording</input>
+      <output>micBlock</output>
+    </subrange>
+    <count>
+      <input clear="false">micBlock</input>
+      <output clear="false">micN</output>
+    </count>
+    <ramp>
+      <input as="start" type="value">0</input>
+      <input as="stop" type="value">1</input>
+      <input as="length" clear="false">micN</input>
+      <output>micWinU</output>
+    </ramp>
+    <formula formula="0.5-0.5*cos(6.283185307179586*[1_])">
+      <input>micWinU</input>
+      <output>micWin</output>
+    </formula>
+    <multiply>
+      <input as="factor">micBlock</input>
+      <input as="factor">micWin</input>
+      <output>micWindowed</output>
+    </multiply>
+    <fft>
+      <input>micWindowed</input>
+      <output as="re">micRe</output>
+      <output as="im">micIm</output>
+    </fft>
+    <divide>
+      <input clear="false">micRate</input>
+      <input type="value">2</input>
+      <output clear="false">micRateHalf</output>
+    </divide>
+    <divide>
+      <input clear="false">micN</input>
+      <input type="value">2</input>
+      <output clear="false">micNHalf</output>
+    </divide>
+    <add>
+      <input clear="false">micNHalf</input>
+      <input type="value">1</input>
+      <output>micNHalf1</output>
+    </add>
+    <ramp>
+      <input as="start" type="value">0</input>
+      <input as="stop" clear="false">micRateHalf</input>
+      <input as="length" clear="false">micNHalf1</input>
+      <output>micFreq</output>
+    </ramp>
+    <subrange>
+      <input as="from" type="value">1</input>
+      <input as="to" clear="false">micNHalf</input>
+      <input as="in">micFreq</input>
+      <input as="in">micRe</input>
+      <input as="in">micIm</input>
+      <output clear="false">micHalfF</output>
+      <output>micHalfRe</output>
+      <output>micHalfIm</output>
+    </subrange>
+    <formula formula="sqrt([1_]*[1_]+[2_]*[2_])">
+      <input>micHalfRe</input>
+      <input>micHalfIm</input>
+      <output clear="false">micMag</output>
+    </formula>
+
+    <!-- restrict to the search band and find the loudest tone -->
+    <formula formula="max(round([1]*[2]/[3])-1,0)">
+      <input clear="false">fMin</input>
+      <input clear="false">micN</input>
+      <input clear="false">micRate</input>
+      <output>iFrom</output>
+    </formula>
+    <formula formula="max(round([1]*[2]/[3])-1,1)">
+      <input clear="false">fMax</input>
+      <input clear="false">micN</input>
+      <input clear="false">micRate</input>
+      <output>iTo</output>
+    </formula>
+    <subrange>
+      <input as="from" clear="false">iFrom</input>
+      <input as="to" clear="false">iTo</input>
+      <input as="in" clear="false">micHalfF</input>
+      <input as="in" clear="false">micMag</input>
+      <output>bandF</output>
+      <output>bandMag</output>
+    </subrange>
+    <max>
+      <input as="x">bandF</input>
+      <input as="y">bandMag</input>
+      <output as="max">micPeakMag</output>
+      <output as="position" clear="false">micPeak</output>
+    </max>
+    <formula formula="[1]/max([2],1)">
+      <input clear="false">micPeak</input>
+      <input clear="false">blades</input>
+      <output clear="false">shaftHz</output>
+    </formula>
+    <multiply>
+      <input as="factor" clear="false">shaftHz</input>
+      <input as="factor" type="value">60</input>
+      <output>rpmMic</output>
+    </multiply>
+
+    <!-- accelerometer: actual sample rate from the timestamps -->
+    <count>
+      <input clear="false">vibT</input>
+      <output clear="false">vibCnt</output>
+    </count>
+    <first>
+      <input as="value" clear="false">vibT</input>
+      <output as="first">vibT0</output>
+    </first>
+    <max>
+      <input as="y" clear="false">vibT</input>
+      <output as="max">vibTLast</output>
+    </max>
+    <subtract>
+      <input>vibTLast</input>
+      <input>vibT0</input>
+      <output>vibSpan</output>
+    </subtract>
+    <formula formula="max([1]-1,1)/max([2],0.001)">
+      <input clear="false">vibCnt</input>
+      <input>vibSpan</input>
+      <output clear="false">vibRate</output>
+    </formula>
+
+    <!-- overall level and crest factor -->
+    <average>
+      <input as="buffer" clear="false">vibAbs</input>
+      <output as="average" clear="false">vibMean</output>
+      <output as="stddev" clear="false">vibRms</output>
+    </average>
+    <formula formula="[1_]-[2]">
+      <input clear="false">vibAbs</input>
+      <input clear="false">vibMean</input>
+      <output clear="false">vibDetrend</output>
+    </formula>
+    <formula formula="abs([1_])">
+      <input clear="false">vibDetrend</input>
+      <output>vibAbsDev</output>
+    </formula>
+    <max>
+      <input as="y">vibAbsDev</input>
+      <output as="max">vibPeakAmp</output>
+    </max>
+    <formula formula="[1]/max([2],0.000001)">
+      <input>vibPeakAmp</input>
+      <input clear="false">vibRms</input>
+      <output>vibCrest</output>
+    </formula>
+
+    <!-- vibration spectrum -->
+    <ramp>
+      <input as="start" type="value">0</input>
+      <input as="stop" type="value">1</input>
+      <input as="length" clear="false">vibCnt</input>
+      <output>vibWinU</output>
+    </ramp>
+    <formula formula="0.5-0.5*cos(6.283185307179586*[1_])">
+      <input>vibWinU</input>
+      <output>vibWin</output>
+    </formula>
+    <multiply>
+      <input as="factor">vibDetrend</input>
+      <input as="factor">vibWin</input>
+      <output>vibWindowed</output>
+    </multiply>
+    <fft>
+      <input>vibWindowed</input>
+      <output as="re">vibRe</output>
+      <output as="im">vibIm</output>
+    </fft>
+    <divide>
+      <input clear="false">vibRate</input>
+      <input type="value">2</input>
+      <output clear="false">vibRateHalf</output>
+    </divide>
+    <divide>
+      <input clear="false">vibCnt</input>
+      <input type="value">2</input>
+      <output clear="false">vibNHalf</output>
+    </divide>
+    <add>
+      <input clear="false">vibNHalf</input>
+      <input type="value">1</input>
+      <output>vibNHalf1</output>
+    </add>
+    <ramp>
+      <input as="start" type="value">0</input>
+      <input as="stop" clear="false">vibRateHalf</input>
+      <input as="length" clear="false">vibNHalf1</input>
+      <output>vibFreq</output>
+    </ramp>
+    <subrange>
+      <input as="from" type="value">1</input>
+      <input as="to" clear="false">vibNHalf</input>
+      <input as="in">vibFreq</input>
+      <input as="in">vibRe</input>
+      <input as="in">vibIm</input>
+      <output clear="false">vibHalfF</output>
+      <output>vibHalfRe</output>
+      <output>vibHalfIm</output>
+    </subrange>
+    <formula formula="sqrt([1_]*[1_]+[2_]*[2_])">
+      <input>vibHalfRe</input>
+      <input>vibHalfIm</input>
+      <output clear="false">vibMag</output>
+    </formula>
+    <!-- ignore the lowest bins, which carry sway and drift rather than rotation -->
+    <formula formula="max(round(3*[1]/[2])-1,0)">
+      <input clear="false">vibCnt</input>
+      <input clear="false">vibRate</input>
+      <output>vibIFrom</output>
+    </formula>
+    <subrange>
+      <input as="from" clear="false">vibIFrom</input>
+      <input as="in" clear="false">vibHalfF</input>
+      <input as="in" clear="false">vibMag</input>
+      <output>vibBandF</output>
+      <output>vibBandMag</output>
+    </subrange>
+    <max>
+      <input as="x">vibBandF</input>
+      <input as="y">vibBandMag</input>
+      <output as="position" clear="false">vib1x</output>
+    </max>
+    <multiply>
+      <input as="factor" clear="false">vib1x</input>
+      <input as="factor" type="value">60</input>
+      <output>rpmVib</output>
+    </multiply>
+  </analysis>
+
+  <export>
+    <set name="Sound spectrum">
+      <data name="Frequency (Hz)">micHalfF</data>
+      <data name="Magnitude (a.u.)">micMag</data>
+    </set>
+    <set name="Vibration spectrum">
+      <data name="Frequency (Hz)">vibHalfF</data>
+      <data name="Magnitude (a.u.)">vibMag</data>
+    </set>
+    <set name="Readings">
+      <data name="Blade pass (Hz)">micPeak</data>
+      <data name="Shaft speed from sound (RPM)">rpmMic</data>
+      <data name="Imbalance peak (Hz)">vib1x</data>
+      <data name="Shaft speed from vibration (RPM)">rpmVib</data>
+      <data name="Vibration RMS (m/s^2)">vibRms</data>
+      <data name="Crest factor">vibCrest</data>
+      <data name="Accelerometer rate (Hz)">vibRate</data>
+    </set>
+  </export>
+</phyphox>

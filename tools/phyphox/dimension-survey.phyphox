@@ -1,0 +1,530 @@
+<phyphox version="1.14" locale="en">
+  <title>Dimension and Level Survey</title>
+  <category>Data centre</category>
+  <icon>DIM</icon>
+  <description>
+        Geometry for a digital twin, taken with the phone: distances by sonar, and floor level and rack plumb by inclinometer, logged together at each waypoint.
+
+        The sonar core is phyphox's own: a chirp is played through the speaker, the recording is cross-correlated with it, and the delay to each echo gives its distance. Two things are added here. The speed of sound is computed from the air temperature you enter rather than assumed to be 340 m/s, which matters because a 40 C hot aisle and a 22 C cold aisle differ by about 3 percent - 9 cm over a 3 m span. And the whole thing runs backwards too: give it a distance you have measured with a tape and it solves for the speed of sound, and from that the air temperature. That turns the phone into a non-contact thermometer for air it is not touching.
+
+        The level page uses the accelerometer as an inclinometer and reports slope in mm per metre, which is how floor flatness is specified. Lay the phone on a tile for floor level, or against a rack upright for plumb.
+    </description>
+
+  <data-containers>
+    <!-- sonar core, from phyphox's Sonar experiment -->
+    <container size="48000">recording</container>
+    <container init="48000">rate</container>
+    <container size="9000">recording_range</container>
+    <container>speedofsound</container>
+    <container init="1">targetdistance</container>
+    <container size="240" static="true">chirp_t</container>
+    <container size="240" static="true">chirp_f</container>
+    <container size="240" static="true">chirp_temp1</container>
+    <container size="240" static="true">chirp_temp2</container>
+    <container size="240" static="true">chirp_temp3</container>
+    <container size="240" static="true">chirp_temp4</container>
+    <container size="240" static="true">chirp</container>
+    <container size="240" static="true">weighted_chirp</container>
+    <container size="1260" static="true">padding</container>
+    <container size="1500" static="true">padded_chirp</container>
+    <container size="7500" static="true">multi_chirp</container>
+    <container size="1500">crosscorrelation</container>
+    <container size="1500">crosscorrelation_smooth</container>
+    <container size="1500">ccTemp</container>
+    <container>max</container>
+    <container>startthreshold</container>
+    <container>t0</container>
+    <container>t1</container>
+    <container size="1200" static="true">count_t</container>
+    <container size="1200" static="true">relative_t</container>
+    <container size="1200">relative_cc</container>
+    <container size="1200" init="0">relative_cc_out</container>
+    <container size="1200">distance</container>
+    <container size="1200" init="0">distance_out</container>
+    <container size="1200">sos</container>
+    <container size="1200" init="0">sos_out</container>
+    <container size="1200">weighted_cc</container>
+    <container size="1">size</container>
+
+    <!-- temperature corrected speed of sound -->
+    <container init="24">airTemp</container>
+    <container>peakDistCm</container>
+    <container>peakDistM</container>
+    <container>measuredC</container>
+    <container>measuredTemp</container>
+
+    <!-- inclinometer -->
+    <container size="128">ax</container>
+    <container size="128">ay</container>
+    <container size="128">az</container>
+    <container size="128">at</container>
+    <container>axm</container>
+    <container>aym</container>
+    <container>azm</container>
+    <container>tiltX</container>
+    <container>tiltY</container>
+    <container>slopeX</container>
+    <container>slopeY</container>
+
+    <!-- waypoint log -->
+    <container>now</container>
+    <container>epochOffset</container>
+    <container>epochNow</container>
+    <container init="0">logNow</container>
+    <container size="0">logEpoch</container>
+    <container size="0">logDist</container>
+    <container size="0">logTiltX</container>
+    <container size="0">logTiltY</container>
+    <container size="0">logSlopeX</container>
+    <container size="0">logSlopeY</container>
+    <container>logCount</container>
+  </data-containers>
+
+  <input>
+    <audio>
+      <output>recording</output>
+      <output component="rate">rate</output>
+    </audio>
+    <sensor type="accelerometer" rate="0">
+      <output component="x">ax</output>
+      <output component="y">ay</output>
+      <output component="z">az</output>
+      <output component="t">at</output>
+    </sensor>
+  </input>
+  <output>
+    <audio>
+      <input>multi_chirp</input>
+    </audio>
+  </output>
+
+  <views>
+    <view label="Distance">
+      <info label="Point the top of the phone at a small hard target. Sound spreads in every direction, so the floor, the ceiling and the rack behind you all echo too - the strongest echo is not always the one you meant."/>
+      <separator height="0.5"/>
+      <value label="Distance to strongest echo" unit="m" size="3" precision="3">
+        <input>peakDistM</input>
+      </value>
+      <separator height="0.5"/>
+      <edit label="Air temperature here" unit="C" default="24" decimal="true" signed="true">
+        <output>airTemp</output>
+      </edit>
+      <value label="Speed of sound used" unit="m/s" precision="2">
+        <input>speedofsound</input>
+      </value>
+      <separator height="0.5"/>
+      <graph label="Echoes" labelX="Distance" unitX="cm" labelY="Echo strength" unitY="a.u." scaleMinX="fixed" scaleMaxX="fixed" minX="0" maxX="450">
+        <input axis="x">distance_out</input>
+        <input axis="y">relative_cc_out</input>
+      </graph>
+    </view>
+
+    <view label="Air temperature">
+      <info label="Measure a span with a tape - the width of a cold aisle, or the gap between two rows - stand at one end, point at the other and type the distance in. The delay then gives the speed of sound, and the speed of sound gives the temperature of the air in between."/>
+      <separator height="0.5"/>
+      <edit label="Known distance to target" unit="m" default="1" decimal="true">
+        <output>targetdistance</output>
+      </edit>
+      <value label="Measured speed of sound" unit="m/s" size="2" precision="2">
+        <input>measuredC</input>
+      </value>
+      <value label="Implied air temperature" unit="C" size="3" precision="1">
+        <input>measuredTemp</input>
+      </value>
+      <separator height="0.5"/>
+      <graph label="Echo strength against speed of sound" labelX="Speed of sound" unitX="m/s" labelY="Echo strength" unitY="a.u." scaleMinX="fixed" scaleMaxX="fixed" minX="250" maxX="450">
+        <input axis="x">sos_out</input>
+        <input axis="y">relative_cc_out</input>
+      </graph>
+      <info label="The peak in this curve is the speed of sound that puts the echo at the distance you typed. A sharp peak means a clean single reflection and a trustworthy number; a broad or double peak means you are seeing more than one surface and the temperature reading is not reliable."/>
+    </view>
+
+    <view label="Level and plumb">
+      <info label="Lay the phone flat on a floor tile for level, or hold its back against a rack upright for plumb. Let it settle for a second before logging."/>
+      <separator height="0.5"/>
+      <value label="Slope, long axis" unit="mm/m" size="2" precision="2">
+        <input>slopeY</input>
+      </value>
+      <value label="Slope, across" unit="mm/m" size="2" precision="2">
+        <input>slopeX</input>
+      </value>
+      <separator height="0.5"/>
+      <value label="Tilt, long axis" unit="deg" precision="2">
+        <input>tiltY</input>
+      </value>
+      <value label="Tilt, across" unit="deg" precision="2">
+        <input>tiltX</input>
+      </value>
+      <separator height="0.5"/>
+      <graph label="Settling" labelX="Time" unitX="s" labelY="Acceleration" unitY="m/s^2" partialUpdate="true">
+        <input axis="x">at</input>
+        <input axis="y">az</input>
+      </graph>
+    </view>
+
+    <view label="Waypoints">
+      <info label="Each press records the current distance and the current tilt against a timestamp. Walk the grid, press at every tile or every rack, and export once at the end."/>
+      <separator height="0.5"/>
+      <value label="Waypoints recorded" size="2" precision="0">
+        <input>logCount</input>
+      </value>
+      <value label="Distance that will be logged" unit="m" precision="3">
+        <input>peakDistM</input>
+      </value>
+      <value label="Slope that will be logged" unit="mm/m" precision="2">
+        <input>slopeY</input>
+      </value>
+      <button label="Record waypoint">
+        <input type="value">1</input>
+        <output>logNow</output>
+      </button>
+      <separator height="0.5"/>
+      <button label="Clear all waypoints">
+        <input type="empty"/>
+        <output>logEpoch</output>
+        <input type="empty"/>
+        <output>logDist</output>
+        <input type="empty"/>
+        <output>logTiltX</output>
+        <input type="empty"/>
+        <output>logTiltY</output>
+        <input type="empty"/>
+        <output>logSlopeX</output>
+        <input type="empty"/>
+        <output>logSlopeY</output>
+      </button>
+    </view>
+
+    <view label="Notes">
+      <info label="Sonar in a hall is hard"/>
+      <info label="This needs a quiet moment and a hard target. A data hall is neither quiet nor short of reflective surfaces, so expect to take several readings and to sanity check them against a tape. Perforated tiles, cable baskets and mesh doors scatter rather than reflect, and soft targets may not come back at all."/>
+      <info label="Range is limited to a few metres by the transmitted power of a phone speaker. For an aisle width or a ceiling height this is fine; for the length of a hall it is not."/>
+      <separator height="0.5"/>
+      <info label="The thermometer trick"/>
+      <info label="Speed of sound in dry air is about 331.3 times the square root of (1 + T/273.15) metres per second, so it changes by roughly 0.6 m/s per degree - about 0.17 percent. That is small, which is why the distance must be known well: an error of 1 percent in the distance you type becomes about 6 degrees of error in the temperature. Measure the span properly, and treat the result as a difference between two places rather than an absolute."/>
+      <info label="Humidity has a real but much smaller effect, a few tenths of a m/s across the full range, and is ignored here."/>
+      <info label="Timing resolution sets the rest. One sample at 48 kHz is 3.6 mm of distance, which over a 2 m target is about 1 degree of temperature - so a single shot is worth roughly a degree, and it is worth taking several and taking the middle. Longer spans are better: the same timing error matters proportionally less the further away the target is."/>
+      <separator height="0.5"/>
+      <info label="The inclinometer"/>
+      <info label="An accelerometer at rest measures gravity, so tilt is trustworthy to a few hundredths of a degree once it settles - this is the most accurate thing on the phone. It is only valid when the phone is completely still; any movement is indistinguishable from tilt. Slope in mm/m is 1000 times the tangent of the angle."/>
+      <info label="Phone accelerometers carry a small zero offset, so a phone can read a slope that is not there. Check by taking a reading, rotating the phone 180 degrees on the spot, and taking another - the true slope is half the difference between them."/>
+    </view>
+  </views>
+
+  <analysis sleep="0.5" requireFill="recording" requireFillThreshold="20000">
+
+    <!-- speed of sound from the air temperature -->
+    <formula formula="331.3*sqrt(1+[1]/273.15)">
+      <input clear="false">airTemp</input>
+      <output clear="false">speedofsound</output>
+    </formula>
+
+    <!-- chirp generation -->
+    <ramp>
+      <input as="start" type="value">0</input>
+      <input as="stop" type="value">0.005</input>
+      <output>chirp_t</output>
+    </ramp>
+    <ramp>
+      <input as="start" type="value">1000</input>
+      <input as="stop" type="value">4000</input>
+      <output>chirp_f</output>
+    </ramp>
+    <ramp>
+      <input as="start" type="value">0</input>
+      <input as="stop" type="value">3.14159</input>
+      <output>chirp_temp1</output>
+    </ramp>
+    <sin>
+      <input>chirp_temp1</input>
+      <output>chirp_temp2</output>
+    </sin>
+    <power>
+      <input as="base">chirp_temp2</input>
+      <input as="exponent" type="value">0.25</input>
+      <output>chirp_temp3</output>
+    </power>
+    <multiply>
+      <input>chirp_f</input>
+      <input>chirp_t</input>
+      <input type="value">6.283185307</input>
+      <output>chirp_temp4</output>
+    </multiply>
+    <sin>
+      <input>chirp_temp4</input>
+      <output>chirp</output>
+    </sin>
+    <multiply>
+      <input>chirp</input>
+      <input>chirp_temp3</input>
+      <output>weighted_chirp</output>
+    </multiply>
+    <const>
+      <output>padding</output>
+    </const>
+    <append>
+      <input>weighted_chirp</input>
+      <input>padding</input>
+      <output>padded_chirp</output>
+    </append>
+    <append>
+      <input>padded_chirp</input>
+      <input>padded_chirp</input>
+      <input>padded_chirp</input>
+      <input>padded_chirp</input>
+      <input>padded_chirp</input>
+      <output>multi_chirp</output>
+    </append>
+
+    <!-- relative time axis -->
+    <ramp>
+      <input as="start" type="value">96</input>
+      <input as="stop" type="value">1295</input>
+      <output>count_t</output>
+    </ramp>
+    <divide>
+      <input>count_t</input>
+      <input clear="false">rate</input>
+      <output>relative_t</output>
+    </divide>
+
+    <!-- estimate where the transmitted chirp starts -->
+    <max>
+      <input as="y" clear="false">recording</input>
+      <output as="max">max</output>
+    </max>
+    <multiply>
+      <input clear="false">max</input>
+      <input type="value">0.6</input>
+      <output>startthreshold</output>
+    </multiply>
+    <threshold>
+      <input as="y" clear="false">recording</input>
+      <input as="threshold" clear="false">startthreshold</input>
+      <output>t0</output>
+    </threshold>
+    <subtract>
+      <input clear="false">t0</input>
+      <input type="value">240</input>
+      <output>t1</output>
+    </subtract>
+    <subrange>
+      <input as="from" clear="false">t1</input>
+      <input as="length" type="value">9000</input>
+      <input as="in" clear="true">recording</input>
+      <output>recording_range</output>
+    </subrange>
+
+    <!-- cross correlation against the chirp -->
+    <crosscorrelation>
+      <input clear="false">recording_range</input>
+      <input clear="false">multi_chirp</input>
+      <output>crosscorrelation</output>
+    </crosscorrelation>
+    <multiply>
+      <input clear="false">crosscorrelation</input>
+      <input clear="false">crosscorrelation</input>
+      <input type="value">1e5</input>
+      <output>ccTemp</output>
+    </multiply>
+    <gausssmooth sigma="3">
+      <input>ccTemp</input>
+      <output>crosscorrelation_smooth</output>
+    </gausssmooth>
+    <max>
+      <input as="y" clear="false">crosscorrelation_smooth</input>
+      <output as="position">t0</output>
+    </max>
+    <add>
+      <input clear="false">t0</input>
+      <input type="value">96</input>
+      <output>t1</output>
+    </add>
+    <subrange>
+      <input as="from">t1</input>
+      <input as="length" type="value">1200</input>
+      <input as="in" clear="false">crosscorrelation_smooth</input>
+      <output>relative_cc</output>
+    </subrange>
+
+    <!-- delay converted to distance and to speed of sound -->
+    <multiply>
+      <input clear="false">relative_t</input>
+      <input clear="false">speedofsound</input>
+      <input type="value">50</input>
+      <output>distance</output>
+    </multiply>
+    <divide>
+      <input clear="false">targetdistance</input>
+      <input clear="false">relative_t</input>
+      <input type="value">0.5</input>
+      <output>sos</output>
+    </divide>
+    <multiply>
+      <input clear="false">relative_cc</input>
+      <input clear="false">distance</input>
+      <input clear="false">distance</input>
+      <output>weighted_cc</output>
+    </multiply>
+
+    <!-- publish only when the correlation came out the expected length -->
+    <count>
+      <input clear="false">crosscorrelation</input>
+      <output>size</output>
+    </count>
+    <if equal="true">
+      <input clear="false">size</input>
+      <input type="value">1500</input>
+      <input clear="false">distance</input>
+      <output clear="true">distance_out</output>
+    </if>
+    <if equal="true">
+      <input clear="false">size</input>
+      <input type="value">1500</input>
+      <input clear="false">sos</input>
+      <output clear="true">sos_out</output>
+    </if>
+    <if equal="true">
+      <input clear="false">size</input>
+      <input type="value">1500</input>
+      <input clear="false">relative_cc</input>
+      <output clear="true">relative_cc_out</output>
+    </if>
+
+    <!-- strongest echo: distance, and the speed of sound it implies -->
+    <max>
+      <input as="x" clear="false">distance_out</input>
+      <input as="y" clear="false">relative_cc_out</input>
+      <output as="position">peakDistCm</output>
+    </max>
+    <formula formula="[1]/100">
+      <input>peakDistCm</input>
+      <output clear="false">peakDistM</output>
+    </formula>
+    <max>
+      <input as="x" clear="false">sos_out</input>
+      <input as="y" clear="false">relative_cc_out</input>
+      <output as="position" clear="false">measuredC</output>
+    </max>
+    <formula formula="273.15*(([1]/331.3)^2-1)">
+      <input clear="false">measuredC</input>
+      <output>measuredTemp</output>
+    </formula>
+
+    <!-- inclinometer -->
+    <average>
+      <input as="buffer" clear="false">ax</input>
+      <output as="average">axm</output>
+    </average>
+    <average>
+      <input as="buffer" clear="false">ay</input>
+      <output as="average">aym</output>
+    </average>
+    <average>
+      <input as="buffer" clear="false">az</input>
+      <output as="average">azm</output>
+    </average>
+    <formula formula="57.29577951308232*atan2([1],sqrt([2]*[2]+[3]*[3]))">
+      <input clear="false">axm</input>
+      <input clear="false">aym</input>
+      <input clear="false">azm</input>
+      <output clear="false">tiltX</output>
+    </formula>
+    <formula formula="57.29577951308232*atan2([1],sqrt([2]*[2]+[3]*[3]))">
+      <input clear="false">aym</input>
+      <input clear="false">axm</input>
+      <input clear="false">azm</input>
+      <output clear="false">tiltY</output>
+    </formula>
+    <formula formula="1000*[1]/max(sqrt([2]*[2]+[3]*[3]),0.001)">
+      <input clear="false">axm</input>
+      <input clear="false">aym</input>
+      <input clear="false">azm</input>
+      <output clear="false">slopeX</output>
+    </formula>
+    <formula formula="1000*[1]/max(sqrt([2]*[2]+[3]*[3]),0.001)">
+      <input clear="false">aym</input>
+      <input clear="false">axm</input>
+      <input clear="false">azm</input>
+      <output clear="false">slopeY</output>
+    </formula>
+
+    <!-- waypoint log -->
+    <timer>
+      <output as="out">now</output>
+      <output as="offset1970">epochOffset</output>
+    </timer>
+    <add>
+      <input>now</input>
+      <input>epochOffset</input>
+      <output>epochNow</output>
+    </add>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">epochNow</input>
+      <output clear="false">logEpoch</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">peakDistM</input>
+      <output clear="false">logDist</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">tiltX</input>
+      <output clear="false">logTiltX</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">tiltY</input>
+      <output clear="false">logTiltY</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">slopeX</input>
+      <output clear="false">logSlopeX</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">slopeY</input>
+      <output clear="false">logSlopeY</output>
+    </if>
+    <append>
+      <input type="value">0</input>
+      <output>logNow</output>
+    </append>
+    <count>
+      <input clear="false">logEpoch</input>
+      <output>logCount</output>
+    </count>
+  </analysis>
+
+  <export>
+    <set name="Waypoints">
+      <data name="Timestamp (Unix s)">logEpoch</data>
+      <data name="Distance (m)">logDist</data>
+      <data name="Tilt across (deg)">logTiltX</data>
+      <data name="Tilt long (deg)">logTiltY</data>
+      <data name="Slope across (mm/m)">logSlopeX</data>
+      <data name="Slope long (mm/m)">logSlopeY</data>
+    </set>
+    <set name="Echo profile">
+      <data name="Distance (cm)">distance_out</data>
+      <data name="Speed of sound (m/s)">sos_out</data>
+      <data name="Delay (s)">relative_t</data>
+      <data name="Echo strength (a.u.)">relative_cc_out</data>
+    </set>
+    <set name="Current reading">
+      <data name="Distance to strongest echo (m)">peakDistM</data>
+      <data name="Measured speed of sound (m/s)">measuredC</data>
+      <data name="Implied air temperature (C)">measuredTemp</data>
+      <data name="Speed of sound used (m/s)">speedofsound</data>
+    </set>
+  </export>
+</phyphox>
