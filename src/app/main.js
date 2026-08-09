@@ -2513,7 +2513,11 @@ syncAllControls();
 // On desktop there's room to work with the profile panels open — start the
 // Data Hall and Customer SLA sections expanded (mobile keeps them collapsed).
 if (window.matchMedia && matchMedia('(min-width:1120px)').matches) {
-  document.querySelectorAll('.col-left > details.sect').forEach((/** @type {HTMLDetailsElement} */ d, i) => { if (i < 2) d.open = true; });
+  // Open the first two WORKING cards. `.onboard` is excluded deliberately: it
+  // now sits at the top of the column so the mobile stack can order it below
+  // the tool, and counting it here would spend the whole left column on help.
+  document.querySelectorAll('.col-left > details.sect:not(.onboard)')
+    .forEach((/** @type {HTMLDetailsElement} */ d, i) => { if (i < 2) d.open = true; });
 }
 renderSlaTabs();
 renderSlaEditor();
