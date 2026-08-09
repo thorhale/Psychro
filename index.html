@@ -83,7 +83,7 @@
   details.sect > summary { list-style:none; display:flex; align-items:center; gap:10px; padding:15px 16px; cursor:pointer; min-height:50px; -webkit-tap-highlight-color:transparent; }
   details.sect > summary::-webkit-details-marker { display:none; }
   .sect-title { font-size:.76rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text); flex:none; }
-  .sect-sub { font-size:.7rem; color:var(--stream-teal); font-family:var(--mono); flex:1; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sect-sub { font-size:.72rem; color:var(--brand-accent); flex:1; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sect-chev { color:var(--muted); transition:transform .18s ease; flex:none; font-size:.85rem; }
   details.sect[open] > summary .sect-chev { transform:rotate(90deg); }
   details.sect[open] > summary { border-bottom:1px solid var(--border); }
@@ -356,6 +356,73 @@
   .formula-note { font-size:.63rem; color:var(--muted); line-height:1.5; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
   .formula-note code { font-family:var(--mono); color:var(--accent2); background:rgba(59,158,255,.08); padding:1px 4px; border-radius:3px; }
 
+  /* ── Masthead ──────────────────────────────────────────────────────────
+     A strip, not a billboard. It used to stack company, product and tagline
+     on three lines behind a 3 px rule — about a quarter of a phone screen
+     spent on branding before any content. Colours come from the brand
+     palette (see src/config/brand.js); only their USE changed here. */
+  .masthead {
+    display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 10px;
+    margin:-20px -16px 14px; padding:10px 16px;
+    background:linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 100%);
+    border-bottom:2px solid var(--brand-accent);
+  }
+  .mh-company { font-weight:800; font-size:.95rem; letter-spacing:.16em; color:#fff; }
+  .mh-sub { font-size:.55rem; font-weight:600; letter-spacing:.2em; color:var(--brand-accent);
+    border-left:1px solid rgba(255,255,255,.28); padding-left:9px; }
+  .mh-product { font-size:.8rem; font-weight:700; color:#fff; letter-spacing:.06em;
+    text-transform:uppercase; margin:0 0 0 auto; }
+  .mh-tagline { flex-basis:100%; color:#9db8d0; font-size:.68rem; margin:0; }
+  /* On a hall floor the tagline is decoration. Below 900 px it goes, and the
+     product name wraps under the brand instead of fighting it for the row. */
+  @media (max-width:900px) {
+    .mh-tagline { display:none; }
+    .mh-product { margin-left:0; font-size:.72rem; }
+  }
+
+  /* ── Field-first stack ─────────────────────────────────────────────────
+     Below the two-column breakpoint the chart and the live readout come
+     FIRST. Someone standing in a hall opened this to see where the room is,
+     not to re-enter its elevation; setup is real but it is not the reason
+     the app is open. Pure ordering — the DOM stays in reading order for
+     screen readers and for the desktop layout. */
+  @media (max-width:1119px) {
+    /* `display:contents` dissolves the two column wrappers so every card
+       becomes a direct child of the stack and can be ordered independently.
+       Ordering by wrapper cannot interleave them — it buries the sliders
+       under the data table, the sensor suite and the trainer. */
+    .layout { display:flex; flex-direction:column; }
+    .col-left, .col-right { display:contents; }
+    #chart-card { order:1; } /*       where the room IS */
+    #conditions-card { order:2; } /*  and how to move it */
+    .col-left > *, .col-right > * { order:3; } /* setup and the rest, in DOM order */
+    #start-here { order:4; } /*       help belongs after the tool, not before it */
+  }
+  /* Touch screens have no Shift-click. */
+  @media (pointer:coarse) { .mouse-only { display:none; } }
+
+  /* On a phone the chart card's own chrome — title, six zoom buttons, a
+     three-line hint — was pushing the chart itself most of a screen down.
+     The chart is the content; the controls around it are not. */
+  @media (max-width:1119px) {
+    #chart-card .card-title { font-size:.7rem; }
+    #chart-card .zoom-hint { font-size:.62rem; line-height:1.45; }
+    .zoom-toolbar { gap:4px; }
+    .zoom-btn { padding:8px 9px; font-size:.68rem; }
+    /* The legend is ten items. Stacked at touch size it ate half the screen
+       between the chart and the controls; scrolling it sideways keeps every
+       item reachable without spending vertical space on any of them. */
+    .legend { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; padding-bottom:2px; }
+    .legend::-webkit-scrollbar { display:none; }
+    .leg-item { flex:0 0 auto; }
+  }
+  /* Pinch does what these two do, and they are the biggest buttons on the
+     smallest screen. */
+  @media (pointer:coarse) and (max-width:1119px) {
+    #zoom-in, #zoom-out { display:none; }
+    .zoom-btn { padding:9px 11px; font-size:.7rem; min-height:0; }
+  }
+
   /* ── Desktop layout: controls left, chart pinned right ── */
   .layout { max-width:1720px; margin:0 auto; }
   .footer-bar, .selftest-panel { max-width:1720px; margin-left:auto; margin-right:auto; }
@@ -481,13 +548,11 @@
 </head>
 <body>
 
-<div style="background:linear-gradient(135deg,#1a3a5c 0%,#13263a 100%); margin:-20px -16px 18px; padding:14px 16px; border-bottom:3px solid var(--stream-teal);">
-  <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-    <span style="font-family:var(--sans); font-weight:800; font-size:1.1rem; letter-spacing:.18em; color:#fff;" data-brand="company">STREAM</span>
-    <span style="font-size:.6rem; font-weight:600; letter-spacing:.2em; color:var(--stream-teal); border-left:1px solid rgba(255,255,255,.3); padding-left:10px;" data-brand="companySub">DATA CENTERS</span>
-  </div>
-  <h1 style="color:#fff; margin-bottom:2px;" data-brand="product">Hall Environment Planner</h1>
-  <p style="color:#9db8d0; font-size:.72rem; margin:0;">Plan temperature &amp; humidity moves within SLA · capability-aware timing · ASHRAE psychrometrics</p>
+<div class="masthead">
+  <span class="mh-company" data-brand="company">STREAM</span>
+  <span class="mh-sub" data-brand="companySub">DATA CENTERS</span>
+  <h1 class="mh-product" data-brand="product">Hall Environment Planner</h1>
+  <p class="mh-tagline">Plan temperature &amp; humidity moves within SLA · capability-aware timing · ASHRAE psychrometrics</p>
 </div>
 
 <div class="install-banner" id="install-banner">
@@ -504,6 +569,9 @@
   </div>
 </div>
 
+
+<div class="layout">
+<div class="col-left">
 <!-- START HERE — first-run guidance, dismissible once it has done its job -->
 <details class="card sect onboard" id="start-here">
   <summary><span class="sect-title">Start here</span><span class="sect-sub">new to this tool? 60 seconds · plain-English glossary</span><span class="sect-chev">▸</span></summary>
@@ -562,9 +630,6 @@
     <div class="sv-actions"><button class="scn-btn" id="onboard-dismiss">✓ Got it — hide this</button></div>
   </div>
 </details>
-
-<div class="layout">
-<div class="col-left">
 
 <!-- ALL HALLS — every hall's status at a glance, one row each -->
 <details class="card sect" id="all-halls">
@@ -637,7 +702,7 @@
 </details>
 
 <!-- CONDITIONS CARD -->
-<div class="card">
+<div class="card" id="conditions-card">
   <div class="conditions-head">
     <div class="card-title" style="margin-bottom:0">Conditions</div>
     <div class="head-controls">
@@ -752,7 +817,7 @@
 <div class="col-right">
 
 <!-- CHART CARD -->
-<div class="card">
+<div class="card" id="chart-card">
   <div class="chart-head">
     <div class="card-title" style="margin-bottom:0">Psychrometric Chart — ASHRAE 9.9 Data Center Envelopes</div>
     <div class="zoom-toolbar">
@@ -764,7 +829,7 @@
       <button class="zoom-btn" id="zoom-reset" title="Reset view">⟲ Fit</button>
     </div>
   </div>
-  <div class="zoom-hint">Scroll / pinch to zoom · drag to pan · double-click to reset · hover (or tap) to inspect any point · with a mouse, <strong>Shift-click sets Target</strong> and <strong>Alt-click sets Current</strong>.</div>
+  <div class="zoom-hint">Pinch or scroll to zoom · drag to pan · double-click to reset · tap to inspect any point<span class="mouse-only"> · with a mouse, <strong>Shift-click sets Target</strong> and <strong>Alt-click sets Current</strong></span>.</div>
   <div class="playback-row" id="playback-row">
     <button class="zoom-btn" id="playback-toggle" title="Play the move hour by hour">▶</button>
     <input type="range" id="playback-scrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the planned move">

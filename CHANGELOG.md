@@ -11,6 +11,32 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — field-first layout
+
+The app opens on a phone with a logo, four closed drawers, and the chart —
+the entire point — below the fold. Someone standing in a hall opened it to
+see where the room is, not to re-enter its elevation.
+
+- **The chart and the sliders come first** on any screen narrower than the
+  two-column breakpoint. Setup cards follow; the start-here guide moves to
+  the end, since help belongs after the tool rather than in front of it. The
+  DOM order is unchanged — this is `order` on a flex stack, so reading order
+  for screen readers and the desktop layout both stay as they were.
+- **The masthead is a strip, not a billboard.** It stacked company, product
+  and tagline on three lines; that was about a quarter of a phone screen
+  spent on branding. Now one row, with the tagline dropped below 900 px.
+- **The chart card's own chrome shrank.** The two zoom buttons that pinch
+  already replaces are hidden on touch, the mouse-only half of the hint is
+  hidden where there is no mouse, and the ten-item legend scrolls sideways
+  instead of stacking into half a screen.
+- **Card summaries are no longer monospaced.** Monospace is for columns of
+  digits; on a sentence it reads as log output and costs about 15 % more
+  width, which is why those summaries were truncating mid-word.
+
+Net effect on a phone: the chart and all three Current sliders now fit on the
+first screen. Colours are unchanged — this is the brand palette from
+`src/config/brand.js`, used with more discipline.
+
 ### Added — the arithmetic is audited, and the interactive path has budgets
 
 **Every conversion constant is now derived from its definition and checked**
