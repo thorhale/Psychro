@@ -1,0 +1,639 @@
+<phyphox version="1.14" locale="en">
+  <title>Sound Level Meter (A/C/Z)</title>
+  <category>Acoustics</category>
+  <icon>dB</icon>
+  <description>
+        A weighted sound level meter: A-, C- and Z-weighted levels, Leq, Lmax/Lmin, peak level and a noise-exposure calculator.
+
+        Every block of 4096 audio samples (about 85 ms at 48 kHz) is Hann-windowed, Fourier transformed and integrated with the IEC 61672 A- and C-weighting curves applied in the frequency domain. Levels are therefore true frequency-weighted levels, not a raw amplitude.
+
+        IMPORTANT: your phone's microphone is not a calibrated measurement microphone. The experiment starts with a generic offset of 120 dB, which is only a plausible guess. Use the Calibration tab and a reference (a real sound level meter, or a calibrator) before you trust an absolute number. Relative changes, spectra and C-A differences are meaningful even without calibration.
+    </description>
+
+  <data-containers>
+    <!-- audio input -->
+    <container size="16384">recording</container>
+    <container>rate</container>
+    <container init="4096">samples</container>
+    <container size="4096">block</container>
+    <container size="16384">remainder</container>
+
+    <!-- block geometry -->
+    <container>n</container>
+    <container>nHalf</container>
+    <container>nHalf1</container>
+    <container>rateHalf</container>
+
+    <!-- Hann window -->
+    <container size="4096">winU</container>
+    <container size="4096">window</container>
+    <container size="4096">windowed</container>
+
+    <!-- spectrum -->
+    <container size="4096">fftRe</container>
+    <container size="4096">fftIm</container>
+    <container size="2049">freq</container>
+    <container size="2048">halfF</container>
+    <container size="2048">halfRe</container>
+    <container size="2048">halfIm</container>
+    <container size="2048">pw</container>
+    <container size="2048">wA</container>
+    <container size="2048">wC</container>
+    <container size="2048">pwA</container>
+    <container size="2048">pwC</container>
+
+    <!-- band sums and mean squares -->
+    <container>sumZ</container>
+    <container>sumA</container>
+    <container>sumC</container>
+    <container>msZ</container>
+    <container>msA</container>
+    <container>msC</container>
+    <container>lnZ</container>
+    <container>lnA</container>
+    <container>lnC</container>
+
+    <!-- calibration -->
+    <container init="120">calibration</container>
+    <container init="0">calibrated</container>
+    <container>userCalibration</container>
+    <container init="85">targetDB</container>
+    <container>newCal</container>
+
+    <!-- levels -->
+    <container size="0">LZ</container>
+    <container size="0">LA</container>
+    <container size="0">LC</container>
+    <container>LAmax</container>
+    <container>LAmin</container>
+    <container>CminusA</container>
+
+    <!-- 1 s rolling average (12 blocks) -->
+    <container size="12">slowRing</container>
+    <container>msASlow</container>
+    <container>lnASlow</container>
+    <container>dbASlowRaw</container>
+    <container>LAslow</container>
+
+    <!-- Leq over the whole run -->
+    <container size="0">msAall</container>
+    <container>msAeq</container>
+    <container>lnAeq</container>
+    <container>dbAeqRaw</container>
+    <container>LAeq</container>
+
+    <!-- peak / clipping -->
+    <container size="4096">absBlock</container>
+    <container>peakAmp</container>
+    <container>peakSq</container>
+    <container>lnPeak</container>
+    <container size="0">peakRawHist</container>
+    <container>peakRawMax</container>
+    <container>LpeakMax</container>
+
+    <!-- time base -->
+    <container>now</container>
+    <container init="0">t0</container>
+    <container init="0">resetTime</container>
+    <container size="0">time</container>
+    <container>tNow</container>
+
+    <!-- exposure -->
+    <container init="85">criterion</container>
+    <container>tFraction</container>
+    <container>lnTFraction</container>
+    <container>lex8</container>
+    <container>dose</container>
+    <container>tAllowed</container>
+    <container>tRemain</container>
+
+    <!-- spectrum display -->
+    <container size="2048">specMs</container>
+    <container size="2048">specLn</container>
+    <container size="2048">specDb</container>
+  </data-containers>
+
+  <input>
+    <audio append="true">
+      <output>recording</output>
+      <output component="rate">rate</output>
+    </audio>
+  </input>
+
+  <views>
+    <view label="Meter">
+      <value label="Calibration status">
+        <input>calibrated</input>
+        <map min="0" max="0">DEFAULT OFFSET - not calibrated</map>
+        <map>calibrated</map>
+      </value>
+      <value label="Clipping check">
+        <input>peakRawMax</input>
+        <map min="-0.05">CLIPPED - readings are invalid</map>
+        <map min="-3">Close to clipping - move away from the source</map>
+        <map>OK</map>
+      </value>
+      <separator height="0.5"/>
+      <value label="LA (85 ms)" unit="dB(A)" size="3" precision="1">
+        <input>LA</input>
+      </value>
+      <value label="LA slow (1 s)" unit="dB(A)" size="2" precision="1">
+        <input>LAslow</input>
+      </value>
+      <separator height="0.5"/>
+      <value label="LAeq (whole run)" unit="dB(A)" precision="1">
+        <input>LAeq</input>
+      </value>
+      <value label="LAmax" unit="dB(A)" precision="1">
+        <input>LAmax</input>
+      </value>
+      <value label="LAmin" unit="dB(A)" precision="1">
+        <input>LAmin</input>
+      </value>
+      <value label="Lpeak max (unweighted)" unit="dB" precision="1">
+        <input>LpeakMax</input>
+      </value>
+      <separator height="0.5"/>
+      <value label="LC" unit="dB(C)" precision="1">
+        <input>LC</input>
+      </value>
+      <value label="LZ (unweighted)" unit="dB" precision="1">
+        <input>LZ</input>
+      </value>
+      <value label="LC - LA" unit="dB" precision="1">
+        <input>CminusA</input>
+      </value>
+      <value label="Character">
+        <input>CminusA</input>
+        <map max="3">little low-frequency energy</map>
+        <map max="10">some low-frequency energy</map>
+        <map max="20">low-frequency dominated (rumble)</map>
+        <map>strongly low-frequency dominated</map>
+      </value>
+      <separator height="0.5"/>
+      <graph label="History" labelX="Time" unitX="s" labelY="Sound level" unitY="dB(A)" partialUpdate="true">
+        <input axis="x">time</input>
+        <input axis="y">LA</input>
+      </graph>
+      <button label="Reset history and Leq">
+        <input type="empty"/>
+        <output>LA</output>
+        <input type="empty"/>
+        <output>LC</output>
+        <input type="empty"/>
+        <output>LZ</output>
+        <input type="empty"/>
+        <output>time</output>
+        <input type="empty"/>
+        <output>msAall</output>
+        <input type="empty"/>
+        <output>peakRawHist</output>
+        <input type="value">1</input>
+        <output>resetTime</output>
+      </button>
+    </view>
+
+    <view label="Spectrum">
+      <info label="Unweighted level of each FFT bin (bin width = sample rate / 4096, about 11.7 Hz at 48 kHz). Use this to find which tones dominate - fan blade passing, transformer hum, coil whine."/>
+      <graph label="Spectrum" logX="true" labelX="Frequency" unitX="Hz" labelY="Bin level" unitY="dB" partialUpdate="false">
+        <input axis="x">halfF</input>
+        <input axis="y">specDb</input>
+      </graph>
+      <separator height="0.5"/>
+      <value label="LZ (unweighted, whole band)" unit="dB" precision="1">
+        <input>LZ</input>
+      </value>
+      <value label="Sample rate" unit="Hz" precision="0">
+        <input>rate</input>
+      </value>
+    </view>
+
+    <view label="Exposure">
+      <info label="Noise dose using a 3 dB exchange rate (ISO 9612 / NIOSH) over a nominal 8 hour working day. Set the criterion level below - 85 dB(A) is the usual action level."/>
+      <separator height="0.5"/>
+      <value label="Measurement time" unit="s" precision="0">
+        <input>tNow</input>
+      </value>
+      <value label="LAeq so far" unit="dB(A)" precision="1">
+        <input>LAeq</input>
+      </value>
+      <value label="LEX,8h (projected to 8 h at this level)" unit="dB(A)" precision="1">
+        <input>lex8</input>
+      </value>
+      <separator height="0.5"/>
+      <value label="Dose accumulated so far" unit="%" precision="2">
+        <input>dose</input>
+      </value>
+      <value label="Allowed time at this level" unit="h" factor="0.000277777777777778" precision="2">
+        <input>tAllowed</input>
+      </value>
+      <value label="Time left before 100 % dose" unit="h" factor="0.000277777777777778" precision="2">
+        <input>tRemain</input>
+      </value>
+      <separator height="0.5"/>
+      <edit label="Criterion level" unit="dB(A)" default="85" decimal="true">
+        <output>criterion</output>
+      </edit>
+    </view>
+
+    <view label="Calibration">
+      <info label="The phone microphone is uncalibrated, so the absolute level depends entirely on the offset below. It ships at 120 dB, which is a plausible value for a typical phone but is NOT a measurement."/>
+      <separator height="0.5"/>
+      <info label="To calibrate: put the phone next to a reference sound level meter (or use an acoustic calibrator), expose both to a steady sound, read the reference in dB(A), type it in below and press Calibrate while this experiment is running. Calibration uses the 1 s average, so let the reading settle first."/>
+      <edit label="Reference level" unit="dB(A)" default="85" decimal="true">
+        <output>targetDB</output>
+      </edit>
+      <button label="Calibrate">
+        <input>newCal</input>
+        <output>calibration</output>
+        <input type="value">1</input>
+        <output>calibrated</output>
+      </button>
+      <separator height="0.5"/>
+      <value label="Current offset" unit="dB" precision="2">
+        <input>calibration</input>
+      </value>
+      <value label="Uncalibrated 1 s level" unit="dBFS" precision="2">
+        <input>dbASlowRaw</input>
+      </value>
+      <separator height="0.5"/>
+      <info label="If you already know the offset for this phone from an earlier calibration, enter it directly and press Set offset. Write it down - it is not stored between sessions."/>
+      <edit label="Known offset" unit="dB" default="120" decimal="true" signed="true">
+        <output>userCalibration</output>
+      </edit>
+      <button label="Set offset">
+        <input>userCalibration</input>
+        <output>calibration</output>
+        <input type="value">1</input>
+        <output>calibrated</output>
+      </button>
+    </view>
+
+    <view label="Notes">
+      <info label="What this does exactly"/>
+      <info label="Each 4096-sample block is multiplied by a Hann window, Fourier transformed, and the power in every bin is multiplied by the squared A- or C-weighting response from IEC 61672 before being summed. The sum is normalised so that a full-scale sine reads -3.01 dBFS, then the calibration offset is added."/>
+      <separator height="0.5"/>
+      <info label="Where it differs from a real sound level meter"/>
+      <info label="1. The microphone is uncalibrated and its frequency response is unknown - typically poor below about 100 Hz and above 10 kHz, and most phones roll off bass sharply."/>
+      <info label="2. LA and LA slow are rectangular block averages (85 ms and 1 s), not the exponential Fast and Slow time weightings of IEC 61672."/>
+      <info label="3. Lpeak is the largest sample in a block, unweighted; a real meter uses C-weighted peak with a defined rise time."/>
+      <info label="4. Android and iOS may apply automatic gain control or noise suppression to the microphone stream. If the reading drifts down while a steady sound continues, that is AGC, and no calibration can fix it."/>
+      <info label="5. Anything above roughly 100-110 dB(A) will clip the input long before it damages the phone. Watch the clipping check."/>
+      <separator height="0.5"/>
+      <info label="Do not use this for hearing-protection decisions, legal noise limits, or anything where being wrong matters. Use it to compare, to find tones, and to see trends."/>
+    </view>
+  </views>
+
+  <analysis requireFill="recording" requireFillDynamic="samples">
+
+    <!-- time base -->
+    <timer>
+      <output clear="false">now</output>
+    </timer>
+    <if equal="true">
+      <input clear="false">resetTime</input>
+      <input type="value">1</input>
+      <input clear="false">now</input>
+      <output>t0</output>
+    </if>
+    <append>
+      <input type="value">0</input>
+      <output>resetTime</output>
+    </append>
+    <subtract>
+      <input clear="false">now</input>
+      <input clear="false">t0</input>
+      <output clear="false">time</output>
+    </subtract>
+    <subtract>
+      <input clear="false">now</input>
+      <input clear="false">t0</input>
+      <output>tNow</output>
+    </subtract>
+
+    <!-- take one block, keep the remainder -->
+    <subrange>
+      <input as="to" clear="false">samples</input>
+      <input as="in" clear="false">recording</input>
+      <output>block</output>
+    </subrange>
+    <subrange>
+      <input as="from" clear="false">samples</input>
+      <input as="in" clear="true">recording</input>
+      <output>remainder</output>
+    </subrange>
+    <subrange>
+      <input>remainder</input>
+      <output>recording</output>
+    </subrange>
+    <count>
+      <input clear="false">block</input>
+      <output>n</output>
+    </count>
+
+    <!-- peak of the raw block (clipping check) -->
+    <formula formula="abs([1_])">
+      <input clear="false">block</input>
+      <output>absBlock</output>
+    </formula>
+    <max>
+      <input as="y">absBlock</input>
+      <output as="max">peakAmp</output>
+    </max>
+    <formula formula="[1]*[1]+0.000000000001">
+      <input>peakAmp</input>
+      <output>peakSq</output>
+    </formula>
+    <log>
+      <input>peakSq</input>
+      <output>lnPeak</output>
+    </log>
+    <formula formula="4.342944819032518*[1]">
+      <input>lnPeak</input>
+      <output clear="false">peakRawHist</output>
+    </formula>
+    <max>
+      <input as="y" clear="false">peakRawHist</input>
+      <output as="max">peakRawMax</output>
+    </max>
+    <formula formula="[1]+[2]">
+      <input clear="false">peakRawMax</input>
+      <input clear="false">calibration</input>
+      <output>LpeakMax</output>
+    </formula>
+
+    <!-- Hann window -->
+    <ramp>
+      <input as="start" type="value">0</input>
+      <input as="stop" type="value">1</input>
+      <input as="length" clear="false">n</input>
+      <output>winU</output>
+    </ramp>
+    <formula formula="0.5-0.5*cos(6.283185307179586*[1_])">
+      <input>winU</input>
+      <output>window</output>
+    </formula>
+    <multiply>
+      <input as="factor">block</input>
+      <input as="factor">window</input>
+      <output>windowed</output>
+    </multiply>
+
+    <!-- FFT and frequency axis -->
+    <fft>
+      <input>windowed</input>
+      <output as="re">fftRe</output>
+      <output as="im">fftIm</output>
+    </fft>
+    <divide>
+      <input clear="false">rate</input>
+      <input type="value">2</input>
+      <output>rateHalf</output>
+    </divide>
+    <divide>
+      <input clear="false">n</input>
+      <input type="value">2</input>
+      <output>nHalf</output>
+    </divide>
+    <add>
+      <input clear="false">nHalf</input>
+      <input type="value">1</input>
+      <output>nHalf1</output>
+    </add>
+    <ramp>
+      <input as="start" type="value">0</input>
+      <input as="stop" clear="false">rateHalf</input>
+      <input as="length" clear="false">nHalf1</input>
+      <output>freq</output>
+    </ramp>
+    <subrange>
+      <input as="from" type="value">1</input>
+      <input as="to" clear="false">nHalf</input>
+      <input as="in">freq</input>
+      <input as="in">fftRe</input>
+      <input as="in">fftIm</input>
+      <output>halfF</output>
+      <output>halfRe</output>
+      <output>halfIm</output>
+    </subrange>
+    <formula formula="[1_]*[1_]+[2_]*[2_]">
+      <input>halfRe</input>
+      <input>halfIm</input>
+      <output>pw</output>
+    </formula>
+
+    <!-- IEC 61672 weighting curves, squared -->
+    <formula formula="1.584841544872967*148693636^2*[1_]^8/(([1_]^2+424.36)^2*([1_]^2+11599.29)*([1_]^2+544496.41)*([1_]^2+148693636)^2)">
+      <input clear="false">halfF</input>
+      <output>wA</output>
+    </formula>
+    <formula formula="1.0143560601767088*148693636^2*[1_]^4/(([1_]^2+424.36)^2*([1_]^2+148693636)^2)">
+      <input clear="false">halfF</input>
+      <output>wC</output>
+    </formula>
+    <multiply>
+      <input as="factor" clear="false">pw</input>
+      <input as="factor">wA</input>
+      <output>pwA</output>
+    </multiply>
+    <multiply>
+      <input as="factor" clear="false">pw</input>
+      <input as="factor">wC</input>
+      <output>pwC</output>
+    </multiply>
+
+    <!-- integrate each spectrum to a mean square -->
+    <integrate>
+      <input clear="false">pw</input>
+      <output>sumZ</output>
+    </integrate>
+    <integrate>
+      <input>pwA</input>
+      <output>sumA</output>
+    </integrate>
+    <integrate>
+      <input>pwC</input>
+      <output>sumC</output>
+    </integrate>
+    <!-- 2 (half spectrum) / 0.375 (Hann power) / n^2 (DFT scale) = 5.3333/n^2 -->
+    <formula formula="5.333333333333333*[1]/([2]*[2])+0.000000000000000001">
+      <input>sumZ</input>
+      <input clear="false">n</input>
+      <output>msZ</output>
+    </formula>
+    <formula formula="5.333333333333333*[1]/([2]*[2])+0.000000000000000001">
+      <input>sumA</input>
+      <input clear="false">n</input>
+      <output clear="false">msA</output>
+    </formula>
+    <formula formula="5.333333333333333*[1]/([2]*[2])+0.000000000000000001">
+      <input>sumC</input>
+      <input clear="false">n</input>
+      <output>msC</output>
+    </formula>
+
+    <!-- levels in dB -->
+    <log>
+      <input>msZ</input>
+      <output>lnZ</output>
+    </log>
+    <formula formula="4.342944819032518*[1]+[2]">
+      <input>lnZ</input>
+      <input clear="false">calibration</input>
+      <output clear="false">LZ</output>
+    </formula>
+    <log>
+      <input clear="false">msA</input>
+      <output>lnA</output>
+    </log>
+    <formula formula="4.342944819032518*[1]+[2]">
+      <input>lnA</input>
+      <input clear="false">calibration</input>
+      <output clear="false">LA</output>
+    </formula>
+    <log>
+      <input>msC</input>
+      <output>lnC</output>
+    </log>
+    <formula formula="4.342944819032518*[1]+[2]">
+      <input>lnC</input>
+      <input clear="false">calibration</input>
+      <output clear="false">LC</output>
+    </formula>
+    <subtract>
+      <input clear="false">LC</input>
+      <input clear="false">LA</input>
+      <output>CminusA</output>
+    </subtract>
+    <max>
+      <input as="y" clear="false">LA</input>
+      <output as="max">LAmax</output>
+    </max>
+    <min>
+      <input as="y" clear="false">LA</input>
+      <output as="min">LAmin</output>
+    </min>
+
+    <!-- 1 s rolling average -->
+    <append>
+      <input clear="false">msA</input>
+      <output clear="false">slowRing</output>
+    </append>
+    <average>
+      <input as="buffer" clear="false">slowRing</input>
+      <output as="average">msASlow</output>
+    </average>
+    <log>
+      <input>msASlow</input>
+      <output>lnASlow</output>
+    </log>
+    <formula formula="4.342944819032518*[1]">
+      <input>lnASlow</input>
+      <output clear="false">dbASlowRaw</output>
+    </formula>
+    <formula formula="[1]+[2]">
+      <input clear="false">dbASlowRaw</input>
+      <input clear="false">calibration</input>
+      <output>LAslow</output>
+    </formula>
+    <subtract>
+      <input clear="false">targetDB</input>
+      <input clear="false">dbASlowRaw</input>
+      <output>newCal</output>
+    </subtract>
+
+    <!-- Leq over the whole run -->
+    <append>
+      <input clear="false">msA</input>
+      <output clear="false">msAall</output>
+    </append>
+    <average>
+      <input as="buffer" clear="false">msAall</input>
+      <output as="average">msAeq</output>
+    </average>
+    <log>
+      <input>msAeq</input>
+      <output>lnAeq</output>
+    </log>
+    <formula formula="4.342944819032518*[1]">
+      <input>lnAeq</input>
+      <output>dbAeqRaw</output>
+    </formula>
+    <formula formula="[1]+[2]">
+      <input>dbAeqRaw</input>
+      <input clear="false">calibration</input>
+      <output clear="false">LAeq</output>
+    </formula>
+
+    <!-- exposure, 3 dB exchange rate over 8 h -->
+    <formula formula="max([1],0.001)/28800">
+      <input clear="false">tNow</input>
+      <output>tFraction</output>
+    </formula>
+    <log>
+      <input>tFraction</input>
+      <output>lnTFraction</output>
+    </log>
+    <formula formula="[1]+4.342944819032518*[2]">
+      <input clear="false">LAeq</input>
+      <input>lnTFraction</input>
+      <output>lex8</output>
+    </formula>
+    <formula formula="100*[2]/28800*10^(([1]-[3])/10)">
+      <input clear="false">LAeq</input>
+      <input clear="false">tNow</input>
+      <input clear="false">criterion</input>
+      <output>dose</output>
+    </formula>
+    <formula formula="28800*10^(([2]-[1])/10)">
+      <input clear="false">LAeq</input>
+      <input clear="false">criterion</input>
+      <output clear="false">tAllowed</output>
+    </formula>
+    <subtract>
+      <input clear="false">tAllowed</input>
+      <input clear="false">tNow</input>
+      <output>tRemain</output>
+    </subtract>
+
+    <!-- spectrum for display -->
+    <formula formula="5.333333333333333*[1_]/([2]*[2])+0.000000000000000001">
+      <input>pw</input>
+      <input clear="false">n</input>
+      <output>specMs</output>
+    </formula>
+    <log>
+      <input>specMs</input>
+      <output>specLn</output>
+    </log>
+    <formula formula="4.342944819032518*[1_]+[2]">
+      <input>specLn</input>
+      <input clear="false">calibration</input>
+      <output>specDb</output>
+    </formula>
+
+  </analysis>
+
+  <export>
+    <set name="Levels">
+      <data name="Time (s)">time</data>
+      <data name="LA (dB(A))">LA</data>
+      <data name="LC (dB(C))">LC</data>
+      <data name="LZ (dB)">LZ</data>
+      <data name="Peak, uncalibrated (dBFS)">peakRawHist</data>
+    </set>
+    <set name="Summary">
+      <data name="LAeq (dB(A))">LAeq</data>
+      <data name="LAmax (dB(A))">LAmax</data>
+      <data name="LAmin (dB(A))">LAmin</data>
+      <data name="LEX,8h (dB(A))">lex8</data>
+      <data name="Dose (%)">dose</data>
+      <data name="Measurement time (s)">tNow</data>
+      <data name="Calibration offset (dB)">calibration</data>
+    </set>
+    <set name="Spectrum">
+      <data name="Frequency (Hz)">halfF</data>
+      <data name="Bin level (dB)">specDb</data>
+    </set>
+  </export>
+</phyphox>

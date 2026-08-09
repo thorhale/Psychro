@@ -1,0 +1,197 @@
+<phyphox version="1.14" locale="en">
+  <title>EMI Survey (magnetic field)</title>
+  <category>Environment</category>
+  <icon>EMI</icon>
+  <description>
+        A magnetic field walk-round for finding the high-current conductors that copper data cabling should be routed away from: busbars, PDU whips, transformers, UPS cabling and motor feeds.
+
+        It shows the total field, a rolling average, and the size of the fluctuating (AC) part of the field, which is what tells a live power run apart from a lump of steel. Use it as a finder: walk the cable route and watch where the AC activity climbs.
+
+        Honest limit: a phone magnetometer samples at roughly 50 to 100 Hz, so 50/60 Hz mains is above or near the Nyquist limit and gets aliased. The AC activity number still rises reliably near a live conductor, but there is deliberately no frequency readout here, because any frequency this sensor reported at mains would be an artefact.
+    </description>
+
+  <data-containers>
+    <container size="3600">bx</container>
+    <container size="3600">by</container>
+    <container size="3600">bz</container>
+    <container size="3600">babs</container>
+    <container size="3600">bt</container>
+
+    <container>cnt</container>
+    <container>lastFrom</container>
+    <container>winFrom</container>
+
+    <container>bLast</container>
+    <container>bxLast</container>
+    <container>byLast</container>
+    <container>bzLast</container>
+
+    <container size="64">win</container>
+    <container>bMean</container>
+    <container>bAc</container>
+
+    <container>bMax</container>
+    <container>bMin</container>
+    <container>bPtp</container>
+  </data-containers>
+
+  <input>
+    <sensor type="magnetic_field" rate="0">
+      <output component="x">bx</output>
+      <output component="y">by</output>
+      <output component="z">bz</output>
+      <output component="abs">babs</output>
+      <output component="t">bt</output>
+    </sensor>
+  </input>
+
+  <views>
+    <view label="EMI survey">
+      <value label="AC activity (fluctuating part)" unit="uT" size="3" precision="3">
+        <input>bAc</input>
+      </value>
+      <value label="Verdict">
+        <input>bAc</input>
+        <map max="0.3">quiet - sensor noise floor</map>
+        <map max="1">slight activity</map>
+        <map max="5">notable - a live conductor is near</map>
+        <map>strong - keep copper data cable away and cross at right angles</map>
+      </value>
+      <separator height="0.5"/>
+      <value label="Total field now" unit="uT" size="2" precision="2">
+        <input>bLast</input>
+      </value>
+      <value label="Rolling average" unit="uT" precision="2">
+        <input>bMean</input>
+      </value>
+      <value label="Peak hold" unit="uT" precision="2">
+        <input>bMax</input>
+      </value>
+      <value label="Lowest seen" unit="uT" precision="2">
+        <input>bMin</input>
+      </value>
+      <value label="Peak to peak over the run" unit="uT" precision="2">
+        <input>bPtp</input>
+      </value>
+      <separator height="0.5"/>
+      <graph label="Total field" labelX="Time" unitX="s" labelY="Magnetic flux density" unitY="uT" partialUpdate="true">
+        <input axis="x">bt</input>
+        <input axis="y">babs</input>
+      </graph>
+      <button label="Reset trace and peak hold">
+        <input type="empty"/>
+        <output>babs</output>
+        <input type="empty"/>
+        <output>bt</output>
+        <input type="empty"/>
+        <output>bx</output>
+        <input type="empty"/>
+        <output>by</output>
+        <input type="empty"/>
+        <output>bz</output>
+      </button>
+    </view>
+
+    <view label="Axes">
+      <info label="Individual axes, in the phone's own frame of reference. Useful for working out which direction a field is coming from: rotate the phone and watch which axis dominates."/>
+      <separator height="0.5"/>
+      <value label="Bx" unit="uT" precision="2">
+        <input>bxLast</input>
+      </value>
+      <value label="By" unit="uT" precision="2">
+        <input>byLast</input>
+      </value>
+      <value label="Bz" unit="uT" precision="2">
+        <input>bzLast</input>
+      </value>
+      <separator height="0.5"/>
+      <graph label="Axes" labelX="Time" unitX="s" labelY="Flux density" unitY="uT" partialUpdate="true">
+        <input axis="x">bt</input>
+        <input axis="y">bx</input>
+      </graph>
+    </view>
+
+    <view label="Notes">
+      <info label="How to read this"/>
+      <info label="The Earth's own field is 25 to 65 uT depending on where you are, and it is steady. Steel racks, floor tiles and door frames bend that field and change the total reading without meaning anything is energised - that is why the AC activity number, not the total, is the one to watch."/>
+      <info label="Walk slowly. A phone magnetometer is a point sensor and field from a cable falls off quickly with distance, so a hot spot can be missed by walking past it at arm's length."/>
+      <separator height="0.5"/>
+      <info label="Why there is no frequency readout"/>
+      <info label="The magnetometer is sampled at roughly 50 to 100 Hz. Mains at 50 or 60 Hz is at or above half that, so it aliases: a 60 Hz field sampled at 100 Hz appears as a 40 Hz wobble that is not real. The fluctuation is still a genuine sign of alternating current nearby, which is why this experiment reports its size and not its frequency."/>
+      <separator height="0.5"/>
+      <info label="What this cannot tell you"/>
+      <info label="This measures magnetic field, not the interference actually coupled into a cable. Screened cable, the twist in a balanced pair, and the routing geometry all matter, and none of them are visible here. Treat a strong reading as a reason to check the cable route, not as a measurement of crosstalk or bit errors. For an actual link problem, test the link."/>
+    </view>
+  </views>
+
+  <analysis sleep="0.1">
+    <count>
+      <input clear="false">babs</input>
+      <output clear="false">cnt</output>
+    </count>
+
+    <!-- newest sample of every axis -->
+    <formula formula="max([1]-1,0)">
+      <input clear="false">cnt</input>
+      <output>lastFrom</output>
+    </formula>
+    <subrange>
+      <input as="from" clear="false">lastFrom</input>
+      <input as="in" clear="false">babs</input>
+      <input as="in" clear="false">bx</input>
+      <input as="in" clear="false">by</input>
+      <input as="in" clear="false">bz</input>
+      <output>bLast</output>
+      <output>bxLast</output>
+      <output>byLast</output>
+      <output>bzLast</output>
+    </subrange>
+
+    <!-- rolling window for the AC content -->
+    <formula formula="max([1]-64,0)">
+      <input clear="false">cnt</input>
+      <output>winFrom</output>
+    </formula>
+    <subrange>
+      <input as="from" clear="false">winFrom</input>
+      <input as="in" clear="false">babs</input>
+      <output>win</output>
+    </subrange>
+    <average>
+      <input as="buffer">win</input>
+      <output as="average">bMean</output>
+      <output as="stddev">bAc</output>
+    </average>
+
+    <!-- peak hold over the whole trace -->
+    <max>
+      <input as="y" clear="false">babs</input>
+      <output as="max">bMax</output>
+    </max>
+    <min>
+      <input as="y" clear="false">babs</input>
+      <output as="min">bMin</output>
+    </min>
+    <subtract>
+      <input clear="false">bMax</input>
+      <input clear="false">bMin</input>
+      <output>bPtp</output>
+    </subtract>
+  </analysis>
+
+  <export>
+    <set name="Field trace">
+      <data name="Time (s)">bt</data>
+      <data name="Bx (uT)">bx</data>
+      <data name="By (uT)">by</data>
+      <data name="Bz (uT)">bz</data>
+      <data name="Total field (uT)">babs</data>
+    </set>
+    <set name="Summary">
+      <data name="Peak hold (uT)">bMax</data>
+      <data name="Lowest (uT)">bMin</data>
+      <data name="Peak to peak (uT)">bPtp</data>
+      <data name="AC activity (uT)">bAc</data>
+    </set>
+  </export>
+</phyphox>

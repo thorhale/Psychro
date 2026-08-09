@@ -1,0 +1,225 @@
+<phyphox version="1.14" locale="en">
+  <title>Hall Survey (pressure + T/RH log)</title>
+  <category>Environment</category>
+  <icon>HAL</icon>
+  <description>
+        A walk-round logger for a data hall. The phone contributes real barometric pressure and an absolute timestamp; you type the dry-bulb temperature and relative humidity from whatever instrument you are holding, and press Log point at each location.
+
+        The exported "Survey log" set is shaped so that a psychrometric planner can read it directly: one row per logged point, with a Unix timestamp, dry bulb in degrees Celsius, relative humidity in percent and barometric pressure in hPa.
+
+        The "Pressure trace" set is a continuous barometer recording. Because a phone barometer resolves roughly 1 to 10 Pa, it can show the pressure step between a contained cold aisle and the room, but only as an indication - it is not a manometer.
+    </description>
+
+  <data-containers>
+    <!-- barometer -->
+    <container size="7200">pRaw</container>
+    <container size="7200">pT</container>
+    <container>pCount</container>
+    <container>pFrom</container>
+    <container>pLast</container>
+    <container>pMin</container>
+    <container>pMax</container>
+    <container>pDelta</container>
+
+    <!-- time base -->
+    <container>now</container>
+    <container>epochOffset</container>
+    <container>epochNow</container>
+
+    <!-- manual entry -->
+    <container init="22">tdbIn</container>
+    <container init="45">rhIn</container>
+    <container init="1">unitSel</container>
+    <container>tdbF2C</container>
+    <container>tdbC</container>
+
+    <!-- logged points -->
+    <container init="0">logNow</container>
+    <container size="0">logEpoch</container>
+    <container size="0">logTdb</container>
+    <container size="0">logRh</container>
+    <container size="0">logP</container>
+    <container>logCount</container>
+  </data-containers>
+
+  <input>
+    <sensor type="pressure" rate="1">
+      <output component="value">pRaw</output>
+      <output component="t">pT</output>
+    </sensor>
+  </input>
+
+  <views>
+    <view label="Log a point">
+      <info label="Stand at the measurement location, let the reading settle, type what your instrument shows and press Log point."/>
+      <separator height="0.5"/>
+      <value label="Points logged so far" precision="0">
+        <input>logCount</input>
+      </value>
+      <value label="Pressure right now" unit="hPa" precision="2">
+        <input>pLast</input>
+      </value>
+      <separator height="0.5"/>
+      <dropdown label="Temperature unit you are typing" default="1">
+        <output>unitSel</output>
+        <map value="1">Celsius</map>
+        <map value="2">Fahrenheit</map>
+      </dropdown>
+      <edit label="Dry bulb temperature" default="22" decimal="true" signed="true">
+        <output>tdbIn</output>
+      </edit>
+      <edit label="Relative humidity" unit="%" default="45" decimal="true">
+        <output>rhIn</output>
+      </edit>
+      <separator height="0.5"/>
+      <value label="Will be logged as" unit="C" precision="2">
+        <input>tdbC</input>
+      </value>
+      <button label="Log point">
+        <input type="value">1</input>
+        <output>logNow</output>
+      </button>
+      <separator height="0.5"/>
+      <button label="Clear the log">
+        <input type="empty"/>
+        <output>logEpoch</output>
+        <input type="empty"/>
+        <output>logTdb</output>
+        <input type="empty"/>
+        <output>logRh</output>
+        <input type="empty"/>
+        <output>logP</output>
+      </button>
+    </view>
+
+    <view label="Pressure">
+      <value label="Pressure now" unit="hPa" size="2" precision="2">
+        <input>pLast</input>
+      </value>
+      <value label="Lowest seen" unit="hPa" precision="2">
+        <input>pMin</input>
+      </value>
+      <value label="Highest seen" unit="hPa" precision="2">
+        <input>pMax</input>
+      </value>
+      <value label="Spread" unit="Pa" factor="100" precision="1">
+        <input>pDelta</input>
+      </value>
+      <separator height="0.5"/>
+      <graph label="Barometric pressure" labelX="Time" unitX="s" labelY="Pressure" unitY="hPa" partialUpdate="true">
+        <input axis="x">pT</input>
+        <input axis="y">pRaw</input>
+      </graph>
+      <info label="For a containment check: hold still on one side of the barrier until the trace flattens, then move to the other side and hold still again. The step between the two flat sections is the differential. Keep the phone at a constant height - 1 m of elevation is about 12 Pa, which is the same size as the effect you are looking for."/>
+    </view>
+
+    <view label="Notes">
+      <info label="What the phone measures and what it does not"/>
+      <info label="Barometric pressure is a real measurement from the phone's barometer and is good to roughly 0.1 hPa relative, though its absolute calibration may be off by a few hPa."/>
+      <info label="Temperature and humidity are NOT measured - virtually no phone has a hygrometer, and the phone's internal temperature sensors read its own electronics, not the room. That is why you type those two values in."/>
+      <separator height="0.5"/>
+      <info label="Export: choose CSV. The Survey log set has one row per logged point with a Unix timestamp, dry bulb in Celsius, RH in percent and pressure in hPa. The Pressure trace set is the continuous barometer recording."/>
+    </view>
+  </views>
+
+  <analysis sleep="0.25">
+    <!-- absolute time -->
+    <timer>
+      <output as="out">now</output>
+      <output as="offset1970">epochOffset</output>
+    </timer>
+    <add>
+      <input>now</input>
+      <input>epochOffset</input>
+      <output>epochNow</output>
+    </add>
+
+    <!-- most recent barometer sample -->
+    <count>
+      <input clear="false">pRaw</input>
+      <output>pCount</output>
+    </count>
+    <formula formula="max([1]-1,0)">
+      <input>pCount</input>
+      <output>pFrom</output>
+    </formula>
+    <subrange>
+      <input as="from" clear="false">pFrom</input>
+      <input as="in" clear="false">pRaw</input>
+      <output clear="false">pLast</output>
+    </subrange>
+    <max>
+      <input as="y" clear="false">pRaw</input>
+      <output as="max">pMax</output>
+    </max>
+    <min>
+      <input as="y" clear="false">pRaw</input>
+      <output as="min">pMin</output>
+    </min>
+    <subtract>
+      <input clear="false">pMax</input>
+      <input clear="false">pMin</input>
+      <output>pDelta</output>
+    </subtract>
+
+    <!-- unit handling for the typed temperature -->
+    <formula formula="([1]-32)*5/9">
+      <input clear="false">tdbIn</input>
+      <output>tdbF2C</output>
+    </formula>
+    <if equal="true">
+      <input clear="false">unitSel</input>
+      <input type="value">2</input>
+      <input clear="false">tdbF2C</input>
+      <input clear="false">tdbIn</input>
+      <output clear="false">tdbC</output>
+    </if>
+
+    <!-- append one row when the button has been pressed -->
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">epochNow</input>
+      <output clear="false">logEpoch</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">tdbC</input>
+      <output clear="false">logTdb</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">rhIn</input>
+      <output clear="false">logRh</output>
+    </if>
+    <if equal="true">
+      <input clear="false">logNow</input>
+      <input type="value">1</input>
+      <input clear="false">pLast</input>
+      <output clear="false">logP</output>
+    </if>
+    <append>
+      <input type="value">0</input>
+      <output>logNow</output>
+    </append>
+    <count>
+      <input clear="false">logEpoch</input>
+      <output>logCount</output>
+    </count>
+  </analysis>
+
+  <export>
+    <set name="Survey log">
+      <data name="Timestamp (Unix s)">logEpoch</data>
+      <data name="Dry bulb temp (C)">logTdb</data>
+      <data name="RH (%)">logRh</data>
+      <data name="Pressure (hPa)">logP</data>
+    </set>
+    <set name="Pressure trace">
+      <data name="Time (s)">pT</data>
+      <data name="Pressure (hPa)">pRaw</data>
+    </set>
+  </export>
+</phyphox>
