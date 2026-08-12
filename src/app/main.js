@@ -1573,14 +1573,17 @@ function renderHallTabs() {
   }
 
   tabs.innerHTML = '';
+  // Prefix only what actually tells two tabs apart. A campus shares one site,
+  // so printing it on all fourteen tabs is fourteen copies of one fact — and
+  // it pushed the hall name, the only part that differs, off the end.
+  const manyLoc = new Set(shown.map(x => (x.h.siteName || '').trim())).size > 1;
+  const manyBld = new Set(shown.map(x => (x.h.building || '').trim())).size > 1;
   shown.forEach(({ h, i }) => {
     const btn = document.createElement('button');
     btn.className = 'sla-tab' + (i === state.activeHall ? ' active' : '');
-    // Prefix whatever the selectors haven't already pinned down, so
-    // same-named halls in different places stay distinguishable.
     const bld = (h.building || '').trim(), loc = (h.siteName || '').trim();
-    btn.textContent = (!v.loc && loc ? loc + ' · ' : '')
-      + (!v.bld && bld ? bld + ' · ' : '') + (h.name || `Hall ${i + 1}`);
+    btn.textContent = (!v.loc && manyLoc && loc ? loc + ' · ' : '')
+      + (!v.bld && manyBld && bld ? bld + ' · ' : '') + (h.name || `Hall ${i + 1}`);
     btn.onclick = () => {
       if (i === state.activeHall) return;
       switchHall(i);

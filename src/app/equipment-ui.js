@@ -447,6 +447,13 @@ export function renderEquipment() {
 // same dew point in Denver as in Goodyear — this is the only surface that
 // shows that side by side.
 
+/**
+ * Which building groups the operator has explicitly opened or closed. Absent
+ * means "not decided" — the group holding the active hall opens itself.
+ * @type {Map<string, boolean>}
+ */
+const bldOpen = new Map();
+
 export function renderAllHalls() {
   const host = inp('allhalls-body');
   const sub = inp('allhalls-sub');
@@ -475,8 +482,19 @@ export function renderAllHalls() {
   const hasRates = (h) => ['rateCoolF', 'rateWarmF'].some((k) => h[k] > 0);
   const noneRated = shown.length > 1 && shown.every(({ h }) => !hasRates(h));
 
+  // A campus is a list of buildings, not a list of halls — you go to A2, and
+  // then to a hall inside it. With more than one building in view the list
+  // leads with the buildings and opens the one you are standing in; with one
+  // building a disclosure to press would be a step that answers nothing.
+  const buildings = [...new Set(shown.map(({ h }) => (h.building || '').trim()))]
+    // Alphabetical, with the un-named ones last: they are the leftovers, and
+    // sorting an empty string to the top would put them above real buildings.
+    .sort((a, b) => (a ? 0 : 1) - (b ? 0 : 1) || a.localeCompare(b));
+  const grouped = buildings.length > 1;
+
   const rows = shown.map(({ h, i }) => {
     const active = i === state.activeHall;
+    const bldKey = (h.building || '').trim();
     // The active hall's live point may not be stashed yet; use what is on screen.
     const c = active
       ? { aTemp: state.aTemp, aRH: state.aRH, bTemp: state.bTemp, bRH: state.bRH }
@@ -486,11 +504,13 @@ export function renderAllHalls() {
     if (!rates) unplanned++;
 
     let status;
+    let breach = false;
     if (!c) {
       status = '<span class="cap-hint">not set up yet</span>';
     } else {
       const chk = checkSLACore(sla, c.aTemp, c.aRH);
-      if (!chk.ok) breaches++;
+      breach = !chk.ok;
+      if (breach) breaches++;
       status = chk.ok
         ? '<span class="badge badge-ok">✓ in SLA</span>'
         : `<span class="badge badge-bad">✗ ${escHtml(fmtSlaReason(chk))}</span>`;
@@ -524,8 +544,11 @@ export function renderAllHalls() {
       : '';
     // Hall names repeat across buildings — four halls called "Hall 1" is
     // normal on a campus — so the building is what tells them apart and
-    // belongs in the line you scan, not in the small print under it.
-    const label = [h.building, h.name || `Hall ${i + 1}`].filter(Boolean).join(' · ');
+    // belongs in the line you scan, not in the small print under it. Inside a
+    // building group the header already said it, so the row drops it.
+    const label = grouped
+      ? (h.name || `Hall ${i + 1}`)
+      : [h.building, h.name || `Hall ${i + 1}`].filter(Boolean).join(' · ');
     // Only what differs from the shared header above.
     const meta = oneSite
       ? (rates || noneRated ? '' : 'no plant rates')
@@ -536,7 +559,7 @@ export function renderAllHalls() {
           escHtml([h.siteName, h.building].filter(Boolean).join(' · ')),
           `${Math.round(h.elevFt ?? 0).toLocaleString()} ft · ${p.toFixed(1)} kPa${rates ? '' : ' · no plant rates'}`,
         ].filter(Boolean).join('<br>');
-    return (
+    const html =
       `<div class="hr-row-wrap">` +
       `<button type="button" class="hall-row${active ? ' is-active' : ''}${c ? '' : ' hr-idle'}" data-hall="${i}">` +
       `<span><span class="hr-name">${escHtml(label)}</span>` +
@@ -549,9 +572,11 @@ export function renderAllHalls() {
       // button in another card. With a campus of them — several created by
       // accident — that is the difference between tidying up and giving up.
       `<button type="button" class="hr-del" data-del-hall="${i}" ` +
-      `title="Delete this hall" aria-label="Delete ${escHtml(label)}">✕</button>` +
-      `</div>`
-    );
+      `title="Delete this hall" aria-label="Delete ${escHtml(
+        [h.building, h.name || `Hall ${i + 1}`].filter(Boolean).join(' · '),
+      )}">✕</button>` +
+      `</div>`;
+    return { html, bldKey, active, breach, plant: plantBits.length > 0 };
   });
 
   // The fact every row would otherwise have repeated, stated once.
@@ -564,9 +589,45 @@ export function renderAllHalls() {
       ` <span class="cap-hint">— every hall below</span></div>`
     : '';
 
-  const html = (sharedSite + rows.join('')) ||
+  // Group headers carry the rollup, so a collapsed building still tells you
+  // whether anything in it needs attention — otherwise collapsing would hide
+  // the one thing worth walking over for.
+  const body = grouped
+    ? buildings.map((b, gi) => {
+        const mine = rows.filter((r) => r.bldKey === b);
+        // The building you are standing in opens itself; once you have pressed
+        // a header your choice sticks, in both directions.
+        const open = bldOpen.has(b) ? bldOpen.get(b) : mine.some((r) => r.active);
+        const bad = mine.filter((r) => r.breach).length;
+        const plant = mine.filter((r) => r.plant).length;
+        const note = [
+          bad ? `⚠ ${bad} outside SLA` : '✓ all inside SLA',
+          plant ? `${plant} with plant to look at` : '',
+        ].filter(Boolean).join(' · ');
+        return (
+          `<div class="hr-group${open ? ' is-open' : ''}">` +
+          `<button type="button" class="hr-bld" data-bld="${gi}" aria-expanded="${open}">` +
+          `<span class="hr-chev">▸</span>` +
+          `<span class="hr-bld-name">${escHtml(b || 'No building set')}</span>` +
+          `<span class="hr-bld-n">${mine.length} hall${mine.length === 1 ? '' : 's'}</span>` +
+          `<span class="hr-bld-note${bad ? ' is-bad' : ''}">${note}</span>` +
+          `</button>` +
+          `<div class="hr-halls">${mine.map((r) => r.html).join('')}</div>` +
+          `</div>`
+        );
+      }).join('')
+    : rows.map((r) => r.html).join('');
+
+  const html = (sharedSite + body) ||
     '<div class="sv-hint">No halls yet — add one in the Data Hall card.</div>';
   if (paintIfChanged(host, html)) {
+    host.querySelectorAll('[data-bld]').forEach((/** @type {HTMLElement} */ b) =>
+      b.addEventListener('click', () => {
+        const name = buildings[+b.dataset.bld];
+        bldOpen.set(name, b.getAttribute('aria-expanded') !== 'true');
+        renderAllHalls();
+      }),
+    );
     host.querySelectorAll('[data-del-hall]').forEach((/** @type {HTMLElement} */ b) =>
       b.addEventListener('click', async (ev) => {
         ev.stopPropagation();
