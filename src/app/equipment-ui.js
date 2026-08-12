@@ -20,7 +20,7 @@
  * imports this, this imports nothing of main.js.
  */
 
-import { state } from './state.js';
+import { state, hallVisible } from './state.js';
 import { thermalC } from './hallphysics.js';
 import { escHtml } from '../ui/escape.js';
 import { toast } from '../ui/notify.js';
@@ -38,11 +38,17 @@ import {
 /**
  * Callbacks into the rest of the app, supplied once at boot.
  * @type {{update:Function, renderHallEditor:Function, renderHallTabs:Function,
- *         syncAllControls:Function, switchHall:Function}}
+ *         syncAllControls:Function, switchHall:Function,
+ *         confirmDelete:(name:string)=>Promise<boolean>,
+ *         deleteHall:(i:number)=>void}}
  */
 let shell = {
   update() {}, renderHallEditor() {}, renderHallTabs() {},
   syncAllControls() {}, switchHall() {},
+  /** @type {(name:string) => Promise<boolean>} */
+  confirmDelete: async () => false,
+  /** @type {(i:number) => void} */
+  deleteHall: () => {},
 };
 
 /** Hand this module the few things only the entry point can do. */
@@ -450,7 +456,26 @@ export function renderAllHalls() {
   let unplanned = 0;
   let plantIssues = 0;
 
-  const rows = state.hallProfiles.map((h, i) => {
+  // Show what the tabs show. Narrowing to one building used to leave this
+  // list holding every hall on site, so two surfaces disagreed about "these
+  // halls" on the same screen.
+  const shown = state.hallProfiles
+    .map((h, i) => ({ h, i }))
+    .filter(({ h }) => hallVisible(h));
+
+  // A campus of halls shares a site, an elevation and therefore a pressure.
+  // Printing all three on all fourteen rows is fourteen copies of one fact;
+  // when they agree it is stated once, above, and the rows carry only what
+  // actually differs between them.
+  const siteOf = (h) =>
+    `${(h.siteName || '').trim()}|${Math.round(h.elevFt ?? 0)}|${h.baroKpa ?? ''}`;
+  const oneSite = shown.length > 1 && shown.every(({ h }) => siteOf(h) === siteOf(shown[0].h));
+  // Same rule one level down: if NO hall has rates yet, saying so on every
+  // row is fourteen copies of a fact the summary already states once.
+  const hasRates = (h) => ['rateCoolF', 'rateWarmF'].some((k) => h[k] > 0);
+  const noneRated = shown.length > 1 && shown.every(({ h }) => !hasRates(h));
+
+  const rows = shown.map(({ h, i }) => {
     const active = i === state.activeHall;
     // The active hall's live point may not be stashed yet; use what is on screen.
     const c = active
@@ -492,25 +517,73 @@ export function renderAllHalls() {
     }
     if (plantBits.length) plantIssues++;
 
+    // A hall with no working point has no move to show, and "—" spends a
+    // whole line saying so.
     const cond = c
       ? `${dispTs(c.aTemp)}${tLabel()} · ${Math.round(c.aRH)}%  →  ${dispTs(c.bTemp)}${tLabel()} · ${Math.round(c.bRH)}%`
-      : '—';
-    const where = [h.siteName, h.building].filter(Boolean).join(' · ');
+      : '';
+    // Hall names repeat across buildings — four halls called "Hall 1" is
+    // normal on a campus — so the building is what tells them apart and
+    // belongs in the line you scan, not in the small print under it.
+    const label = [h.building, h.name || `Hall ${i + 1}`].filter(Boolean).join(' · ');
+    // Only what differs from the shared header above.
+    const meta = oneSite
+      ? (rates || noneRated ? '' : 'no plant rates')
+      : [
+          // Names arrive from save files as well as keyboards; this branch
+          // lost its escaping in the rewrite and the injection tripwire in
+          // test/e2e/app.spec.js caught it.
+          escHtml([h.siteName, h.building].filter(Boolean).join(' · ')),
+          `${Math.round(h.elevFt ?? 0).toLocaleString()} ft · ${p.toFixed(1)} kPa${rates ? '' : ' · no plant rates'}`,
+        ].filter(Boolean).join('<br>');
     return (
-      `<button type="button" class="hall-row${active ? ' is-active' : ''}" data-hall="${i}">` +
-      `<span><span class="hr-name">${escHtml(h.name || `Hall ${i + 1}`)}</span>` +
-      `${where ? `<br><span class="hr-meta">${escHtml(where)}</span>` : ''}` +
-      `<br><span class="hr-meta">${Math.round(h.elevFt ?? 0).toLocaleString()} ft · ${p.toFixed(1)} kPa` +
-      `${rates ? '' : ' · no plant rates'}</span>` +
+      `<div class="hr-row-wrap">` +
+      `<button type="button" class="hall-row${active ? ' is-active' : ''}${c ? '' : ' hr-idle'}" data-hall="${i}">` +
+      `<span><span class="hr-name">${escHtml(label)}</span>` +
+      `${meta ? `<br><span class="hr-meta">${meta}</span>` : ''}` +
       (plantBits.length ? `<br><span class="hr-plant">⚠ ${plantBits.join(' · ')}</span>` : '') +
       `</span>` +
-      `<span class="hr-cond">${cond}</span>${status}</button>`
+      (cond ? `<span class="hr-cond">${cond}</span>` : '') + status +
+      `</button>` +
+      // Deleting a hall used to mean switching to it first and finding the
+      // button in another card. With a campus of them — several created by
+      // accident — that is the difference between tidying up and giving up.
+      `<button type="button" class="hr-del" data-del-hall="${i}" ` +
+      `title="Delete this hall" aria-label="Delete ${escHtml(label)}">✕</button>` +
+      `</div>`
     );
   });
 
-  const html = rows.join('') ||
+  // The fact every row would otherwise have repeated, stated once.
+  const first = shown[0] && shown[0].h;
+  const sharedSite = oneSite && first
+    ? `<div class="hr-site">${escHtml((first.siteName || '').trim())} · ` +
+      `${Math.round(first.elevFt ?? 0).toLocaleString()} ft · ` +
+      `${(first.baroKpa != null ? first.baroKpa : pressureFromAltitude(first.elevFt ?? 0)).toFixed(1)} kPa` +
+      `${noneRated ? ' · no plant rates' : ''}` +
+      ` <span class="cap-hint">— every hall below</span></div>`
+    : '';
+
+  const html = (sharedSite + rows.join('')) ||
     '<div class="sv-hint">No halls yet — add one in the Data Hall card.</div>';
   if (paintIfChanged(host, html)) {
+    host.querySelectorAll('[data-del-hall]').forEach((/** @type {HTMLElement} */ b) =>
+      b.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const i = +b.dataset.delHall;
+        const h = state.hallProfiles[i];
+        if (!h) return;
+        if (state.hallProfiles.length < 2) {
+          toast('This is the only hall — rename it rather than deleting it.', { kind: 'warn' });
+          return;
+        }
+        const ok = await shell.confirmDelete(
+          [h.building, h.name].filter(Boolean).join(' · ') || 'this hall',
+        );
+        if (!ok) return;
+        shell.deleteHall(i);
+      }),
+    );
     host.querySelectorAll('[data-hall]').forEach((/** @type {HTMLElement} */ b) =>
       b.addEventListener('click', () => {
         const i = +b.dataset.hall;
@@ -522,10 +595,10 @@ export function renderAllHalls() {
   }
 
   if (sub) {
-    const n = state.hallProfiles.length;
+    const n = shown.length, total = state.hallProfiles.length;
     sub.textContent =
-      `${n} hall${n === 1 ? '' : 's'}` +
-      (breaches ? ` · ⚠ ${breaches} outside ${sla.name}` : ' · all inside SLA') +
+      (n === total ? `${n} hall${n === 1 ? '' : 's'}` : `${n} of ${total} halls`) +
+      (breaches ? ` · ⚠ ${breaches} outside ${sla.name}` : n ? ' · all inside SLA' : '') +
       (unplanned ? ` · ${unplanned} missing plant rates` : '') +
       (plantIssues ? ` · ${plantIssues} with plant to look at` : '');
   }

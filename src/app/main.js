@@ -21,7 +21,7 @@ import {
   specificVolume,
 } from '../core/psychro.js';
 import { applyBrand } from '../config/brand.js';
-import { state } from './state.js';
+import { state, hallVisible } from './state.js';
 import { thermalC, currentW } from './hallphysics.js';
 import {
   renderEquipment, renderAllHalls, syncDerivedRates, ratesAreLive, wireEquipmentUi,
@@ -1467,16 +1467,24 @@ const BLD_ADD = String.fromCharCode(1) + 'add';
 // city plus any building names already on halls there. '' means "All". Each
 // hall profile keeps its own plant capability, so switching halls recalls
 // that hall's equipment and capacity.
-function hallVisible(h) {
-  const v = state.hallView;
-  if (v.loc && (h.siteName || '').trim() !== v.loc) return false;
-  if (v.bld && (h.building || '').trim() !== v.bld) return false;
-  return true;
-}
 
 // Guarantee at least one hall exists at the given location/building; create
 // "Hall 1" there (preset catalog elevation) and activate it if none does.
 // This is what makes picking a fresh Location drive the chart immediately.
+/**
+ * Point the app at the first hall the current filter admits.
+ *
+ * What filtering should do instead of conjuring a hall: if the narrowed set
+ * has halls, open one; if it does not, say so and leave the data alone.
+ */
+function focusFirstVisibleHall() {
+  const i = state.hallProfiles.findIndex(hallVisible);
+  if (i >= 0 && i !== state.activeHall) {
+    switchHall(i);
+    renderHallEditor(); syncAllControls();
+  }
+}
+
 function ensureHallAt(loc, bld) {
   if (!loc) return;
   if (state.hallProfiles.some(h =>
@@ -1535,13 +1543,23 @@ function renderHallTabs() {
   const inLoc = state.hallProfiles.filter(h => !v.loc || (h.siteName || '').trim() === v.loc);
   const bldSel = inp('hall-bld-filter');
   if (bldSel) {
-    const names = new Set();
-    if (v.loc) sites.filter(s => s.siteName === v.loc).forEach(s => names.add(String(s.code)));
-    inLoc.forEach(h => { const b = (h.building || '').trim(); if (b) names.add(b); });
-    if (v.bld && !names.has(v.bld)) v.bld = '';
+    // Two kinds of entry, and they must not look alike. "PHX" is a CAMPUS CODE
+    // out of the site catalog, not a building anybody named; showing it bare
+    // next to "A2" reads as a mystery building. Group and label them.
+    const mine = new Set();
+    inLoc.forEach(h => { const b = (h.building || '').trim(); if (b) mine.add(b); });
+    const codes = v.loc
+      ? [...new Set(sites.filter(s => s.siteName === v.loc).map(s => String(s.code)))]
+        .filter(c => !mine.has(c)).sort()
+      : [];
+    if (v.bld && !mine.has(v.bld) && !codes.includes(v.bld)) v.bld = '';
+    const opt = b =>
+      `<option value="${esc(b)}"${b === v.bld ? ' selected' : ''}>${esc(b)}${cnt(inLoc.filter(h => (h.building || '').trim() === b).length)}</option>`;
+    const group = (label, list) =>
+      list.length ? `<optgroup label="${esc(label)}">${list.map(opt).join('')}</optgroup>` : '';
     bldSel.innerHTML = `<option value="">All buildings (${inLoc.length} hall${inLoc.length === 1 ? '' : 's'})</option>`
-      + [...names].sort().map(b =>
-        `<option value="${esc(b)}"${b === v.bld ? ' selected' : ''}>${esc(b)}${cnt(inLoc.filter(h => (h.building || '').trim() === b).length)}</option>`).join('')
+      + group('Buildings you have named', [...mine].sort())
+      + group('Campus codes from the site list', codes)
       + `<option value="${BLD_ADD}">＋ Add a building…</option>`;
   }
 
@@ -1577,7 +1595,10 @@ function renderHallTabs() {
 inp('hall-loc-filter').addEventListener('change', function() {
   state.hallView.loc = this.value;
   state.hallView.bld = '';
-  ensureHallAt(this.value, '');    // fresh site → create Hall 1 there, chart follows
+  // Filtering is a VIEW action and must not create anything. This used to
+  // call ensureHallAt(), so simply browsing the Location list left a new hall
+  // behind each time — which is where a campus of unwanted halls came from.
+  focusFirstVisibleHall();
   renderHallTabs(); update();
 });
 inp('hall-bld-filter').addEventListener('change', function() {
@@ -1599,7 +1620,7 @@ inp('hall-bld-filter').addEventListener('change', function() {
     return;
   }
   state.hallView.bld = this.value;
-  ensureHallAt(state.hallView.loc, this.value);
+  focusFirstVisibleHall(); //  view only — see the Location handler above
   renderHallTabs(); update();
 });
 
@@ -1636,13 +1657,27 @@ inp('hall-add').addEventListener('click', () => {
   // current selection and that site's elevation, so it appears in the tab
   // list you're looking at instead of vanishing behind the filter. Numbering
   // counts within the view, so each building gets its own Hall 1, 2, 3…
+  //
+  // With no filter set (the default "All locations"), fall back to the hall
+  // you are standing in rather than to nothing: a hall with no site sits at
+  // 0 ft / 101.3 kPa, and every verdict it produces is then computed at the
+  // wrong pressure. A new hall almost always belongs to the same site as the
+  // one you added it from.
   const v = state.hallView;
-  const sib = state.hallProfiles.find(h => v.loc && (h.siteName || '').trim() === v.loc);
-  const site = v.loc ? allSites().find(s => s.siteName === v.loc) : null;
+  const cur = state.hall || {};
+  const loc = v.loc || (cur.siteName || '').trim();
+  const bld = v.bld || (cur.building || '').trim();
+  const sib = loc && state.hallProfiles.find(h => (h.siteName || '').trim() === loc);
+  const site = loc ? allSites().find(s => s.siteName === loc) : null;
+  // Number within the building it is joining, so A2 gets Hall 1, 2, 3… of its
+  // own instead of inheriting a campus-wide running total.
+  const nHere = state.hallProfiles.filter(h =>
+    (h.siteName || '').trim() === loc && (h.building || '').trim() === bld).length;
   state.hallProfiles.push(normalizeHall({
-    name: `Hall ${state.hallProfiles.filter(hallVisible).length + 1}`,
-    siteName: v.loc || '', building: v.bld || '',
-    elevFt: sib ? sib.elevFt : (site ? site.elevFt : 0),
+    name: `Hall ${nHere + 1}`,
+    siteName: loc, building: bld,
+    elevFt: sib ? sib.elevFt : (site ? site.elevFt : (cur.elevFt ?? 0)),
+    baroKpa: sib ? sib.baroKpa : (cur.baroKpa ?? null),
   }));
   switchHall(state.hallProfiles.length - 1);
   renderHallTabs(); renderHallEditor(); update();
@@ -1657,19 +1692,33 @@ inp('hall-dup').addEventListener('click', () => {
   renderHallTabs(); renderHallEditor(); update();
 });
 
-inp('hall-del').addEventListener('click', async () => {
-  if (state.hallProfiles.length <= 1) return;
-  const ok = await confirmDialog({
+/**
+ * Ask before removing a hall. Shared so the overview's per-row delete and the
+ * Data Hall card's button cannot drift into asking different questions.
+ */
+function confirmDeleteHall(name) {
+  return confirmDialog({
     title: 'Delete hall profile?',
-    message: `"${state.hall.name || 'This hall'}" and its equipment settings and logged results will be removed. This cannot be undone.`,
+    message: `"${name}" and its equipment settings and logged results will be removed. This cannot be undone.`,
     confirmLabel: 'Delete',
     danger: true,
   });
-  if (!ok) return;
-  state.hallProfiles.splice(state.activeHall, 1);
-  state.activeHall = Math.max(0, state.activeHall - 1);
+}
+
+/** Remove a hall by index and leave the app pointed somewhere sensible. */
+function deleteHallAt(i) {
+  if (state.hallProfiles.length <= 1 || i < 0 || i >= state.hallProfiles.length) return;
+  state.hallProfiles.splice(i, 1);
+  if (state.activeHall >= state.hallProfiles.length) state.activeHall = state.hallProfiles.length - 1;
+  else if (i < state.activeHall) state.activeHall--;
   restoreHallConditions(); // the deleted hall's point went with it
   applyElevation(); renderHallTabs(); renderHallEditor(); syncAllControls(); update();
+}
+
+inp('hall-del').addEventListener('click', async () => {
+  if (state.hallProfiles.length <= 1) return;
+  if (!(await confirmDeleteHall(state.hall.name || 'This hall'))) return;
+  deleteHallAt(state.activeHall);
 });
 
 inp('hall-export').addEventListener('click', () => {
@@ -2481,6 +2530,8 @@ wireExport({
 });
 
 wireEquipmentUi({
+  confirmDelete: (name) => confirmDeleteHall(name),
+  deleteHall: (i) => deleteHallAt(i),
   update: () => update(),
   renderHallEditor: () => renderHallEditor(),
   renderHallTabs: () => renderHallTabs(),
@@ -2519,6 +2570,23 @@ if (window.matchMedia && matchMedia('(min-width:1120px)').matches) {
   document.querySelectorAll('.col-left > details.sect:not(.onboard)')
     .forEach((/** @type {HTMLDetailsElement} */ d, i) => { if (i < 2) d.open = true; });
 }
+
+// Opening or closing a section changes the height of the page above and below
+// it, and on the phone stack the cards are re-ordered by CSS, so the browser's
+// own scroll anchoring can land you somewhere you didn't ask to be: the page
+// appears to lurch down when you open a card and back up when you close it.
+// Pin the header you actually tapped — it stays exactly where your finger left
+// it, and the content grows underneath it.
+document.querySelectorAll('details.sect > summary').forEach((sum) => {
+  sum.addEventListener('click', () => {
+    const before = sum.getBoundingClientRect().top;
+    // After the toggle has been applied and laid out, not before.
+    requestAnimationFrame(() => {
+      const shift = sum.getBoundingClientRect().top - before;
+      if (Math.abs(shift) > 1) window.scrollBy(0, shift);
+    });
+  });
+});
 renderSlaTabs();
 renderSlaEditor();
 renderHallTabs();

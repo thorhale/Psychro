@@ -805,6 +805,49 @@ test.describe('multiple halls', () => {
     await expect(page.locator('#allhalls-body .hall-row').nth(0)).toHaveClass(/is-active/);
   });
 
+  test('the overview shows the halls the tabs show, and says so', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // Two buildings, so the filter has something to do.
+    await page.fill('#hall-building', 'A7');
+    await page.dispatchEvent('#hall-building', 'input');
+    await page.locator('#hall-add').click();
+    await expandAll(page);
+    await page.fill('#hall-building', 'A2');
+    await page.dispatchEvent('#hall-building', 'input');
+    await expect(page.locator('#allhalls-body .hall-row')).toHaveCount(2);
+
+    // Narrowing to one building used to leave this list holding every hall,
+    // so the tabs and the overview disagreed on screen at the same time.
+    await page.selectOption('#hall-bld-filter', 'A7');
+    await expect(page.locator('#allhalls-body .hall-row')).toHaveCount(1);
+    await expect(page.locator('#allhalls-sub')).toContainText('1 of 2 halls');
+
+    await page.selectOption('#hall-bld-filter', '');
+    await expect(page.locator('#allhalls-body .hall-row')).toHaveCount(2);
+    await expect(page.locator('#allhalls-sub')).toContainText('2 halls');
+  });
+
+  test('facts every hall shares are stated once, not once per row', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#hall-add').click();
+    await expandAll(page);
+    await page.locator('#hall-add').click();
+    await expandAll(page);
+    await expect(page.locator('#allhalls-body .hall-row')).toHaveCount(3);
+
+    // One site, one elevation, no rates anywhere — so the header carries them
+    // and the rows carry only what differs. Repeating them per row is what
+    // made fourteen halls take two screens of scrolling.
+    const shared = page.locator('#allhalls-body .hr-site');
+    await expect(shared).toHaveCount(1);
+    await expect(shared).toContainText('1,066 ft');
+    await expect(shared).toContainText('no plant rates');
+    await expect(page.locator('#allhalls-body .hall-row').first()).not.toContainText('1,066 ft');
+    await expect(page.locator('#allhalls-body .hall-row').first()).not.toContainText('no plant rates');
+  });
+
   test('the overview shows which halls have plant to look at', async ({ page }) => {
     await page.goto('./');
     await expandAll(page);
@@ -864,6 +907,44 @@ test.describe('multiple halls', () => {
     await page.locator('#hall-tabs button').first().click();
     await expect(page.locator('.eq-row').first().locator('.eq-out'))
       .toContainText(dryOutput.toFixed(1));
+  });
+
+  test('a new hall lands at the site you added it from, not at sea level', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // The default hall is Goodyear, AZ at 1,066 ft — 97.5 kPa, not 101.3.
+    await expect(page.locator('#pressure-readout')).toContainText('97.5 kPa');
+    await page.fill('#hall-building', 'A2');
+    await page.dispatchEvent('#hall-building', 'input');
+
+    // With no location filter set, "+ New hall" used to write siteName:'' and
+    // elevFt:0, so the new hall computed every verdict at sea-level pressure
+    // while sitting on a 1,066 ft campus. It inherits the hall you added it
+    // from instead.
+    await page.locator('#hall-add').click();
+    await expandAll(page);
+    await expect(page.locator('#pressure-readout')).toContainText('97.5 kPa');
+    await expect(page.locator('#hall-elev')).toHaveValue('1066');
+    await expect(page.locator('#hall-building')).toHaveValue('A2');
+    // Numbered within its building, not across the whole campus.
+    await expect(page.locator('#hall-name')).toHaveValue('Hall 2');
+  });
+
+  test('a campus code in the building list is labelled as one', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.fill('#hall-building', 'A2');
+    await page.dispatchEvent('#hall-building', 'input');
+    await page.selectOption('#hall-loc-filter', 'Goodyear, AZ');
+
+    // "PHX" is the site code out of the catalog, not a building anyone named.
+    // Bare in the same list as "A2" it reads as a mystery building, which is
+    // exactly how it was reported.
+    const groups = page.locator('#hall-bld-filter optgroup');
+    await expect(groups.filter({ has: page.locator('option[value="A2"]') }))
+      .toHaveAttribute('label', 'Buildings you have named');
+    await expect(groups.filter({ has: page.locator('option[value="PHX"]') }))
+      .toHaveAttribute('label', 'Campus codes from the site list');
   });
 });
 
@@ -1180,6 +1261,35 @@ test.describe('evaporative humidifier capacity', () => {
     await page.locator('#hc-res .calc-apply').click();
     await expect(page.locator('#rate-hum')).not.toHaveValue('');
     await expect(page.locator('#cap-hum')).toBeChecked();
+  });
+});
+
+test.describe('phone layout', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('opening a section leaves the header you tapped where it was', async ({ page }) => {
+    await page.goto('./');
+    await page.locator('#selftest-badge').filter({ hasText: 'passed' }).waitFor();
+    // Data Hall is the worst of them: it is tall, and the phone stack re-orders
+    // the cards above it, so opening it used to fling its own header 2,300 px
+    // off the top of the screen. You tapped a card and landed nowhere near it.
+    const card = page.locator('details.sect').filter({
+      has: page.locator('> summary > .sect-title', { hasText: /^Data Hall$/ }),
+    });
+    const sum = card.locator('> summary');
+    await sum.evaluate((e) => e.scrollIntoView({ block: 'center' }));
+    await page.waitForTimeout(200); //  let any smooth scrolling settle
+
+    // Measured in the page, so it is the viewport position under the finger.
+    const top = () => sum.evaluate((e) => e.getBoundingClientRect().top);
+    const before = await top();
+    await sum.tap();
+    await expect(card).toHaveAttribute('open', '');
+    expect(Math.abs((await top()) - before)).toBeLessThan(2);
+
+    await sum.tap();
+    await expect(card).not.toHaveAttribute('open', '');
+    expect(Math.abs((await top()) - before)).toBeLessThan(2);
   });
 });
 

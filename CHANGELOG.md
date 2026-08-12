@@ -11,6 +11,49 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — hall management on a phone
+
+Reported from the floor, in a screen recording. Four separate problems.
+
+- **Browsing the Location list created halls.** Both filter dropdowns called
+  `ensureHallAt()` on change, so scrolling through the site catalog to *look*
+  at somewhere left a new hall behind every time — which is how a single
+  operator ended up with a campus of fourteen halls nobody asked for.
+  Filtering is a view action now and creates nothing; it moves you to the
+  first hall that matches instead.
+- **There was no way to delete a hall from the list.** Every row in All halls
+  carries an ✕ that asks first. Deleting the last one is refused with an
+  explanation rather than a disabled button.
+- **"+ New hall" put the hall at sea level.** With no location filter set it
+  wrote an empty site and 0 ft, so a hall on a 1,066 ft campus computed every
+  verdict at 101.3 kPa instead of 97.5 — silently wrong, and wrong in the
+  direction that says PASS. A new hall now inherits the site, building,
+  elevation and barometer of the hall you added it from, and is numbered
+  within its own building.
+- **A campus code looked like a building.** "PHX" comes out of the site
+  catalog; sitting bare in the Building list next to "A2" it reads as a
+  building somebody named and can't be identified. The list is now grouped:
+  *Buildings you have named* and *Campus codes from the site list*.
+
+### Fixed — tapping a section threw the page away
+
+Opening the Data Hall card moved its own header 2,383 px off the top of the
+screen: the phone stack re-orders cards with CSS `order`, so the browser's
+scroll anchoring compensated against DOM order and landed somewhere else
+entirely. You tapped a card and arrived nowhere near it, then tapped again to
+get back. The header you tap now stays exactly where your finger left it and
+the content opens underneath it. Measured in the test suite — the assertion
+fails by 2,383 px if the pin is removed.
+
+### Changed — All halls reads at a glance
+
+Fourteen halls took more than two phone screens because every row repeated
+the site, the elevation, the pressure and "no plant rates". Facts every
+visible hall shares are stated once in a header above the list; rows carry
+only what differs, and lead with the building. The list also honours the
+Location and Building filters, so the tab strip and the overview can no
+longer disagree on screen at the same time.
+
 ### Changed — typography and buttons
 
 - **One button, four emphases.** There were four button systems —
