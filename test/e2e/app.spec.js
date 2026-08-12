@@ -930,6 +930,80 @@ test.describe('multiple halls', () => {
     await expect(page.locator('#hall-name')).toHaveValue('Hall 2');
   });
 
+  test('All halls is a list of buildings you open, not a flat list of halls', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.fill('#hall-building', 'A7');
+    await page.dispatchEvent('#hall-building', 'input');
+    await page.locator('#hall-add').click();      // second hall in A7
+    await expandAll(page);
+    await page.locator('#hall-add').click();      // third, moved to A2
+    await expandAll(page);
+    await page.fill('#hall-building', 'A2');
+    await page.dispatchEvent('#hall-building', 'input');
+
+    // Two buildings, so the list leads with them.
+    const groups = page.locator('#allhalls-body .hr-group');
+    await expect(groups).toHaveCount(2);
+    // Alphabetical: A2 before A7, whatever order they were created in.
+    await expect(groups.nth(0).locator('.hr-bld-name')).toHaveText('A2');
+    await expect(groups.nth(1).locator('.hr-bld-name')).toHaveText('A7');
+    await expect(groups.nth(1).locator('.hr-bld-n')).toHaveText('2 halls');
+
+    // The building you are standing in is open; the other is closed but still
+    // says whether anything inside it needs attention.
+    await expect(groups.nth(0)).toHaveClass(/is-open/);
+    await expect(groups.nth(1)).not.toHaveClass(/is-open/);
+    await expect(groups.nth(1).locator('.hall-row')).toHaveCount(2);
+    await expect(groups.nth(1).locator('.hall-row').first()).toBeHidden();
+    await expect(groups.nth(1).locator('.hr-bld-note')).toContainText('all inside SLA');
+
+    // Pressing a header opens it, and a hall inside is still one tap away.
+    await groups.nth(1).locator('.hr-bld').click();
+    await expect(groups.nth(1)).toHaveClass(/is-open/);
+    await expect(groups.nth(1).locator('.hall-row').first()).toBeVisible();
+    await groups.nth(1).locator('.hall-row').first().click();
+    await expect(groups.nth(1).locator('.hall-row').first()).toHaveClass(/is-active/);
+
+    // Inside a building the row does not repeat the building's name.
+    await expect(groups.nth(1).locator('.hr-name').first()).toHaveText('Hall 1');
+  });
+
+  test('a hall tab names only what tells it apart', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    const tabs = page.locator('#hall-tabs button');
+
+    // One hall on one site: the site is on the elevation chip and in the Data
+    // Hall card already, so repeating it on the tab spends the width that the
+    // hall's own name needs.
+    await expect(tabs).toHaveText(['Hall 1']);
+
+    await page.fill('#hall-building', 'A2');
+    await page.dispatchEvent('#hall-building', 'input');
+    await page.locator('#hall-add').click();
+    await expandAll(page);
+    // Still one site and one building — still just the names.
+    await expect(tabs).toHaveText(['Hall 1', 'Hall 2']);
+
+    await page.fill('#hall-building', 'A7');
+    await page.dispatchEvent('#hall-building', 'input');
+    // Now the building is what separates them, so it earns its place. The site
+    // still does not: both halls are at Goodyear.
+    await expect(tabs).toHaveText(['A2 · Hall 1', 'A7 · Hall 2']);
+  });
+
+  test('one building is a list of halls — no disclosure to press', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#hall-add').click();
+    await expandAll(page);
+    // Everything in one building: a group header here would be a step that
+    // answers nothing.
+    await expect(page.locator('#allhalls-body .hr-group')).toHaveCount(0);
+    await expect(page.locator('#allhalls-body .hall-row')).toHaveCount(2);
+  });
+
   test('a campus code in the building list is labelled as one', async ({ page }) => {
     await page.goto('./');
     await expandAll(page);

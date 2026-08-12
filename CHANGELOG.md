@@ -11,6 +11,36 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — All halls is a building picker
+
+A campus is a list of buildings you walk into, not a flat list of fourteen
+halls. With more than one building in view the overview leads with the
+buildings; the one you are standing in opens itself and the rest stay closed
+until you press them. A closed building still carries its own rollup — "⚠ 1
+outside SLA" in red — so collapsing never hides the thing worth walking over
+for. With a single building there is no disclosure to press, because it would
+be a step that answers nothing.
+
+Rows inside a building drop the building from their name, and on a phone the
+verdict now sits beside the hall name instead of stretching across a line of
+its own: fourteen halls in three buildings read in about half a screen.
+
+### Fixed — the shipped hall was called "PHX · Hall 1"
+
+A site code the operator never typed, glued onto the name of the only hall
+they had, in an app that also offered PHX as a *building*. It read as a
+mystery hall in somebody else's building. It ships as "Hall 1"; the site
+lives in the site field, where the tab strip and the overview label it
+themselves.
+
+### Changed — a hall tab names only what tells it apart
+
+Fourteen tabs reading "Goodyear, AZ · A2 · Hall 1" took five rows and pushed
+the only part that differs — the hall's name — off the end of each one. A
+facet is printed only when it actually varies across the halls in view, so
+one site and one building leaves just "Hall 1", and two buildings gives
+"A2 · Hall 1".
+
 ### Fixed — hall management on a phone
 
 Reported from the floor, in a screen recording. Four separate problems.

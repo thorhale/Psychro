@@ -33,7 +33,12 @@ export const state = {
   //    customer SLAs below, which are pure contracts evaluated inside the
   //    ACTIVE hall. `state.hall` (defined below) is always the active profile.
   hallProfiles: [{
-    name: 'PHX · Hall 1',
+    // Just "Hall 1". This used to ship as "PHX · Hall 1" — a site code the
+    // operator never typed, glued to the name of the only hall they had, in a
+    // field where they would then also see PHX offered as a building. It read
+    // as a mystery hall in somebody else's building. The site lives in
+    // siteName, where the tab strip and the overview can label it themselves.
+    name: 'Hall 1',
     siteName: 'Goodyear, AZ', building: '', elevFt: 1066, hallVolFt3: null, airflowCfm: null,
     canHeat: false, canDehumidify: false, canHumidify: false,
     rateCoolF: null, rateWarmF: null, rateDehumLb: null, rateHumLb: null,

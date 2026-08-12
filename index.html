@@ -549,13 +549,46 @@
   @media (pointer:coarse) { .hr-del { padding:11px 13px; top:2px; right:2px; } }
   /* The site facts every row shares, said once above them. */
   .hr-site { font-size:.7rem; color:var(--muted); padding:0 2px 8px; }
+  /* A campus is a list of buildings you open, not a flat list of halls. The
+     header carries the rollup, so a closed building still says whether
+     anything inside it needs walking over for. */
+  .hr-group { margin-bottom:6px; }
+  .hr-bld { display:grid; grid-template-columns:auto auto 1fr auto; gap:9px; align-items:center;
+    width:100%; text-align:left; padding:11px 12px; border-radius:7px;
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
+    font-family:var(--sans); font-size:.8rem; cursor:pointer; transition:all .12s; }
+  .hr-bld:hover { border-color:var(--accent2); }
+  .hr-chev { color:var(--muted); font-size:.7rem; transition:transform .12s; }
+  .hr-group.is-open > .hr-bld .hr-chev { transform:rotate(90deg); }
+  .hr-bld-name { font-weight:700; }
+  .hr-bld-n { color:var(--muted); font-size:.72rem; font-family:var(--mono); }
+  .hr-bld-note { color:var(--muted); font-size:.7rem; text-align:right; }
+  .hr-bld-note.is-bad { color:var(--danger); font-weight:700; }
+  /* Halls sit under their building, indented enough to read as contained. */
+  .hr-halls { display:none; padding:6px 0 2px 14px; border-left:1px solid var(--border); margin-left:11px; }
+  .hr-group.is-open > .hr-halls { display:block; }
+  @media (pointer:coarse) { .hr-bld { padding:14px 12px; } }
+  @media (max-width:560px) {
+    /* The count is the first thing to go: the rollup matters more. */
+    .hr-bld { grid-template-columns:auto 1fr auto; }
+    .hr-bld-n { display:none; }
+  }
   /* A hall nobody has worked on yet is context, not a finding. */
   .hall-row.hr-idle { opacity:.72; }
   .hall-row.hr-idle:hover { opacity:1; }
   .hall-row .hr-plant { color:var(--warn); font-size:.68rem; font-family:var(--mono); }
   .hall-row .hr-cond { font-family:var(--mono); color:var(--muted); font-size:.72rem; white-space:nowrap; }
-  @media (max-width:560px) { .hall-row { grid-template-columns:1fr auto; }
-    .hall-row .hr-cond { grid-column:1 / -1; } }
+  /* On a phone the verdict belongs beside the name, not on a line of its own:
+     auto-placement used to push it to a third row where it stretched the full
+     width of the card, so four halls filled the screen and the point of the
+     list — scanning a campus — was lost. Placed explicitly instead. */
+  @media (max-width:560px) {
+    .hall-row { grid-template-columns:1fr auto; row-gap:3px; padding:8px 10px; }
+    .hall-row > :first-child { grid-area:1 / 1; }
+    .hall-row > .badge, .hall-row > .cap-hint { grid-area:1 / 2; justify-self:end; }
+    .hall-row .hr-cond { grid-area:2 / 1 / auto / -1; }
+    .hr-row-wrap .hall-row { padding-right:38px; }
+  }
   .start-steps { margin:10px 0 0 0; padding-left:20px; color:var(--text); font-size:.82rem; line-height:1.65; }
   .start-steps li { margin-bottom:8px; }
   .gloss { margin:0; font-size:.82rem; line-height:1.6; }
