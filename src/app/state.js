@@ -79,3 +79,20 @@ Object.defineProperty(state, 'hall', {
   get() { return this.hallProfiles[this.activeHall] || this.hallProfiles[0]; },
   set(h) { this.hallProfiles[Math.min(this.activeHall, this.hallProfiles.length - 1)] = h; },
 });
+
+/**
+ * Is this hall inside the current location / building filter?
+ *
+ * Shared, because the tab strip and the all-halls overview must agree about
+ * what "these halls" means. They did not: narrowing to one building left the
+ * overview listing every hall on site, so the two surfaces disagreed on the
+ * screen at the same time.
+ *
+ * @param {{siteName?:string, building?:string}} h
+ */
+export function hallVisible(h) {
+  const v = state.hallView;
+  if (v.loc && (h.siteName || '').trim() !== v.loc) return false;
+  if (v.bld && (h.building || '').trim() !== v.bld) return false;
+  return true;
+}

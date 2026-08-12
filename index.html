@@ -537,6 +537,21 @@
   .hall-row .hr-meta { color:var(--muted); font-size:.7rem; }
   /* Plant trouble in this hall — same size as the other meta lines, but it is
      the one thing on the row worth interrupting a scan for. */
+  /* Delete, on the row itself. The hall list is where you notice a hall you
+     did not want; making you switch to it and hunt in another card is how a
+     tidy-up becomes a chore. */
+  .hr-row-wrap { position:relative; }
+  .hr-row-wrap .hall-row { padding-right:44px; }
+  .hr-del { position:absolute; top:8px; right:8px; z-index:2; padding:6px 9px;
+    border:none; background:none; color:var(--muted); font-size:.85rem;
+    line-height:1; cursor:pointer; border-radius:5px; }
+  .hr-del:hover { color:var(--danger); background:color-mix(in srgb, var(--danger) 12%, transparent); }
+  @media (pointer:coarse) { .hr-del { padding:11px 13px; top:2px; right:2px; } }
+  /* The site facts every row shares, said once above them. */
+  .hr-site { font-size:.7rem; color:var(--muted); padding:0 2px 8px; }
+  /* A hall nobody has worked on yet is context, not a finding. */
+  .hall-row.hr-idle { opacity:.72; }
+  .hall-row.hr-idle:hover { opacity:1; }
   .hall-row .hr-plant { color:var(--warn); font-size:.68rem; font-family:var(--mono); }
   .hall-row .hr-cond { font-family:var(--mono); color:var(--muted); font-size:.72rem; white-space:nowrap; }
   @media (max-width:560px) { .hall-row { grid-template-columns:1fr auto; }
