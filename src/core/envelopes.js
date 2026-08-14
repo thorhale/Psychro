@@ -32,7 +32,14 @@ export const ASHRAE_ENVELOPES = {
     lw: 1.4,
     tMin: 18,
     tMax: 27,
-    rhMin: 0,
+    // 8 %, not 0 %. The recommended low-moisture limit in TC 9.9 is "−9 °C DP
+    // AND 8 % RH" — both, and the binding one wins. With 0 % here the lower
+    // edge was the dew-point line alone, which draws a recommended envelope
+    // very slightly LARGER than the standard's near the warm end where the
+    // two lines cross (they nearly coincide at 27 °C, and the RH line takes
+    // over at reduced pressure). Every preset in the app already used 8;
+    // this table was the one place that disagreed with it.
+    rhMin: 8,
     rhMax: 60,
     dpMin: -9,
     dpMax: 15,

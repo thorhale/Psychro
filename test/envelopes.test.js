@@ -18,6 +18,60 @@ import { humidityRatioG, dewPointFrom } from '../src/core/psychro.js';
 
 const P0 = 101.325;
 
+/**
+ * The published table, transcribed from ASHRAE TC 9.9 *Thermal Guidelines for
+ * Data Processing Environments*, 5th ed. (2021), Table 2.1 — in the SI units
+ * the standard is written in. This test exists because the app's contracts are
+ * stored in °F and it is very easy for a °C boundary to acquire a rounding
+ * error on the way through a conversion; nothing here is converted, so nothing
+ * here can drift.
+ *
+ * The Recommended row is the one that caught a real error: its low-moisture
+ * limit is "−9 °C DP AND 8 % RH" — both constraints — and the app had 0 % RH,
+ * which draws a recommended envelope slightly larger than the standard's.
+ */
+const PUBLISHED = {
+  Rec: { tMin: 18, tMax: 27, rhMin: 8, rhMax: 60, dpMin: -9, dpMax: 15 },
+  A1:  { tMin: 15, tMax: 32, rhMin: 8, rhMax: 80, dpMin: -12, dpMax: 17 },
+  A2:  { tMin: 10, tMax: 35, rhMin: 8, rhMax: 80, dpMin: -12, dpMax: 21 },
+  A3:  { tMin: 5,  tMax: 40, rhMin: 8, rhMax: 85, dpMin: -12, dpMax: 24 },
+  A4:  { tMin: 5,  tMax: 45, rhMin: 8, rhMax: 90, dpMin: -12, dpMax: 24 },
+};
+
+describe('the ASHRAE table matches the published standard', () => {
+  it('carries exactly the five envelopes the standard defines', () => {
+    expect(Object.keys(ASHRAE_ENVELOPES).sort()).toEqual(Object.keys(PUBLISHED).sort());
+  });
+
+  for (const [id, want] of Object.entries(PUBLISHED)) {
+    it(`${id} matches TC 9.9 5th ed. in °C and %RH`, () => {
+      const got = ASHRAE_ENVELOPES[id];
+      for (const k of ['tMin', 'tMax', 'rhMin', 'rhMax', 'dpMin', 'dpMax']) {
+        expect(got[k], `${id}.${k}`).toBe(want[k]);
+      }
+    });
+  }
+
+  it('the recommended low-moisture limit binds on BOTH constraints', () => {
+    // At the warm end the 8 % RH curve and the −9 °C dew-point line all but
+    // coincide; at reduced pressure the RH curve is the higher of the two, so
+    // dropping it (rhMin: 0) quietly widened the envelope. Assert the floor is
+    // the maximum of the two everywhere across the recommended band.
+    const rec = ASHRAE_ENVELOPES.Rec;
+    for (const p of [101.325, 90, 79.5]) {
+      for (let t = rec.tMin; t <= rec.tMax; t += 1) {
+        const floor = lowerW(t, rec, p);
+        expect(floor).toBeGreaterThanOrEqual(humidityRatioG(t, rec.rhMin, p) - 1e-9);
+      }
+    }
+    // …and the RH curve genuinely is the binding one somewhere, or this
+    // boundary would be decoration.
+    const t27 = 27, pHigh = 79.5;
+    expect(lowerW(t27, rec, pHigh)).toBeCloseTo(humidityRatioG(t27, rec.rhMin, pHigh), 9);
+  });
+});
+
+
 describe('envelope polygons', () => {
   it('produce a closed, non-degenerate loop for every class', () => {
     for (const [name, env] of Object.entries(ASHRAE_ENVELOPES)) {
