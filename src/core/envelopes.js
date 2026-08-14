@@ -14,15 +14,7 @@
  */
 
 import { fToC, cToF } from './units.js';
-import { humidityRatioG, humidityRatioFromPw, satPressure, dewPointFrom } from './psychro.js';
-
-/**
- * g/kg from an explicit vapour pressure with the enhancement factor taken at the
- * dry bulb — the form dew-point caps need (constant-W lines).
- */
-function humidityRatioGFromPwAt(tc, pw, p) {
-  return humidityRatioFromPw(pw, p, tc) * 1000;
-}
+import { humidityRatioG, saturationHumidityRatio, dewPointFrom, P_STD } from './psychro.js';
 
 export const ASHRAE_ENVELOPES = {
   Rec: {
@@ -100,12 +92,13 @@ export const ASHRAE_ENVELOPES = {
  */
 export function upperW(tc, env, p) {
   const wRH = humidityRatioG(tc, env.rhMax, p);
-  const wDP =
-    env.dpMax != null
-      ? // A dew-point cap is a constant-W line; evaluate Eq. 20 with the vapour
-        // pressure saturated at the cap. Enhancement factor at the dry bulb.
-        humidityRatioGFromPwAt(tc, satPressure(env.dpMax), p)
-      : Infinity;
+  // A dew-point cap of X is exactly "W no greater than saturation at X", so the
+  // edge IS the saturation humidity ratio at the cap — a horizontal line, and
+  // the same quantity `dewPointFrom` inverts. Writing it any other way (this
+  // used to evaluate Eq. 20 with the enhancement factor taken at the DRY BULB
+  // rather than at the cap) makes the drawn boundary and the graded verdict two
+  // slightly different curves.
+  const wDP = env.dpMax != null ? saturationHumidityRatio(env.dpMax, p) * 1000 : Infinity;
   return Math.min(wRH, wDP);
 }
 
@@ -115,7 +108,7 @@ export function upperW(tc, env, p) {
  */
 export function lowerW(tc, env, p) {
   const wRH = humidityRatioG(tc, env.rhMin, p);
-  const wDP = env.dpMin != null ? humidityRatioGFromPwAt(tc, satPressure(env.dpMin), p) : 0;
+  const wDP = env.dpMin != null ? saturationHumidityRatio(env.dpMin, p) * 1000 : 0;
   return Math.max(wRH, wDP, 0);
 }
 
@@ -196,20 +189,27 @@ export function ashraeZone(tc, rh, p) {
  * temperature, humidity, then the dew-point cap.
  *
  * @param {{tMinF:number,tMaxF:number,rhMin:number,rhMax:number,dpMaxF:(number|null|string)}} profile
+ * The dew-point check needs the hall's PRESSURE: a dew point is a property of
+ * the air, and the same temperature and humidity dew out at a different
+ * temperature in Denver than in Goodyear. The temperature and RH bounds are
+ * pure contract terms and remain pressure-free, so a profile only becomes
+ * pressure-sensitive once it carries a dew-point cap.
+ *
  * @param {number} tempF dry bulb °F
  * @param {number} rh relative humidity %
+ * @param {number} [p] site pressure kPa; the standard atmosphere if omitted
  * @returns {{ok: boolean, detail: string,
  *            kind: ('tMin'|'tMax'|'rhMin'|'rhMax'|'dpMax'|null),
  *            bound: (number|null), unit: ('F'|'%'|null)}}
  */
-export function checkSLA(profile, tempF, rh) {
+export function checkSLA(profile, tempF, rh, p = P_STD) {
   const fail = (kind, bound, unit, detail) => ({ ok: false, kind, bound, unit, detail });
   if (tempF < profile.tMinF) return fail('tMin', profile.tMinF, 'F', 'below temp min');
   if (tempF > profile.tMaxF) return fail('tMax', profile.tMaxF, 'F', 'above temp max');
   if (rh < profile.rhMin) return fail('rhMin', profile.rhMin, '%', 'below RH min');
   if (rh > profile.rhMax) return fail('rhMax', profile.rhMax, '%', 'above RH max');
   if (profile.dpMaxF != null && profile.dpMaxF !== '') {
-    const dp = dewPointFrom(fToC(tempF), rh);
+    const dp = dewPointFrom(fToC(tempF), rh, p);
     if (dp !== null && cToF(dp) > Number(profile.dpMaxF))
       return fail('dpMax', Number(profile.dpMaxF), 'F', 'above dew point cap');
   }

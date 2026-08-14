@@ -47,7 +47,10 @@ const TOL = {
   h_abs: 0.05, //      enthalpy kJ/kg            (real-gas fit; measured max 0.031)
   v_rel: 2e-4, //      specific volume, relative (Z-corrected; measured max 1.15e-4)
   rho_rel: 2e-4, //    density, relative         (follows v; measured max 1.15e-4)
-  tdp_abs: 0.03, //    dew point °C              (measured max 0.023)
+  // Dew point solves its real definition — Ws(tdp, p) = W — rather than
+  // inverting the saturation curve alone, which drops the enhancement factor.
+  // Loosening this toward 0.03 means someone has reverted that.
+  tdp_abs: 1e-3, //    dew point °C              (measured max 3.8e-4)
   // Wet bulb is solved as a real-gas adiabatic-saturation energy balance, not
   // by ASHRAE Eq. 35's ideal-gas closed form, so the tolerance is two orders
   // tighter than a Eq. 35 solver could hold. Loosening this back toward 0.05
@@ -101,7 +104,7 @@ describe('CoolProp oracle grid', () => {
 
   it('dew point within tolerance at every core point', () => {
     for (const r of core) {
-      const ours = dewPointFrom(r[col.t_c], r[col.rh_pct]);
+      const ours = dewPointFrom(r[col.t_c], r[col.rh_pct], r[col.p_kpa]);
       expect(ours).not.toBeNull();
       expect(Math.abs(ours - r[col.tdp_c]), `Tdp at ${r[col.t_c]}°C ${r[col.rh_pct]}% ${r[col.p_kpa]}kPa`).toBeLessThan(TOL.tdp_abs);
     }

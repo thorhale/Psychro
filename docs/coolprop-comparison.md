@@ -105,7 +105,7 @@ humidity ratio W     g/kg         6.861e-4    5.647e-5    0.0013%         55°C 
 enthalpy h           kJ/kg        3.005e-2    2.156e-3          —         55°C 100% 108kPa
 specific volume v    m³/kg        1.678e-4    1.973e-5    0.0114%          50°C 100% 65kPa
 density ρ            kg/m³        9.782e-5    1.470e-5    0.0114%         55°C 100% 95kPa
-dew point Tdp        °C           2.285e-2    6.269e-3          —          55°C 5% 79.5kPa
+dew point Tdp        °C           3.816e-4    4.084e-5          —           10°C 50% 65kPa
 wet bulb Twb         °C           1.588e-3    4.787e-4          —            55°C 1% 65kPa
                      over 3876 of 3898 points
   └ ice/water band   °C           8.483e-1    2.497e-1          —            15°C 1% 65kPa
@@ -117,6 +117,24 @@ conductivity k       mW/m·K       1.199e-1    5.716e-2    0.4301%       52.5°C
 
 Reading notes:
 
+- **Dew point** solves its actual definition — the temperature at which this
+  air, held at constant humidity ratio and pressure, saturates: `Ws(tdp, p) =
+  W`. It used to invert the saturation curve alone, `dewPoint(pw(t, rh))`,
+  which drops the enhancement factor. The factor does not cancel here because
+  it would be evaluated at two different temperatures (dry bulb on one side,
+  dew point on the other), so the omission was worth **2.285e-2 °C**; solving
+  the real definition brings it to **3.816e-4 °C**, a factor of sixty. The old
+  form survives as the seed — it is within 0.03 °C everywhere, so a ±1 °C
+  bracket around it holds the root and forty bisections reach machine
+  precision.
+- Because a dew point is a property of the air rather than of the contract, an
+  SLA's dew-point cap is now graded at the hall's own pressure. The temperature
+  and RH bounds are pure contract terms and stay pressure-free, so only a
+  capped profile is pressure-sensitive at all, and only by hundredths of a
+  degree. The envelope's dew-point EDGE is drawn as the saturation humidity
+  ratio at the cap, which is the same quantity `dewPointFrom` inverts — so the
+  drawn boundary and the graded verdict are now the same curve by construction
+  rather than by a cancellation that happened to work out.
 - **Wet bulb** is no longer solved by ASHRAE Eq. 35. Eq. 35 is the closed-form
   solution of the adiabatic-saturation balance *with ideal-gas enthalpies* —
   constant c_p for dry air, a linearised vapour term, no pressure-dependent
