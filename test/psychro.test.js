@@ -25,6 +25,7 @@ import {
   dewPointFrom,
   wetBulb,
   wetBulbSolve,
+  wetBulbRoots,
   rhFromWetBulb,
   entropy,
   viscosity,
@@ -47,8 +48,16 @@ const TOL = {
   v_rel: 2e-4, //      specific volume, relative (Z-corrected; measured max 1.15e-4)
   rho_rel: 2e-4, //    density, relative         (follows v; measured max 1.15e-4)
   tdp_abs: 0.03, //    dew point °C              (measured max 0.023)
-  twb_abs: 0.05, //    wet bulb °C, unambiguous points (measured max 0.011)
-  twb_amb_abs: 1.0, // wet bulb °C, flagged near-freezing ambiguity (max 0.83)
+  // Wet bulb is solved as a real-gas adiabatic-saturation energy balance, not
+  // by ASHRAE Eq. 35's ideal-gas closed form, so the tolerance is two orders
+  // tighter than a Eq. 35 solver could hold. Loosening this back toward 0.05
+  // means someone has reverted the balance to the ideal-gas one.
+  twb_abs: 3e-3, //    wet bulb °C, unambiguous points (measured max 1.6e-3)
+  twb_amb_abs: 1.0, // wet bulb °C, flagged near-freezing ambiguity (max 0.85).
+  //                   Not an accuracy figure: both wick states are physical
+  //                   and this solver reproduces WHICHEVER root CoolProp
+  //                   reports to 4e-4 °C — see twb_amb_bestof below.
+  twb_amb_bestof: 1e-3, // closer of the two roots, vs CoolProp (measured 4e-4)
   s_abs: 5e-4, //      entropy kJ/(kg·K)         (measured max 3.7e-4)
   mu_rel: 5e-3, //     viscosity, relative       (measured max 3.2e-3)
   k_rel: 6e-3, //      conductivity, relative    (measured max 4.3e-3)
@@ -108,6 +117,16 @@ describe('CoolProp oracle grid', () => {
       if (s.ambiguous) {
         ambiguous++;
         expect(err, `ambiguous Twb at ${t}°C ${rh}% ${p}kPa`).toBeLessThan(TOL.twb_amb_abs);
+        // The real claim about this band. Both wick states are physical, and
+        // CoolProp's iterative solver lands in whichever basin its initial
+        // guess falls into — so "which root" is not an accuracy question. What
+        // IS an accuracy question is whether we can compute the root it picked,
+        // and the answer must stay 4e-4 °C. If this ever loosens, the solver
+        // has genuinely lost precision rather than merely chosen a wick.
+        const both = wetBulbRoots(t, rh, p);
+        const best = Math.min(...both.map((v) => Math.abs(v - r[col.twb_c])));
+        expect(best, `neither root reproduces CoolProp at ${t}°C ${rh}% ${p}kPa`)
+          .toBeLessThan(TOL.twb_amb_bestof);
       } else {
         expect(s.converged, `Twb convergence at ${t}°C ${rh}% ${p}kPa`).toBe(true);
         expect(err, `Twb at ${t}°C ${rh}% ${p}kPa`).toBeLessThan(TOL.twb_abs);

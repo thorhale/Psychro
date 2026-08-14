@@ -24,6 +24,7 @@ const {
   specificVolume,
   dewPoint,
   wetBulb,
+  wetBulbSolve,
   moistAirDensity,
   entropy,
   viscosity,
@@ -83,11 +84,32 @@ const METRICS = [
     rel: false,
   },
   {
+    // Split deliberately. Within roughly ±0.6 °C of freezing the adiabatic
+    // saturation balance has TWO self-consistent roots — an ice-covered wick
+    // and a supercooled-water wick — and they are both real psychrometry, not
+    // a numerical failure. This solver computes both to 4e-4 °C and returns
+    // the ice one (the stable phase below freezing) with `ambiguous` set;
+    // CoolProp's iterative solver lands in whichever basin its initial guess
+    // falls into, agreeing 18 times in 22 with no discernible rule.
+    //
+    // Averaging those 22 points into one headline number would report a
+    // physical ambiguity as 0.85 °C of inaccuracy, and would have hidden a
+    // 12x improvement in the solver everywhere else. So: two rows.
     key: 'wet bulb Twb',
     unit: '°C',
     ours: (t, rh, p) => wetBulb(t, rh, p),
     theirs: (r) => r[col.twb_c],
     rel: false,
+    only: (t, rh, p) => !wetBulbSolve(t, rh, p).ambiguous,
+  },
+  {
+    key: '  └ ice/water band',
+    unit: '°C',
+    ours: (t, rh, p) => wetBulb(t, rh, p),
+    theirs: (r) => r[col.twb_c],
+    rel: false,
+    only: (t, rh, p) => wetBulbSolve(t, rh, p).ambiguous,
+    note: 'double-valued: both wick states are physical',
   },
   {
     key: 'entropy s',
@@ -161,6 +183,8 @@ for (const m of METRICS) {
     }
     const theirs = m.theirs(r);
     if (theirs === null || ours === null || !isFinite(ours) || !isFinite(theirs)) continue;
+    // Per-point filter, for metrics that report a subset of the grid.
+    if (m.only && !m.only(t, rh, p)) continue;
 
     const s = m.scale ?? 1;
     const d = Math.abs(ours * s - theirs * s);
@@ -183,5 +207,8 @@ for (const m of METRICS) {
   console.log(
     `${m.key.padEnd(20)} ${(m.unit ?? '').padEnd(9)} ${fmt(maxAbs, 3).padStart(11)} ${fmt(rms, 3).padStart(11)} ${relCol} ${String(worst ?? '—').padStart(24)}`,
   );
+  // Metrics that cover only part of the grid say so, so a small sample can
+  // never be mistaken for a whole-domain result.
+  if (m.only) console.log(`${''.padEnd(20)} ${`over ${n} of ${rows.length} points${m.note ? ` — ${m.note}` : ''}`}`);
 }
 console.log('');

@@ -11,6 +11,46 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — wet bulb is solved as a real-gas balance, 12× more accurate
+
+ASHRAE Eq. 35 is the closed-form solution of the adiabatic-saturation energy
+balance **with ideal-gas enthalpies**: a constant specific heat for dry air, a
+linearised vapour term, and no pressure-dependent real-gas mixing. This file
+already carries an `enthalpy` fitted point-by-point to CoolProp, so the
+balance
+
+    h(t, W) + (W* − W)·h_water(t*) = h(t*, W*)
+
+is now solved numerically with the real thing instead. Against the reference
+grid the worst wet bulb goes from **1.87e-2 °C to 1.59e-3 °C**, RMS 4.8e-4 —
+for one extra bisection per call, which is nothing next to how often the
+answer is read.
+
+`rhFromWetBulb` inverts the same balance, so a psychrometer reading still
+round-trips exactly; inverting a *different* equation from the one the forward
+solver uses would have let the sensor-validation card grade an instrument
+against a reference that disagreed with the chart beside it.
+
+### Changed — the near-freezing wet bulb is reported as an ambiguity, not an error
+
+Within about ±0.6 °C of freezing the balance has two self-consistent
+solutions: an ice-covered wick and a supercooled-water wick. Both are real —
+two psychrometers in the same air, one frosted and one not, genuinely read
+differently — and this solver computes **both to 4e-4 °C**. It returns the ice
+root (the stable phase below freezing) and flags `ambiguous`; the new
+`wetBulbRoots()` hands back the other.
+
+The accuracy report used to average those 22 points into one headline number,
+which read as 0.85 °C of inaccuracy and hid a 12× improvement everywhere else.
+They now get their own labelled row, with the count of points it covers. The
+oracle test asserts the honest claim: not that our number matches the
+reference in that band — nothing could, since which root to report is a
+convention — but that we reproduce **whichever root the reference chose**, to
+4e-4 °C.
+
+Enthalpy, humidity ratio, specific volume, density and entropy are untouched
+and bit-identical.
+
 ### Fixed — a pinch could blank the chart
 
 Reported from the floor: the chart "glitched out and stopped showing the
