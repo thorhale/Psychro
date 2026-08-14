@@ -272,6 +272,63 @@ describe('SLA polygons and compliance', () => {
     expect(checkSLA(noCap, 72, noCap.rhMax).ok).toBe(true);
   });
 
+  it('the drawn contract and the graded contract are the same contract', () => {
+    // The customer SLA is the one shape the tool both DRAWS and GRADES, by two
+    // different routes: slaPolygon builds its dew-point edge as a constant-W
+    // line (enhancement factor at the dry bulb, pressure-aware), while
+    // checkSLA inverts the saturation equation to an actual dew-point
+    // temperature and compares it in °F. Those are equivalent on paper —
+    // dewPoint() is a Newton inversion of the same satPressure branches the
+    // W-line is built from, and both sides carry the same enhancement factor,
+    // so it cancels. This asserts it in practice, at pressures from Denver to
+    // sea level, because "the chart says I am inside and the badge says I am
+    // out" is the single most corrosive thing this tool could do.
+    const inPolygon = (t, w, pts) => {
+      let inside = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [xi, yi] = pts[i], [xj, yj] = pts[j];
+        if (yi > w !== yj > w && t < ((xj - xi) * (w - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    };
+    let s = 0xc0ffee;
+    const rand = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    // Three real contract shapes: a wide house SLA, an A1 transcription, and a
+    // tight one whose dew-point cap bites well inside its RH box.
+    const profiles = [
+      { tMinF: 50, tMaxF: 95, rhMin: 5, rhMax: 80, dpMaxF: null },
+      { tMinF: 59, tMaxF: 89.6, rhMin: 8, rhMax: 80, dpMaxF: 62.6 },
+      { tMinF: 64.4, tMaxF: 80.6, rhMin: 8, rhMax: 60, dpMaxF: 59 },
+    ];
+    let checked = 0;
+    for (const prof of profiles) {
+      const tMinC = (prof.tMinF - 32) / 1.8, tMaxC = (prof.tMaxF - 32) / 1.8;
+      for (let n = 0; n < 300; n++) {
+        const tc = 2 + rand() * 46;
+        const rh = 3 + rand() * 94;
+        const p = 70 + rand() * 33;
+        const W = humidityRatioG(tc, rh, p);
+        const pts = slaPolygon(prof, p);
+        // Skip the hairline: the polygon is traced in 0.5 °C steps, so a
+        // ray-cast right on an edge can disagree with the analytic bound by a
+        // rounding error. The property is about interiors.
+        const env = {
+          tMin: tMinC, tMax: tMaxC, rhMin: prof.rhMin, rhMax: prof.rhMax,
+          dpMin: null, dpMax: prof.dpMaxF == null ? null : (prof.dpMaxF - 32) / 1.8,
+        };
+        if (Math.abs(tc - tMinC) < 0.6 || Math.abs(tc - tMaxC) < 0.6) continue;
+        if (Math.abs(W - upperW(tc, env, p)) < 0.15) continue;
+        if (Math.abs(W - lowerW(tc, env, p)) < 0.15) continue;
+        checked++;
+        const drawn = inPolygon(tc, W, pts);
+        const graded = checkSLA(prof, tc * 1.8 + 32, rh).ok;
+        expect(graded, `${tc.toFixed(1)}°C ${rh.toFixed(0)}% ${p.toFixed(1)}kPa vs ${JSON.stringify(prof)}`)
+          .toBe(drawn);
+      }
+    }
+    expect(checked).toBeGreaterThan(400);
+  });
+
   it('the dew-point cap binds independently of the temp/RH box', () => {
     // 89.6 °F is exactly the temp max and 45 % is inside the RH band, but the
     // resulting 65.5 °F dew point exceeds the 62.6 °F cap. Drying the same air

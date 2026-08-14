@@ -102,6 +102,70 @@ test.describe('chart', () => {
     await page.waitForTimeout(150);
     expect(await snapshot()).not.toBe(after);
   });
+
+  test('a degenerate pinch cannot blank the chart', async ({ page }) => {
+    await page.goto('./');
+    await page.locator('#selftest-badge').filter({ hasText: 'passed' }).waitFor();
+
+    // Count pixels that are NOT the background fill. Counting alpha, as the
+    // blank-canvas test above does, is no use here: drawChart paints an opaque
+    // #0d1117 ground first, so a chart that draws nothing on top of it is
+    // still fully opaque.
+    const ink = () =>
+      page.evaluate(() => {
+        const c = document.getElementById('psychCanvas');
+        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 400) {
+          if (Math.abs(d[i] - 0x0d) + Math.abs(d[i + 1] - 0x11) + Math.abs(d[i + 2] - 0x17) > 12) n++;
+        }
+        return n;
+      });
+    const drawn = await ink();
+    expect(drawn).toBeGreaterThan(200);
+
+    // The gesture: a pinch-to-zoom-out whose fingers CONVERGE until the screen
+    // reports them at the same coordinate. The ratio `pinchDist / d` is then a
+    // division by zero, and Infinity multiplied by a zero-length anchor offset
+    // is NaN — so the view window goes non-finite, every coordinate comes out
+    // NaN, and the canvas draws nothing at all: no envelopes, no curves, not
+    // even axes. (A pinch that merely *starts* with both fingers together was
+    // always safe; the existing `pinchDist > 0` check catches that one.)
+    //
+    // The midpoint is put exactly on the plot's left edge (pad.l = 52) so the
+    // offset the Infinity multiplies is precisely zero — the NaN case, not
+    // merely the zoomed-to-oblivion one.
+    await page.evaluate(() => {
+      const c = document.getElementById('psychCanvas');
+      const r = c.getBoundingClientRect();
+      const midX = r.left + 52, y = r.top + r.height / 2;
+      const at = (id, x) => new Touch({ identifier: id, target: c, clientX: x, clientY: y });
+      const send = (type, pts) =>
+        c.dispatchEvent(new TouchEvent(type, {
+          bubbles: true, cancelable: true,
+          touches: pts, targetTouches: pts, changedTouches: pts,
+        }));
+      send('touchstart', [at(1, midX - 40), at(2, midX + 40)]); // apart
+      send('touchmove', [at(1, midX), at(2, midX)]);            // met
+      send('touchend', []);
+    });
+
+    // Still drawing. Without the guards the view came back tMin: NaN — every
+    // coordinate NaN — and the plot area was left as bare background.
+    expect(await ink()).toBeGreaterThan(drawn * 0.6);
+
+    // A pan afterwards must still work, rather than the chart being wedged
+    // until someone finds the Fit button.
+    await page.evaluate(() => {
+      const c = document.getElementById('psychCanvas');
+      const r = c.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      c.dispatchEvent(new MouseEvent('mousedown', { clientX: cx, clientY: cy, bubbles: true }));
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: cx + 40, clientY: cy + 20, bubbles: true }));
+      window.dispatchEvent(new MouseEvent('mouseup', { clientX: cx + 40, clientY: cy + 20, bubbles: true }));
+    });
+    expect(await ink()).toBeGreaterThan(drawn * 0.6);
+  });
 });
 
 test.describe('physics wiring', () => {

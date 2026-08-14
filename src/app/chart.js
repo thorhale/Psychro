@@ -551,6 +551,24 @@ export function drawChart() {
 const MIN_T_SPAN = 0.4, MIN_HR_SPAN = 0.2;  // tightest zoom in — fine enough for sub-degree/sub-g work
 const MAX_T = 200, MAX_HR = 200;           // effective "infinity" ceiling for drawing
 function clampView() {
+  // ── The safety net. ──────────────────────────────────────────────────────
+  // Every zoom and pan path writes to `view` and then calls this, so this is
+  // the one place that can guarantee the window stays drawable. If any corner
+  // has gone non-finite the whole chart renders as NaN coordinates: no
+  // envelopes, no curves, not even gridlines or axes — a blank rectangle with
+  // no way back except the Fit button, which nobody knows to look for.
+  //
+  // It got there through a pinch. Two fingers reported at the SAME point for
+  // one frame make `pinchDist / d` divide by zero, and Infinity times a zero
+  // offset (an anchor sitting exactly on an edge) is NaN. That is guarded at
+  // the source below, but guarding it here as well is what makes the class of
+  // bug impossible rather than just that one instance of it fixed.
+  if (![view.tMin, view.tMax, view.hrMin, view.hrMax].every(Number.isFinite)
+      || view.tMax <= view.tMin || view.hrMax <= view.hrMin) {
+    resetView();
+    return;
+  }
+
   // tightest zoom
   if (view.tMax - view.tMin < MIN_T_SPAN) { const c=(view.tMin+view.tMax)/2; view.tMin=c-MIN_T_SPAN/2; view.tMax=c+MIN_T_SPAN/2; }
   if (view.hrMax - view.hrMin < MIN_HR_SPAN) { const c=(view.hrMin+view.hrMax)/2; view.hrMin=c-MIN_HR_SPAN/2; view.hrMax=c+MIN_HR_SPAN/2; }
@@ -565,8 +583,18 @@ function clampView() {
 function zoomAt(px, py, factor) {
   if (!lastGeom) return;
   const { W, H, pad } = lastGeom;
+  // A zoom factor arrives from a wheel notch, a button, or the ratio of two
+  // pinch distances — and that last one can be Infinity (fingers reported at
+  // the same point) or NaN. Bound it to something a person could mean.
+  if (!Number.isFinite(factor) || factor <= 0) return;
+  factor = Math.min(Math.max(factor, 0.02), 50);
+  // A plot rectangle with no width or height makes fromXY divide by zero. It
+  // happens for a frame while a card is opening, which is exactly when a
+  // finger is on the glass.
+  if (W - pad.l - pad.r <= 0 || H - pad.t - pad.b <= 0) return;
   // anchor zoom on the data point under the cursor
   const [atc, ahr] = fromXY(px, py, W, H, pad);
+  if (!Number.isFinite(atc) || !Number.isFinite(ahr)) return;
   view.tMin = atc - (atc - view.tMin) * factor;
   view.tMax = atc + (view.tMax - atc) * factor;
   view.hrMin = ahr - (ahr - view.hrMin) * factor;
@@ -756,16 +784,21 @@ function centerView() {
     if(e.touches.length===2){
       e.preventDefault();
       const d=touchDistance(e);
-      if(pinchDist>0 && pinchMid){ zoomAt(pinchMid[0],pinchMid[1], pinchDist/d); }
-      pinchDist=d; pinchMid=touchMidpoint(e,canvas);
+      // d === 0 means both contacts came back at the same coordinate, which is
+      // not a pinch — dividing by it is how the view used to go non-finite and
+      // the chart went blank.
+      if(pinchDist>0 && d>0 && pinchMid){ zoomAt(pinchMid[0],pinchMid[1], pinchDist/d); }
+      if(d>0){ pinchDist=d; pinchMid=touchMidpoint(e,canvas); }
     } else if(e.touches.length===1 && touchPan && lastGeom){
       e.preventDefault();
       const r=canvas.getBoundingClientRect();
       const px=e.touches[0].clientX-r.left, py=e.touches[0].clientY-r.top;
       const {W,H,pad}=lastGeom;
+      if (W-pad.l-pad.r <= 0 || H-pad.t-pad.b <= 0) return;
       const dT=(px-touchPan[0])/(W-pad.l-pad.r)*(view.tMax-view.tMin);
       const dH=(py-touchPan[1])/(H-pad.t-pad.b)*(view.hrMax-view.hrMin);
       view.tMin-=dT; view.tMax-=dT; view.hrMin+=dH; view.hrMax+=dH;
+      clampView(); //  a pan must go through the safety net like a zoom does
       tapTravel += Math.abs(px-touchPan[0]) + Math.abs(py-touchPan[1]);
       if (tapTravel >= 8) { hideHover(); tipPinned = false; }
       touchPan=[px,py]; drawChart();
