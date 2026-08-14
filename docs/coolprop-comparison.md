@@ -106,7 +106,10 @@ enthalpy h           kJ/kg        3.005e-2    2.156e-3          —         55°
 specific volume v    m³/kg        1.678e-4    1.973e-5    0.0114%          50°C 100% 65kPa
 density ρ            kg/m³        9.782e-5    1.470e-5    0.0114%         55°C 100% 95kPa
 dew point Tdp        °C           2.285e-2    6.269e-3          —          55°C 5% 79.5kPa
-wet bulb Twb         °C           8.339e-1    1.903e-2          —            15°C 1% 65kPa
+wet bulb Twb         °C           1.588e-3    4.787e-4          —            55°C 1% 65kPa
+                     over 3876 of 3898 points
+  └ ice/water band   °C           8.483e-1    2.497e-1          —            15°C 1% 65kPa
+                     over 22 of 3898 points — double-valued: both wick states are physical
 entropy s            kJ/kg·K      3.747e-4    1.188e-4          —         55°C 100% 108kPa
 viscosity μ          µPa·s        5.989e-2    3.299e-2    0.3185%         45°C 100% 108kPa
 conductivity k       mW/m·K       1.199e-1    5.716e-2    0.4301%       52.5°C 100% 108kPa
@@ -114,9 +117,23 @@ conductivity k       mW/m·K       1.199e-1    5.716e-2    0.4301%       52.5°C
 
 Reading notes:
 
-- The wet-bulb max (0.83 °C) is entirely the **flagged** near-freezing ambiguity
-  band described in §3 — the tool tells you when you're in it. Outside that band
-  the max error is **0.011 °C** (the RMS of 0.019 reflects how rare the band is).
+- **Wet bulb** is no longer solved by ASHRAE Eq. 35. Eq. 35 is the closed-form
+  solution of the adiabatic-saturation balance *with ideal-gas enthalpies* —
+  constant c_p for dry air, a linearised vapour term, no pressure-dependent
+  mixing. Since this file already carries an `enthalpy` fitted to RP-1485, the
+  balance h(t,W) + (W\*−W)·h_w(t\*) = h(t\*,W\*) is now solved numerically with
+  the real thing. Max error **0.0187 °C → 0.0016 °C**, RMS 4.8e-4 — a factor of
+  twelve, for one extra bisection per call.
+- The 0.85 °C on the second row is **not an accuracy figure.** Within about
+  ±0.6 °C of freezing the balance has two self-consistent roots — an ice-covered
+  wick and a supercooled-water wick — and both are real psychrometry: two
+  instruments in the same air, one frosted and one not, read differently. This
+  solver computes *both* to **4e-4 °C**, returns the ice root (the stable phase
+  below freezing) and sets `ambiguous`; `wetBulbRoots()` hands back the other.
+  CoolProp's iterative solver lands in whichever basin its initial guess falls
+  into, agreeing with the ice root 18 times in 22 with no discernible rule, so
+  the row measures a difference of convention, not of precision. It is reported
+  separately rather than averaged into the headline for exactly that reason.
 - **Enthalpy** no longer uses Ch. 1 Eq. 30's constant specific heats
   (1.006 / 1.86 kJ·kg⁻¹·K⁻¹), whose difference from RP-1485's temperature-
   dependent ones dominated the old 0.46 kJ/kg error. It is now h_da(t, p) +
