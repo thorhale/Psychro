@@ -11,6 +11,48 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — a pinch could blank the chart
+
+Reported from the floor: the chart "glitched out and stopped showing the
+lines". Reproduced and fixed.
+
+Pinching to zoom out until the two fingers **meet** makes the touchscreen
+report both contacts at the same coordinate. The zoom factor is the ratio of
+the old separation to the new one, so that frame divides by zero, and
+Infinity multiplied by a zero-length anchor offset is NaN. The view window
+went non-finite, every plotted coordinate came out NaN, and the canvas
+painted its background and nothing else — no envelopes, no curves, not even
+axes — with no way back except a Fit button nobody knows to look for. (A
+pinch that merely *started* with both fingers together was always safe; only
+a converging one reached it.)
+
+Three layers of fix, deliberately: the pinch no longer treats a zero
+separation as a gesture; `zoomAt` rejects a factor that is not a sane
+positive multiplier and refuses to work from a collapsed plot rectangle; and
+`clampView` — which every zoom, pan and fit already calls — now resets the
+view if any corner has gone non-finite. The last one is what makes the whole
+class of bug impossible rather than just this instance of it fixed. Pans go
+through it too, which they did not before.
+
+The regression test drives the real gesture and counts pixels that are **not**
+the background fill: the pre-existing blank-canvas test measures alpha, and
+an all-background canvas is fully opaque, so it never would have caught this.
+Against the unguarded code the new test reads 34 drawn pixels where it should
+read 957.
+
+### Verified — the drawn contract and the graded contract are the same contract
+
+An accuracy audit of the one shape the tool both draws and grades by two
+different routes. `slaPolygon` builds the dew-point edge as a constant-W line
+(enhancement factor at the dry bulb, pressure-aware); `checkSLA` inverts the
+saturation equation to a dew-point temperature and compares in °F. Equivalent
+on paper — `dewPoint()` is a Newton inversion of the same saturation branches
+the W-line is built from, and the enhancement factor appears on both sides
+and cancels — and now asserted across 900 random points, three real contract
+shapes and 70–103 kPa. No divergence. "The chart says I'm inside and the
+badge says I'm out" is the most corrosive thing this tool could do, and it
+now cannot happen silently.
+
 ### Fixed — the Recommended envelope was drawn slightly too wide
 
 ASHRAE TC 9.9 gives the recommended low-moisture limit as **−9 °C dew point
