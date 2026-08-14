@@ -809,6 +809,7 @@ function update() {
   renderSensorValidation();  // re-grade at the new unit / site pressure
   renderTrainingBrief(); //      keep the brief's start temp in the active unit
   renderAllHalls(); //           every hall's status follows the live point
+  refreshHallTabStatus(); //     …and so do the dots on the tab strip
   // Evaporative units are computed from the hall's live condition, so their
   // outputs move with it — but this rebuilds the rows' markup, so never do it
   // while someone is typing into one.
@@ -1582,8 +1583,16 @@ function renderHallTabs() {
     const btn = document.createElement('button');
     btn.className = 'sla-tab' + (i === state.activeHall ? ' active' : '');
     const bld = (h.building || '').trim(), loc = (h.siteName || '').trim();
-    btn.textContent = (!v.loc && manyLoc && loc ? loc + ' · ' : '')
-      + (!v.bld && manyBld && bld ? bld + ' · ' : '') + (h.name || `Hall ${i + 1}`);
+    // A dot per tab: the strip you already use to move between halls also
+    // tells you which one is out of spec, so finding trouble is a glance
+    // rather than a card you have to open and read.
+    const dot = document.createElement('span');
+    dot.className = 'tab-dot';
+    dot.dataset.hallDot = String(i);
+    btn.appendChild(dot);
+    btn.appendChild(document.createTextNode(
+      (!v.loc && manyLoc && loc ? loc + ' · ' : '')
+      + (!v.bld && manyBld && bld ? bld + ' · ' : '') + (h.name || `Hall ${i + 1}`)));
     btn.onclick = () => {
       if (i === state.activeHall) return;
       switchHall(i);
@@ -1591,8 +1600,40 @@ function renderHallTabs() {
     };
     tabs.appendChild(btn);
   });
+  refreshHallTabStatus();
   const del = inp('hall-del');
   if (del) del.disabled = state.hallProfiles.length <= 1;
+}
+
+/**
+ * Colour the dots without rebuilding the strip. This runs on every update, so
+ * it must not touch markup: re-rendering fourteen buttons while a slider is
+ * being dragged is exactly the kind of per-frame cost the perf budgets exist
+ * to catch.
+ */
+function refreshHallTabStatus() {
+  const tabs = inp('hall-tabs');
+  if (!tabs) return;
+  const sla = state.slaProfiles[state.activeSla];
+  tabs.querySelectorAll('[data-hall-dot]').forEach((/** @type {HTMLElement} */ el) => {
+    const h = state.hallProfiles[+el.dataset.hallDot];
+    if (!h) return;
+    // The active hall's own point may not be stashed yet — it is on screen.
+    const c = +el.dataset.hallDot === state.activeHall
+      ? { aTemp: state.aTemp, aRH: state.aRH }
+      : h.cond;
+    let cls = 'tab-dot', title;
+    if (!c) {
+      cls += ' td-idle';
+      title = 'Not set up yet';
+    } else {
+      const chk = checkSLACore(sla, c.aTemp, c.aRH);
+      cls += chk.ok ? ' td-ok' : ' td-bad';
+      title = chk.ok ? `Inside ${sla.name}` : `Outside ${sla.name} — ${fmtSlaReason(chk)}`;
+    }
+    if (el.className !== cls) el.className = cls;
+    if (el.title !== title) el.title = title;
+  });
 }
 
 inp('hall-loc-filter').addEventListener('change', function() {

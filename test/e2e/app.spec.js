@@ -993,6 +993,32 @@ test.describe('multiple halls', () => {
     await expect(tabs).toHaveText(['A2 · Hall 1', 'A7 · Hall 2']);
   });
 
+  test('every hall tab carries its own verdict', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.locator('#hall-add').click();
+    await expandAll(page);
+    const dots = page.locator('#hall-tabs .tab-dot');
+    await expect(dots).toHaveCount(2);
+    await expect(dots.nth(0)).toHaveClass(/td-ok/);
+    await expect(dots.nth(1)).toHaveClass(/td-ok/);
+
+    // Push the hall you are standing in out of the SLA: its dot must follow
+    // the live point, not the last one that happened to be saved.
+    await page.fill('#a-temp', '99');
+    await page.dispatchEvent('#a-temp', 'input');
+    await page.locator('#a-temp').blur();
+    await expect(dots.nth(1)).toHaveClass(/td-bad/);
+    await expect(dots.nth(1)).toHaveAttribute('title', /Outside .* above/);
+    // The hall you are not in keeps its own verdict, judged at its own air.
+    await expect(dots.nth(0)).toHaveClass(/td-ok/);
+
+    // And it survives switching away — the breach belongs to the hall.
+    await page.locator('#hall-tabs button').first().click();
+    await expect(dots.nth(1)).toHaveClass(/td-bad/);
+    await expect(dots.nth(0)).toHaveClass(/td-ok/);
+  });
+
   test('one building is a list of halls — no disclosure to press', async ({ page }) => {
     await page.goto('./');
     await expandAll(page);

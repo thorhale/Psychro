@@ -184,6 +184,16 @@
   .sla-tab { padding:5px 12px; border-radius:5px 5px 0 0; border:1px solid var(--border); border-bottom:none; background:transparent; color:var(--muted); font-size:.72rem; font-weight:600; cursor:pointer; font-family:var(--sans); transition:all .12s; }
   .sla-tab.active { background:rgba(255,255,255,.08); color:var(--text); border-color:rgba(255,255,255,.4); }
   .sla-tab.locked::after { content:' 🔒'; font-size:.6rem; }
+  /* A status dot on every hall tab. The strip you already use to move between
+     halls is the cheapest possible place to see which one is out of spec —
+     no card to open, no list to read. Sized to stay legible next to 12px
+     type without becoming the loudest thing in the row. */
+  .tab-dot { display:inline-block; width:7px; height:7px; border-radius:50%;
+    margin-right:6px; vertical-align:1px; background:var(--muted); }
+  .tab-dot.td-ok { background:var(--ok); }
+  .tab-dot.td-bad { background:var(--danger); box-shadow:0 0 0 2px color-mix(in srgb, var(--danger) 25%, transparent); }
+  /* A hall nobody has set up yet is context, not a finding. */
+  .tab-dot.td-idle { background:transparent; border:1px solid var(--border); }
   /* ── One button ────────────────────────────────────────────────────────
      There were four systems here — .scn-btn, .sla-tab-btn, .sla-tab-add and
      .calc-apply — with three border radii, three font sizes and three

@@ -11,6 +11,19 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — every hall tab carries its own verdict
+
+A dot on each hall tab: green inside the active SLA, red with a halo outside
+it, hollow for a hall nobody has set up yet, and the reason in the tooltip.
+The strip you already use to move between halls is the cheapest place in the
+app to see which one is out of spec — no card to open, no list to read, and
+the hall is one tap away once you have found it.
+
+Each hall is graded at its own elevation and pressure, and the active hall's
+dot follows the point on screen rather than the last one saved. The dots are
+recoloured in place on every update — the strip is never rebuilt — so
+fourteen halls cost nothing per frame.
+
 ### Changed — All halls is a building picker
 
 A campus is a list of buildings you walk into, not a flat list of fourteen
