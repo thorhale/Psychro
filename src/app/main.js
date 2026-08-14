@@ -447,7 +447,8 @@ document.querySelectorAll('#unit-toggle .unit-btn').forEach(btn => {
     state.tempUnit = this.dataset.unit;
     document.querySelectorAll('#unit-toggle .unit-btn').forEach(b => b.classList.toggle('active', b===this));
     syncTempInputs();
-    renderSlaEditor(); // the SLA contract is edited in the display unit
+    renderSlaEditor(); //  the SLA contract is edited in the display unit…
+    renderHallEditor(); // …and so are the hall's plant rates and supply DP
     update();
   });
 });
@@ -839,6 +840,11 @@ function renderHallEditor() {
   if (!hed) return;
   syncActualTrailToHall(); // A's measured trajectory is not B's
 
+  // A plant rate is STORED canonically in °F/hr but typed and read in whatever
+  // unit is on screen. A rate is a DELTA per hour, so it scales — 9 °F/hr is
+  // 5 °C/hr — and never offsets.
+  const showRate = (f) => (f == null ? '' : String(Math.round(dispDeltaT(f) * 10) / 10));
+
   hed.innerHTML = `
     <div class="sla-field">
       <label for="hall-name">Hall name</label>
@@ -853,12 +859,12 @@ function renderHallEditor() {
     <div class="sla-field"><label for="hall-baro">Measured pressure <span class="u">kPa</span> <span class="cap-hint">optional — a barometer beats the elevation estimate</span></label><input type="number" inputmode="decimal" id="hall-baro" value="${state.hall.baroKpa ?? ''}" step="0.1" min="55" max="110" placeholder="blank = from elevation"></div>
     <div class="sla-caps">
       <div class="sla-caps-label">Plant capability &amp; rates — what this hall can actually do</div>
-      <div class="cap-explain">Temperature rates: use commissioning-observed °F/hr, or derive a physics estimate below (IT load, excess sensible capacity, thermal mass). Moisture is first-principles: hall air mass × ΔW ÷ equipment lb/hr. Enter NET capacity (nameplate minus steady makeup-air latent load). Blank = not plant-limited; the SLA ramp limit still governs.</div>
+      <div class="cap-explain">Temperature rates: use commissioning-observed ${deltaLabel()}/hr, or derive a physics estimate below (IT load, excess sensible capacity, thermal mass). Moisture is first-principles: hall air mass × ΔW ÷ equipment lb/hr. Enter NET capacity (nameplate minus steady makeup-air latent load). Blank = not plant-limited; the SLA ramp limit still governs.</div>
       <div id="equip-panel"></div>
       <div class="cap-line"><span class="cap-name">Hall air volume <span class="cap-hint">for the moisture mass balance</span></span><input type="number" id="hall-vol" class="cap-rate" value="${state.hall.hallVolFt3 ?? ''}" placeholder="—" step="1000" min="0"><span class="cap-u">ft³</span></div>
       <div class="cap-line"><span class="cap-name">Supply airflow <span class="cap-hint">for the cooling-load estimate</span></span><input type="number" id="hall-cfm" class="cap-rate" value="${state.hall.airflowCfm ?? ''}" placeholder="—" step="1000" min="0"><span class="cap-u">CFM</span></div>
-      <div class="cap-line"><span class="cap-name">Cooling</span><input type="number" id="rate-cool" class="cap-rate" value="${state.hall.rateCoolF ?? ''}" placeholder="—" step="0.5" min="0"><span class="cap-u">°F/hr</span></div>
-      <div class="cap-line"><span class="cap-name">Warming <span class="cap-hint">reheat or IT load</span></span><input type="number" id="rate-warm" class="cap-rate" value="${state.hall.rateWarmF ?? ''}" placeholder="—" step="0.5" min="0"><span class="cap-u">°F/hr</span></div>
+      <div class="cap-line"><span class="cap-name">Cooling</span><input type="number" id="rate-cool" class="cap-rate" value="${showRate(state.hall.rateCoolF)}" placeholder="—" step="0.5" min="0"><span class="cap-u">${deltaLabel()}/hr</span></div>
+      <div class="cap-line"><span class="cap-name">Warming <span class="cap-hint">reheat or IT load</span></span><input type="number" id="rate-warm" class="cap-rate" value="${showRate(state.hall.rateWarmF)}" placeholder="—" step="0.5" min="0"><span class="cap-u">${deltaLabel()}/hr</span></div>
       <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-dehum" ${state.hall.canDehumidify?'checked':''}> Dehumidify</label><input type="number" id="rate-dehum" class="cap-rate" value="${state.hall.rateDehumLb ?? ''}" placeholder="—" step="5" min="0" ${state.hall.canDehumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
       <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-hum" ${state.hall.canHumidify?'checked':''}> Humidify</label><input type="number" id="rate-hum" class="cap-rate" value="${state.hall.rateHumLb ?? ''}" placeholder="—" step="5" min="0" ${state.hall.canHumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
       <details class="calc">
@@ -927,7 +933,7 @@ function renderHallEditor() {
           <div id="dh-coil" class="dh-pane" style="display:none">
             <div class="calc-grid2">
               <input type="number" id="dc-cfm" class="cap-rate" value="${(state.hall.calc||{}).cfm ?? ''}" placeholder="total CFM" min="0" step="100">
-              <input type="number" id="dc-dp" class="cap-rate" value="${(state.hall.calc||{}).dp ?? ''}" placeholder="supply DP °F" step="1">
+              <input type="number" id="dc-dp" class="cap-rate" value="${(state.hall.calc||{}).dp != null ? dispT1((state.hall.calc||{}).dp) : ''}" placeholder="supply DP ${tLabel()}" step="1">
             </div>
           </div>
           <div class="calc-res" id="dh-res">—</div>
@@ -1002,10 +1008,21 @@ function renderHallEditor() {
   capWire('cap-dehum', 'canDehumidify');
   capWire('cap-hum', 'canHumidify');
   // Plant rate fields — always editable (a site attribute, like elevation).
-  const rateWire = (id, key) => {
+  /**
+   * @param {string} id
+   * @param {string} key
+   * @param {boolean} [isTempRate] true for the °F/hr rates, which are stored
+   *   canonically but typed in whatever unit is on screen. A rate is a DELTA
+   *   per hour, so it scales (÷1.8 for °C) and never offsets: 9 °F/hr is
+   *   5 °C/hr, not −12.8. Without this, an operator working in °C typed "5"
+   *   meaning 5 °C/hr and the hall stored 5 °F/hr — 2.8 °C/hr, so every
+   *   predicted duration came out nearly twice as long as the plant can do.
+   */
+  const rateWire = (id, key, isTempRate) => {
     const el = inp(id);
     if (el) el.addEventListener('input', function() {
-      const v = parseFloat(this.value);
+      const typed = parseFloat(this.value);
+      const v = isTempRate ? typed / deltaFromF(1, state.tempUnit || 'F') : typed;
       state.hall[key] = (isNaN(v) || v <= 0) ? null : v;
       update();
     });
@@ -1026,8 +1043,8 @@ function renderHallEditor() {
       }, { once: true });
     }
   }
-  rateWire('rate-cool',  'rateCoolF');
-  rateWire('rate-warm',  'rateWarmF');
+  rateWire('rate-cool',  'rateCoolF', true);
+  rateWire('rate-warm',  'rateWarmF', true);
   rateWire('rate-dehum', 'rateDehumLb');
   rateWire('rate-hum',   'rateHumLb');
   rateWire('hall-vol',   'hallVolFt3');
@@ -1105,7 +1122,7 @@ function renderHallEditor() {
         : r.eff > 0 ? `<strong>${Math.round(r.eff * 100)}%</strong>` : '—';
       return `<div class="scn-item">
         <div class="scn-item-main">
-          <div class="scn-item-name">${Math.round(r.aTemp)}°F/${Math.round(r.aRH)}% → ${Math.round(r.bTemp)}°F/${Math.round(r.bRH)}%</div>
+          <div class="scn-item-name">${dispTs(r.aTemp)}${tLabel()}/${Math.round(r.aRH)}% → ${dispTs(r.bTemp)}${tLabel()}/${Math.round(r.bRH)}%</div>
           <div class="scn-item-detail">${new Date(r.date).toLocaleDateString()} · predicted ${fmtHrs(r.nomHrs)} nameplate · actual ${fmtHrs(r.actualHrs)} · implied eff ${r.slaBound ? '(SLA-bound)' : (r.eff > 0 ? Math.round(r.eff * 100) + '%' : '—')}</div>
         </div>
         <span style="font-size:.78rem">${effTxt}</span>
@@ -1307,7 +1324,10 @@ function renderHallEditor() {
     cs.dhType = g('dh-type')?.value || 'lbhr';
     cs.dhQty = num('dh-qty'); cs.dhEach = num('dh-each'); cs.dhUnit = g('dh-unit')?.value || 'lbhr';
     cs.dhLQty = num('dh-lqty'); cs.dhLat = num('dh-lat'); cs.dhLatUnit = g('dh-latunit')?.value || 'ton';
-    cs.cfm = num('dc-cfm'); cs.dp = num('dc-dp');
+    cs.cfm = num('dc-cfm');
+    // Supply dew point is an absolute temperature, typed in whatever unit is
+    // on screen — convert to the canonical °F the coil maths expects.
+    { const v = num('dc-dp'); cs.dp = v == null ? null : tU().toF(v); }
     cs.hQty = num('hc-qty'); cs.hEach = num('hc-each'); cs.hUnit = g('hc-unit')?.value || 'lbhr';
     cs.hType = g('hc-type')?.value || 'rated';
     cs.hCfm = num('hc-cfm'); cs.hEff = num('hc-eff'); cs.hMeas = num('hc-meas');
@@ -1323,7 +1343,9 @@ function renderHallEditor() {
     const activePane = g(paneMap[cs.dhType]); if (activePane) activePane.style.display = '';
 
     const C = thermalC();
-    const rateF = kw => kw * 3600 / C.c * 1.8;                    // °F/hr
+    const rateF = kw => kw * 3600 / C.c * 1.8;                    // °F/hr, canonical
+    // …shown in the active unit. A rate is a delta per hour, so it scales.
+    const showR = (f) => `${(Math.round(dispDeltaT(f) * 10) / 10).toFixed(1)} ${deltaLabel()}/hr`;
     const tag = C && C.airOnly ? ' <span class="cap-hint">(air-only ceiling)</span>' : '';
 
     // Cooling — excess sensible over IT load
@@ -1334,7 +1356,7 @@ function renderHallEditor() {
         else {
           const excess = toKW(cs.ccUnits * cs.ccCap, cs.ccUnit) - cs.it;
           if (excess <= 0) cc.innerHTML = '<span class="calc-warn">No pulldown margin — sensible capacity ≤ IT load.</span>';
-          else cc.innerHTML = `excess ${excess.toFixed(0)} kW → <strong>${rateF(excess).toFixed(1)} °F/hr</strong>${tag} <button class="calc-apply" data-rk="rateCoolF" data-rv="${rateF(excess).toFixed(1)}">Apply</button>`;
+          else cc.innerHTML = `excess ${excess.toFixed(0)} kW → <strong>${showR(rateF(excess))}</strong>${tag} <button class="calc-apply" data-rk="rateCoolF" data-rv="${rateF(excess).toFixed(2)}">Apply</button>`;
         }
       } else cc.textContent = '—';
     }
@@ -1345,7 +1367,7 @@ function renderHallEditor() {
         if (!C) wc.innerHTML = '<span class="calc-warn">Set hall volume first.</span>';
         else {
           const q = cs.it + (cs.reheat || 0);
-          wc.innerHTML = `${q.toFixed(0)} kW → <strong>${rateF(q).toFixed(1)} °F/hr</strong>${tag} <button class="calc-apply" data-rk="rateWarmF" data-rv="${rateF(q).toFixed(1)}">Apply</button>`;
+          wc.innerHTML = `${q.toFixed(0)} kW → <strong>${showR(rateF(q))}</strong>${tag} <button class="calc-apply" data-rk="rateWarmF" data-rv="${rateF(q).toFixed(2)}">Apply</button>`;
         }
       } else wc.textContent = '—';
     }

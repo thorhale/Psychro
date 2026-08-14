@@ -11,6 +11,42 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — the Recommended envelope was drawn slightly too wide
+
+ASHRAE TC 9.9 gives the recommended low-moisture limit as **−9 °C dew point
+AND 8 % RH** — both constraints, whichever binds. The envelope table carried
+`rhMin: 0`, so the lower edge was the dew-point line alone. At sea level the
+two all but coincide and nothing moved; at reduced pressure the 8 % RH curve
+is the higher of the two, so a point near the warm, dry corner of a
+high-altitude hall could be drawn and graded as inside Recommended when the
+standard puts it outside. Every SLA preset in the app already used 8 %; this
+table was the one place that disagreed with them.
+
+The whole table is now pinned by a test against the published 5th-edition
+(2021) numbers, in the SI units the standard is written in and with nothing
+converted, so no boundary can pick up a rounding error on the way through a
+conversion again. All five envelopes verified: Recommended 18–27 °C /
+8–60 % / −9…15 °C DP, A1 15–32 / 8–80 / −12…17, A2 10–35 / 8–80 / −12…21,
+A3 5–40 / 8–85 / −12…24, A4 5–45 / 8–90 / −12…24.
+
+### Fixed — plant rates were always read as °F/hr
+
+The standards are metric, the contracts here are stored in °F, and the °C
+toggle had reached the SLA editor but not the Data Hall card. Typing `10`
+into the cooling rate while reading °C stored 10 **°F**/hr — 5.6 °C/hr — so
+a pulldown the plant could do in two hours was predicted at nearly four, with
+nothing on screen to say so.
+
+Rates are typed, shown and labelled in the unit on screen now, and converted
+as **deltas**: 9 °F/hr is 5 °C/hr, never −12.8. Same fix for the coil
+calculator's supply dew point (an absolute temperature), the derived-rate
+readouts under "Derive your rates from equipment specs", the saved-scenario
+names, and the volume warning. Switching the toggle re-renders the hall card
+along with the SLA card.
+
+Nothing about the stored data changed — °F/hr remains canonical on disk, so
+existing saves and shared links keep their meaning.
+
 ### Added — every hall tab carries its own verdict
 
 A dot on each hall tab: green inside the active SLA, red with a halo outside

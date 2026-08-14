@@ -24,7 +24,7 @@ import { state, hallVisible } from './state.js';
 import { thermalC } from './hallphysics.js';
 import { escHtml } from '../ui/escape.js';
 import { toast } from '../ui/notify.js';
-import { dispTs, tLabel, fmtSlaReason } from '../ui/format.js';
+import { dispTs, tLabel, deltaLabel, fmtSlaReason } from '../ui/format.js';
 import { checkSLA as checkSLACore } from '../core/envelopes.js';
 import { pressureFromAltitude } from '../core/psychro.js';
 import { evapMediaOutput } from '../core/evapmedia.js';
@@ -428,7 +428,7 @@ export function renderEquipment() {
       return;
     }
     if (!C && (now.coolKW > 0 || now.heatKW > 0)) {
-      toast('Set the hall air volume first: turning kW into °F/hr needs the mass of air being conditioned.',
+      toast(`Set the hall air volume first: turning kW into ${deltaLabel()}/hr needs the mass of air being conditioned.`,
         { kind: 'warn', duration: 7000 });
       return;
     }

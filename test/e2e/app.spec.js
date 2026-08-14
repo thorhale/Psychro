@@ -1638,6 +1638,43 @@ test.describe('units', () => {
     await page.locator('#unit-toggle .unit-btn[data-unit="F"]').click();
     await expect(page.locator('#sla-tmin')).toHaveValue('53.6');
   });
+
+  test('a plant rate is typed in the unit on screen, not always °F/hr', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    await page.fill('#rate-cool', '9');
+    await page.dispatchEvent('#rate-cool', 'input');
+
+    await page.locator('#unit-toggle .unit-btn[data-unit="C"]').click();
+    // A rate is a DELTA per hour: 9 °F/hr is 5 °C/hr, never −12.8.
+    await expect(page.locator('#rate-cool')).toHaveValue('5');
+    await expect(page.locator('.cap-line').filter({ has: page.locator('#rate-cool') })).toContainText('°C/hr');
+
+    // Typing 10 while reading °C must mean 10 °C/hr — 18 °F/hr canonically.
+    // It used to be taken as 10 °F/hr, so a plan that the plant could do in
+    // two hours was predicted at nearly four.
+    await page.fill('#rate-cool', '10');
+    await page.dispatchEvent('#rate-cool', 'input');
+    await page.locator('#unit-toggle .unit-btn[data-unit="F"]').click();
+    await expect(page.locator('#rate-cool')).toHaveValue('18');
+    await expect(page.locator('.cap-line').filter({ has: page.locator('#rate-cool') })).toContainText('°F/hr');
+  });
+
+  test('the ASHRAE class is decided in °C, whatever unit is on screen', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // 22 °C / 45 % sits inside the recommended envelope. The standard is
+    // written in °C and the classification runs there; flipping the display
+    // must not move the answer.
+    await page.fill('#a-temp', '71.6');
+    await page.dispatchEvent('#a-temp', 'input');
+    await page.locator('#a-temp').blur();
+    const zone = page.locator('.zpill').first();
+    await expect(zone).toHaveText('A1');
+    await page.locator('#unit-toggle .unit-btn[data-unit="C"]').click();
+    await expect(page.locator('#a-temp')).toHaveValue('22');
+    await expect(zone).toHaveText('A1');
+  });
 });
 
 test.describe('download link', () => {
