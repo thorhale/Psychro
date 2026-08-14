@@ -522,7 +522,7 @@ function planMove(opts) {
 // Check a point against the ACTIVE SLA. The contract logic itself lives in
 // src/core/envelopes.js (tested); this only binds it to the current profile.
 function checkSLA(tempF, rh) {
-  return checkSLACore(state.slaProfiles[state.activeSla], tempF, rh);
+  return checkSLACore(state.slaProfiles[state.activeSla], tempF, rh, state.pressure);
 }
 
 
@@ -1649,7 +1649,10 @@ function refreshHallTabStatus() {
       cls += ' td-idle';
       title = 'Not set up yet';
     } else {
-      const chk = checkSLACore(sla, c.aTemp, c.aRH);
+      // Graded at THIS hall's own pressure — a dew-point cap bites at a
+      // different temperature in Denver than in Goodyear.
+      const chk = checkSLACore(sla, c.aTemp, c.aRH,
+        h.baroKpa != null ? h.baroKpa : pressureFromAltitude(h.elevFt ?? 0));
       cls += chk.ok ? ' td-ok' : ' td-bad';
       title = chk.ok ? `Inside ${sla.name}` : `Outside ${sla.name} — ${fmtSlaReason(chk)}`;
     }

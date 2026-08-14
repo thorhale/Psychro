@@ -11,6 +11,44 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — dew point solves its real definition, 60× more accurate
+
+A dew point is the temperature at which *this* air, held at constant humidity
+ratio and pressure, saturates: `Ws(tdp, p) = W`. The app inverted the
+saturation curve alone instead — `dewPoint(pw(t, rh))` — which drops the
+enhancement factor. That factor does not cancel here, because it would be
+evaluated at two different temperatures: the dry bulb on one side, the dew
+point on the other. Worth **2.285e-2 °C**; solving the real definition brings
+it to **3.816e-4 °C**.
+
+The old form is kept as the seed — it is within 0.03 °C everywhere, so a ±1 °C
+bracket around it is guaranteed to hold the root.
+
+`rhFromDewPoint` inverts the same relation, so a dew point still round-trips.
+
+### Changed — a dew-point cap is graded at the hall's own pressure
+
+Because a dew point is a property of the air rather than of the contract. The
+same temperature and humidity dews out at a different temperature in Denver
+than in Goodyear, and the verdict now says so. Temperature and RH bounds are
+pure contract terms and stay pressure-free, so a profile only becomes
+pressure-sensitive once it carries a dew-point cap — and then only by
+hundredths of a degree.
+
+The envelope's dew-point **edge** is now drawn as the saturation humidity ratio
+at the cap, which is precisely the quantity `dewPointFrom` inverts. The drawn
+boundary and the graded verdict are therefore the same curve by construction,
+rather than by a cancellation that happened to work out. (It did work out — the
+property test added last week proved it across 900 points — but "provably
+identical" beats "measured identical".)
+
+A test asserting SLA verdicts were pressure-independent has been replaced. It
+was vacuous: it mapped over four pressures without passing any of them, so it
+compared one call against itself four times. In its place, two tests that state
+what is actually true — a capless profile grades identically at every pressure,
+and a capped one may only disagree for readings sitting within 0.1 °F of the
+cap.
+
 ### Changed — wet bulb is solved as a real-gas balance, 12× more accurate
 
 ASHRAE Eq. 35 is the closed-form solution of the adiabatic-saturation energy

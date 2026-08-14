@@ -18,11 +18,10 @@ import { dirname, join } from 'node:path';
 import * as P from '../src/core/psychro.js';
 
 const {
-  vaporPressure,
   humidityRatio,
   enthalpy,
   specificVolume,
-  dewPoint,
+  dewPointFrom,
   wetBulb,
   wetBulbSolve,
   moistAirDensity,
@@ -79,7 +78,7 @@ const METRICS = [
   {
     key: 'dew point Tdp',
     unit: '°C',
-    ours: (t, rh) => dewPoint(vaporPressure(t, rh)),
+    ours: (t, rh, p) => dewPointFrom(t, rh, p),
     theirs: (r) => r[col.tdp_c],
     rel: false,
   },

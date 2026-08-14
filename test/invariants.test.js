@@ -123,9 +123,11 @@ describe('round trips close', () => {
 
   it('rh → dew point → rh', () => {
     for (const s of STATES) {
-      const tdp = dewPointFrom(s.tc, s.rh);
+      // Both directions take the pressure: a dew point is "saturated at this
+      // humidity ratio", and humidity ratio is pressure-dependent.
+      const tdp = dewPointFrom(s.tc, s.rh, s.p);
       expect(tdp, at(s)).not.toBeNull();
-      expect(rhFromDewPoint(s.tc, tdp), at(s)).toBeCloseTo(s.rh, 6);
+      expect(rhFromDewPoint(s.tc, tdp, s.p), at(s)).toBeCloseTo(s.rh, 6);
     }
   });
 

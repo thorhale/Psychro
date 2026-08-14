@@ -23,6 +23,7 @@ import {
   vaporPressure,
   humidityRatioFromPw,
   dewPoint,
+  dewPointFrom,
   wetBulbSolve,
   enthalpy,
   specificVolume,
@@ -210,13 +211,51 @@ describe('SLA compliance agrees with the derived dew point', () => {
     }
   });
 
-  it('SLA verdicts are pressure-independent, as the contract is', () => {
-    // An SLA is a contract on temperature, RH and dew point — none of which are
-    // pressure-derived — so the same reading must grade identically at any site.
+  const PRESSURES = [60, 79.5, 101.325, 108];
+
+  it('temperature and RH bounds are pressure-free, so a capless SLA travels', () => {
+    // A contract on dry bulb and RH says nothing about the air's density. A
+    // profile with no dew-point cap must therefore grade a reading identically
+    // at every site — an operator in Denver and one in Goodyear reading the
+    // same instrument get the same verdict.
+    const capless = { ...profile, dpMaxF: null };
     for (const s of STATES.slice(0, 100)) {
       const tempF = cToF(s.tc);
-      const verdicts = [60, 79.5, 101.325, 108].map(() => checkSLA(profile, tempF, s.rh));
-      for (const v of verdicts) expect(v).toEqual(verdicts[0]);
+      const verdicts = PRESSURES.map((p) => checkSLA(capless, tempF, s.rh, p));
+      for (const v of verdicts) expect(v, `${s.tc}°C ${s.rh}%`).toEqual(verdicts[0]);
     }
+  });
+
+  it('a dew-point cap is weakly pressure-aware, because a dew point is', () => {
+    // This one USED to assert the opposite, and the assertion was vacuous: it
+    // mapped over four pressures without passing any of them, so it compared
+    // one call against itself four times.
+    //
+    // The truth is narrower and more useful. A dew point is a property of the
+    // air, not of the contract: hold temperature and RH fixed, move the hall to
+    // altitude, and the temperature that air dews out at shifts — by a few
+    // hundredths of a degree, but it shifts. So a capped profile can only
+    // disagree across pressures for readings sitting within a hair of the cap,
+    // and must agree everywhere else.
+    let nearCap = 0;
+    for (const s of STATES.slice(0, 400)) {
+      const tempF = cToF(s.tc);
+      const verdicts = PRESSURES.map((p) => checkSLA(profile, tempF, s.rh, p));
+      const agree = verdicts.every((v) => v.ok === verdicts[0].ok);
+      if (agree) continue;
+      nearCap++;
+      // Disagreement is only ever allowed hugging the cap itself.
+      const dps = PRESSURES.map((p) => cToF(dewPointFrom(s.tc, s.rh, p)));
+      for (const dp of dps) {
+        expect(Math.abs(dp - profile.dpMaxF), `${s.tc}°C ${s.rh}% dp=${dp}`).toBeLessThan(0.1);
+      }
+    }
+    // And the shift itself stays tiny across the whole sample — this is a
+    // second-order effect, not a licence for the verdict to wander.
+    for (const s of STATES.slice(0, 400)) {
+      const dps = PRESSURES.map((p) => cToF(dewPointFrom(s.tc, s.rh, p)));
+      expect(Math.max(...dps) - Math.min(...dps), `${s.tc}°C ${s.rh}%`).toBeLessThan(0.2);
+    }
+    expect(nearCap).toBeLessThan(5); // it really is a hairline, not a band
   });
 });

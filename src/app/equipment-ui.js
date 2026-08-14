@@ -508,7 +508,7 @@ export function renderAllHalls() {
     if (!c) {
       status = '<span class="cap-hint">not set up yet</span>';
     } else {
-      const chk = checkSLACore(sla, c.aTemp, c.aRH);
+      const chk = checkSLACore(sla, c.aTemp, c.aRH, p);
       breach = !chk.ok;
       if (breach) breaches++;
       status = chk.ok

@@ -357,11 +357,67 @@ function satPressureDerivBranch(tc, overWater) {
   return p * dlnP_dT;
 }
 
-/** Dew point °C directly from dry bulb and RH. */
-export const dewPointFrom = (tc, rh) => dewPoint(vaporPressure(tc, rh));
+/**
+ * Dew point °C from dry bulb and RH — the temperature at which THIS air, held
+ * at constant humidity ratio and pressure, reaches saturation.
+ *
+ * That definition is `Ws(tdp, p) = W(t, rh, p)`, and it is what CoolProp
+ * reports. It is NOT quite `dewPoint(vaporPressure(t, rh))`, which inverts the
+ * saturation curve alone: that form drops the enhancement factor, which does
+ * not cancel here because it would be evaluated at two different temperatures
+ * — the dry bulb on one side, the dew point on the other. Against the
+ * reference grid the difference is worth 2.285e-2 °C; solving the real
+ * definition brings it to 3.816e-4 °C.
+ *
+ * The old form is the seed: it is within 0.03 °C everywhere, so a ±1 °C
+ * bracket around it is guaranteed to hold the root and forty bisections land
+ * on machine precision. The full-range fallback exists for the ragged edge of
+ * the domain where the seed itself fails.
+ *
+ * @param {number} tc dry bulb °C
+ * @param {number} rh relative humidity %
+ * @param {number} [p] total pressure kPa — the standard atmosphere if omitted,
+ *   which is right for a bare "what is the dew point of 25 °C / 50 %" and
+ *   wrong for a hall at altitude. Pass the site pressure.
+ * @returns {number|null} null when the air holds no water at all
+ */
+export function dewPointFrom(tc, rh, p = P_STD) {
+  const W = humidityRatio(tc, rh, p);
+  if (!(W > 0)) return null;
+  const g = (t) => saturationHumidityRatio(t, p) - W;
 
-/** RH % implied by a dry-bulb / dew-point pair. */
-export const rhFromDewPoint = (tc, tdp) => rhFromVapor(tc, satPressure(tdp));
+  const seed = dewPoint(vaporPressure(tc, rh));
+  let lo, hi;
+  if (seed !== null && g(seed - 1) < 0 && g(seed + 1) > 0) {
+    lo = seed - 1;
+    hi = seed + 1;
+  } else {
+    lo = -150;
+    hi = tc;
+    if (!(g(lo) < 0 && g(hi) > -1e-15)) return seed; // outside the solvable range
+  }
+  for (let i = 0; i < 60 && hi - lo > 1e-12; i++) {
+    const mid = (lo + hi) / 2;
+    if (g(mid) > 0) hi = mid;
+    else lo = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/**
+ * RH % implied by a dry-bulb / dew-point pair — the exact inverse of
+ * `dewPointFrom`, and it has to be, or a dew point does not round-trip.
+ *
+ * Same reasoning as the forward direction: dew point means "saturated at this
+ * humidity ratio", so the air's W is `Ws(tdp, p)` and the RH follows from that
+ * at the dry bulb. `rhFromVapor(tc, satPressure(tdp))` — the old form — skips
+ * the enhancement factor and drifts from the forward solve by a few
+ * thousandths of a percent RH.
+ *
+ * @param {number} [p] total pressure kPa; the standard atmosphere if omitted
+ */
+export const rhFromDewPoint = (tc, tdp, p = P_STD) =>
+  rhFromW(tc, saturationHumidityRatio(tdp, p), p);
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Energy properties

@@ -29,7 +29,9 @@ const TRAINING_P = 101.325; // kPa — standard atmosphere, deliberately not the
 const trState = { scenarioId: SCENARIOS[0].id, seed: 42 };
 
 const trCheckSla = (tempF, rh) => {
-  const v = checkSLACore(TRAINING_SLA, tempF, rh);
+  // Explicitly sea level, like everything else in the drill — a challenge
+  // code has to score the same for a colleague in Denver.
+  const v = checkSLACore(TRAINING_SLA, tempF, rh, TRAINING_P);
   return { ok: v.ok, detail: v.detail };
 };
 
