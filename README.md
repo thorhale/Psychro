@@ -7,7 +7,10 @@ The physics core is validated point-by-point against
 [CoolProp](https://coolprop.org) (ASHRAE RP-1485 real-gas model) — worst-case
 humidity-ratio deviation across the whole operating envelope is 0.0013 %. See
 [`docs/coolprop-comparison.md`](docs/coolprop-comparison.md) for the full
-comparison and measured accuracy table, regenerated in CI on every push.
+comparison and measured accuracy table, regenerated in CI on every push, and
+[`docs/provenance.md`](docs/provenance.md) for which standard every single
+number rests on — including the three places this deliberately leaves ASHRAE
+Chapter 1's hand-calculation shortcuts, and what each is worth.
 
 ## Layout
 
