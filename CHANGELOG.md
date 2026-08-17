@@ -11,6 +11,20 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — the Target temperature slider stopped at the SLA's floor
+
+It was pinned to the active contract's band, so on the Recommended profile it
+bottomed out at 64.4 °F. That sounds protective and isn't: "how far out of
+contract does a chiller failure put me", "what does a free-cooling excursion to
+50 °F actually cost" are ordinary questions, and the operator could not even
+point at the answer.
+
+Both temperature sliders now run the full 32–130 °F range. The contract is
+still on screen three ways — the SLA card's summary line, the polygon drawn on
+the chart, and the verdict chip the moment you cross it. Saying you are outside
+the SLA is what this tool is for; refusing to let you look there as well was
+one mechanism too many.
+
 ### Changed — dew point solves its real definition, 60× more accurate
 
 A dew point is the temperature at which *this* air, held at constant humidity
