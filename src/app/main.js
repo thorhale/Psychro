@@ -264,17 +264,21 @@ function rhAtPoint(tc, hrG) {
 const clampF  = f => Math.max(32, Math.min(130, f));  // 32°F floor (chart anchored at freezing) · 130°F ceiling
 const clampRH = r => Math.max(1, Math.min(100, r));
 
-// Target temperature is bounded by the active SLA's allowed band, so you
-// can't drive the target outside the contractual envelope. Temperature, RH,
-// and dew point each move independently — dragging one never auto-adjusts
-// another. (Plant capability still governs the TIME a move would take, via
-// planMove() / the water-flag annotation — it just doesn’t lock the sliders.)
-function clampTargetF(f) {
-  const sla = state.slaProfiles[state.activeSla];
-  const lo = Math.max(32,  sla.tMinF ?? 32);
-  const hi = Math.min(130, sla.tMaxF ?? 130);
-  return Math.max(lo, Math.min(hi, f));
-}
+// The Target temperature runs the same physical range the Current one does.
+//
+// It used to be pinned to the active SLA's band, which sounds protective and
+// is not: it meant that on a Recommended-envelope profile the slider bottomed
+// out at 64.4 °F, and an operator asking a perfectly ordinary question — how
+// far out of contract does a chiller failure put me, what does a free-cooling
+// excursion to 50 °F actually cost — could not even point at the answer. This
+// tool exists to SAY you are outside the SLA, loudly, which it does on the
+// headline chip, the badge and the tab dot. Refusing to let you look there as
+// well is one mechanism too many.
+//
+// Temperature, RH and dew point still each move independently — dragging one
+// never auto-adjusts another — and plant capability still governs the TIME a
+// move would take via planMove().
+const clampTargetF = clampF;
 // Dew point ↔ RH at a fixed dry-bulb (bijective; DP is the moisture truth-teller:
 // constant DP = constant water, rising DP = adding water). dewPoint() is an
 // exact Newton inversion of the saturation curve and rh_from_dpF is the same
@@ -308,15 +312,12 @@ function setTempHoldingDp(key, newTempF) {
 // disrupted. Sliders always receive the CLAMPED value (thumb stays in range)
 // while input boxes show the true (possibly out-of-range) value.
 function syncAllControls(skipInput) {
-  // Target sliders are physically bounded to the active SLA's temp band so the
-  // thumb can't be dragged into a dead zone that snaps back. Current sliders use
-  // the full 32–160°F range.
-  const sla = state.slaProfiles[state.activeSla];
-  const bLo = Math.max(32, Math.round(clampF(sla.tMinF)));
-  const bHi = Math.min(130, Math.round(clampF(sla.tMaxF)));
-  const bt = inp('slider-b-temp');
-  if (bt) { bt.min = String(bLo); bt.max = String(Math.max(bLo, bHi)); }
-
+  // Both temperature sliders keep the full 32–130 °F range the markup declares.
+  // The Target one used to have its min/max rewritten to the active SLA's band
+  // on every render, which is what stopped it at 64.4 °F on a Recommended
+  // profile — see clampTargetF. Where the contract sits is still on screen
+  // three ways: the SLA card's summary line, the polygon drawn on the chart,
+  // and the verdict chip the moment you cross it.
   setControl('slider-a-temp', 'a-temp', 'slider-a-temp-val', state.aTemp, 'temp', skipInput);
   setControl('slider-a-rh',   'a-rh',   'slider-a-rh-val',   state.aRH,   'rh',   skipInput);
   setControl('slider-b-temp', 'b-temp', 'slider-b-temp-val', state.bTemp, 'temp', skipInput);

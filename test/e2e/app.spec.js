@@ -1460,6 +1460,28 @@ test.describe('phone layout', () => {
 test.describe('field usability', () => {
   test.use({ hasTouch: true });
 
+  test('the target can be driven outside the SLA, because that is the question', async ({ page }) => {
+    await page.goto('./');
+    await expandAll(page);
+    // Switch to the tightest shipped contract — Recommended, 64.4–80.6 °F.
+    // Its lower bound used to become the slider's floor, so an operator could
+    // not point at 50 °F to ask what a free-cooling excursion would cost.
+    await page.locator('.sla-tab').filter({ hasText: 'Recommended' }).click();
+    await expect(page.locator('#slider-b-temp')).toHaveAttribute('min', '32');
+    await expect(page.locator('#slider-b-temp')).toHaveAttribute('max', '130');
+
+    // 50 °F sticks — in the box, on the slider, and in state.
+    await page.fill('#b-temp', '50');
+    await page.dispatchEvent('#b-temp', 'input');
+    await page.locator('#b-temp').blur();
+    await expect(page.locator('#b-temp')).toHaveValue('50');
+    await expect(page.locator('#slider-b-temp')).toHaveValue('50');
+
+    // And the app says it is out of contract rather than silently preventing
+    // it — that is the whole job.
+    await expect(page.locator('.cr-slachip .badge-bad')).toContainText('T below');
+  });
+
   test('a clamped typed value snaps back on blur, with an explanation', async ({ page }) => {
     await page.goto('./');
     // 300% RH is impossible; the app computes with 100 while the box said 300
