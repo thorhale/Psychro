@@ -15,7 +15,9 @@ Chapter 1's hand-calculation shortcuts, and what each is worth.
 ## Layout
 
 ```
-index.html            app shell (markup + styles) — served raw by GitHub Pages
+index.html            launcher — static, no build step, the PWA start_url
+planner.html          planner shell (markup + styles) — served raw by GitHub Pages
+cdu/                  CDU flow calculator — independent single-file tool
 manifest.webmanifest  PWA assets, unhashed at the root so raw serving and the
 icon-*.png            service-worker precache list both resolve them
 sw.js                 offline cache; its key is stamped per build
@@ -51,7 +53,7 @@ npm run e2e            # 184 Playwright tests across all three artifacts
 `npm run e2e` deliberately tests shipped artifacts, never the dev server. It
 runs two Playwright projects against one static server rooted at the repo:
 `raw` (the repo root served without a build) and `built`
-(`dist/index.html`), plus `StreamHallPlanner.html` opened over `file://`. The
+(`dist/planner.html`), plus `StreamHallPlanner.html` opened over `file://`. The
 behaviour suite runs under both projects, so the artifacts cannot drift apart
 without failing. Use `npm run test:e2e` to build the artifacts first, or
 `npm run e2e` on its own if they are already current.
@@ -62,7 +64,7 @@ without failing. Use `npm run test:e2e` to build the artifacts first, or
 npm run build      # → dist/
 ```
 
-`dist/` keeps the original drop-anywhere story: `index.html` is a **single
+`dist/` keeps the original drop-anywhere story: `planner.html` is a **single
 self-contained file** (all JS/CSS inlined), alongside `sw.js`,
 `manifest.webmanifest`, and the icons. Host the folder on any static host.
 

@@ -24,7 +24,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-let html = readFileSync(join(root, 'dist', 'index.html'), 'utf8');
+let html = readFileSync(join(root, 'dist', 'planner.html'), 'utf8');
 // One copy of the icon exists, at the repo root, and it is the same file vite
 // emitted into dist/ — so this data URI is provably the built app's own image.
 const icon =

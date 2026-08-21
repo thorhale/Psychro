@@ -13,7 +13,7 @@
  * Nothing here may depend on the bundler: the one thing that legitimately
  * differs between the two is the version stamp, handled explicitly below.
  *
- * Navigation is `goto('./')`, never `goto('/')`. A leading slash is an absolute
+ * Navigation is `goto('./planner.html')`, never a leading slash. An absolute
  * path and DISCARDS the baseURL's directory, so `/` sends both projects to the
  * server root and the `built` project silently tests the raw app instead. That
  * happened; the version assertion below is what caught it.
@@ -42,7 +42,7 @@ async function expandAll(page) {
 test.describe('boot', () => {
   test('loads clean, self-test green, version stamped', async ({ page }, testInfo) => {
     const errors = watchForErrors(page);
-    await page.goto('./');
+    await page.goto('./planner.html');
 
     const badge = page.locator('#selftest-badge');
     await expect(badge).toContainText('passed');
@@ -65,7 +65,7 @@ test.describe('boot', () => {
   });
 
   test('the self-test panel opens and lists every case', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.locator('#selftest-badge').click();
     const rows = page.locator('#selftest-panel tbody tr');
     await expect(rows.first()).toBeVisible();
@@ -77,7 +77,7 @@ test.describe('boot', () => {
 
 test.describe('chart', () => {
   test('renders actual content, not a blank canvas', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     const ink = await page.evaluate(() => {
       const c = document.getElementById('psychCanvas');
       const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
@@ -89,7 +89,7 @@ test.describe('chart', () => {
   });
 
   test('legend toggles change what is drawn', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     const snapshot = () =>
       page.evaluate(() => document.getElementById('psychCanvas').toDataURL().length);
     const before = await snapshot();
@@ -104,7 +104,7 @@ test.describe('chart', () => {
   });
 
   test('a degenerate pinch cannot blank the chart', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.locator('#selftest-badge').filter({ hasText: 'passed' }).waitFor();
 
     // Count pixels that are NOT the background fill. Counting alpha, as the
@@ -180,7 +180,7 @@ test.describe('physics wiring', () => {
     { name: 'Denver site (Westminster, 5,380 ft)', elevFt: 5380 },
   ]) {
     test(`the table agrees with the core — ${scenario.name}`, async ({ page }) => {
-      await page.goto('./');
+      await page.goto('./planner.html');
       await expandAll(page);
 
       if (scenario.elevFt != null) {
@@ -231,7 +231,7 @@ test.describe('physics wiring', () => {
   }
 
   test('elevation drives pressure, and pressure moves humidity ratio', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     const readW = () =>
       page.evaluate(() =>
@@ -257,7 +257,7 @@ test.describe('physics wiring', () => {
 
 test.describe('validity domain guard', () => {
   test('warns outside the validated band and clears on return', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     const chip = page.locator('#domain-chip');
     await expect(chip).toBeHidden();
@@ -276,7 +276,7 @@ test.describe('validity domain guard', () => {
 
 test.describe('sensor validation', () => {
   test('computes RH from a dry-bulb / wet-bulb pair', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.fill('#sv-db', '75');
     await page.dispatchEvent('#sv-db', 'input');
@@ -302,7 +302,7 @@ test.describe('sensor validation', () => {
   });
 
   test('rejects a physically impossible pair', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.fill('#sv-db', '70');
     await page.dispatchEvent('#sv-db', 'input');
@@ -312,7 +312,7 @@ test.describe('sensor validation', () => {
   });
 
   test('grades a sensor reading against the true value', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.fill('#sv-db', '75');
     await page.dispatchEvent('#sv-db', 'input');
@@ -341,7 +341,7 @@ test.describe('share and playback', () => {
   });
 
   test('copy link produces a URL that parses back to the current state', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#share-link').click();
     await expect(page.locator('.ntf-toast')).toContainText('Link copied');
@@ -352,7 +352,7 @@ test.describe('share and playback', () => {
   });
 
   test('the QR dialog renders a real code', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#share-qr').click();
     const dialog = page.locator('.ntf-dialog');
@@ -368,7 +368,7 @@ test.describe('share and playback', () => {
   });
 
   test('the briefing narrates the same numbers the app shows', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#copy-briefing').click();
     await expect(page.locator('.ntf-toast')).toContainText('Briefing copied');
@@ -382,7 +382,7 @@ test.describe('share and playback', () => {
   });
 
   test('scrubbing the playback moves the marker and the readout', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     const snapshot = () =>
       page.evaluate(() => document.getElementById('psychCanvas').toDataURL().length);
     const before = await snapshot();
@@ -396,7 +396,7 @@ test.describe('share and playback', () => {
 
 test.describe('sensor validation suite', () => {
   test('salt-chamber method grades a sensor against Greenspan NaCl', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#sv-tab-salt').click();
     await page.locator('#sv-salt-sel').selectOption('nacl');
@@ -422,7 +422,7 @@ test.describe('sensor validation suite', () => {
   });
 
   test('boiling-point reference is altitude-corrected, not 212°F', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#sv-tab-boil').click();
     // Default site (1,066 ft → 97.48 kPa): pure water boils near 210.9 °F,
@@ -435,7 +435,7 @@ test.describe('sensor validation suite', () => {
   });
 
   test('ice-point method grades a temperature sensor', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#sv-tab-ice').click();
     await page.fill('#sv-ice-t', '32.4'); // +0.4 °F → inside the 0.9 − 0.1 guard band
@@ -449,7 +449,7 @@ test.describe('sensor validation suite', () => {
 
 test.describe('operator companion', () => {
   test('a logged check lands in the drift logbook and survives reload', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#sv-tab-salt').click();
     await page.locator('#sv-salt-sel').selectOption('nacl');
@@ -469,7 +469,7 @@ test.describe('operator companion', () => {
   });
 
   test('a BMS trend CSV imports, reports honestly, and overlays the chart', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     const snapshot = () =>
       page.evaluate(() => document.getElementById('psychCanvas').toDataURL().length);
@@ -501,7 +501,7 @@ test.describe('operator companion', () => {
   });
 
   test('sentinel dropouts are skipped, and the unit override re-reads the file', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // A °C hall trend with two −9999 comms dropouts and NO unit in the header:
     // the sentinels must not reach the unit heuristic, which should read ~22 °C.
@@ -526,7 +526,7 @@ test.describe('operator companion', () => {
   });
 
   test('a ramp faster than the SLA limit is called out', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // 0.4 °F/min = 24 °F/hr sustained over 30 minutes — past the Base SLA's 18.
     const rows = Array.from({ length: 31 }, (_, i) => {
@@ -542,7 +542,7 @@ test.describe('operator companion', () => {
   });
 
   test('the door placard downloads as a PDF named for its hall and SLA', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     const downloadPromise = page.waitForEvent('download');
     await page.locator('#export-placard').click();
@@ -560,7 +560,7 @@ test.describe('injection safety', () => {
   const PAYLOAD = '<img src=x onerror="window.__pwned=1">';
 
   test('a hostile hall/SLA name in a save file renders as text', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     const save = JSON.stringify({
       app: 'SDC Hall Environment Planner', kind: 'saveFile', version: 1,
@@ -579,7 +579,7 @@ test.describe('injection safety', () => {
   });
 
   test('a hostile CSV header cannot inject through the import error', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.setInputFiles('#trend-file', {
       name: 'evil.csv', mimeType: 'text/csv',
@@ -593,7 +593,7 @@ test.describe('injection safety', () => {
   });
 
   test('a hostile sensor label stays text in the logbook', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#sv-tab-ice').click();
     await page.fill('#sv-ice-t', '32.2');
@@ -607,7 +607,7 @@ test.describe('injection safety', () => {
 
 test.describe('sensor registry and recall', () => {
   test('a registered spec re-grades the live verdict against the sensor itself', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#sv-tab-salt').click();
     await page.locator('#sv-salt-sel').selectOption('nacl');
@@ -635,7 +635,7 @@ test.describe('sensor registry and recall', () => {
   });
 
   test('temperature and humidity histories are both visible at once', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // One RH check…
     await page.locator('#sv-tab-salt').click();
@@ -656,7 +656,7 @@ test.describe('sensor registry and recall', () => {
   });
 
   test('the logbook exports as a named CSV', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#sv-tab-ice').click();
     await page.fill('#sv-ice-t', '32.2');
@@ -671,7 +671,7 @@ test.describe('sensor registry and recall', () => {
   });
 
   test('a measured barometer beats the elevation estimate, and clears back', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await expect(page.locator('#pressure-readout')).toContainText('standard atmosphere');
     await page.fill('#hall-baro', '100');
@@ -686,7 +686,7 @@ test.describe('sensor registry and recall', () => {
 
 test.describe('round-2 seam fixes', () => {
   test('an imported trail survives an unrelated edit to the hall card', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     const csv = 'Timestamp,Temp (°F),RH (%)\n' +
       Array.from({ length: 8 }, (_, i) =>
@@ -703,7 +703,7 @@ test.describe('round-2 seam fixes', () => {
   });
 
   test('switching halls drops the previous hall\'s measured trail', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     const csv = 'Timestamp,Temp (°F),RH (%)\n' +
       Array.from({ length: 6 }, (_, i) =>
@@ -718,7 +718,7 @@ test.describe('round-2 seam fixes', () => {
   });
 
   test('the logbook grades rows with the same guard band as the live verdict', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#sv-tab-salt').click();
     await page.fill('#sv-salt-t', '77');
@@ -736,7 +736,7 @@ test.describe('round-2 seam fixes', () => {
 
 test.describe('accessibility and onboarding', () => {
   test('the sensor verdict announces itself to assistive tech', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     const res = page.locator('#sv-res');
     await expect(res).toHaveAttribute('role', 'status');
@@ -744,7 +744,7 @@ test.describe('accessibility and onboarding', () => {
   });
 
   test('every visible field label points at its input', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     const orphans = await page.evaluate(() =>
       [...document.querySelectorAll('label')]
@@ -755,7 +755,7 @@ test.describe('accessibility and onboarding', () => {
   });
 
   test('the chart is operable from the keyboard', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     const snapshot = () =>
       page.evaluate(() => document.getElementById('psychCanvas').toDataURL().length);
     await page.locator('#psychCanvas').focus();
@@ -773,7 +773,7 @@ test.describe('accessibility and onboarding', () => {
   });
 
   test('a first-time operator gets a start-here guide and a glossary', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.locator('#start-here > summary').click();
     await expect(page.locator('#start-here')).toContainText('Describe your hall');
     // The glossary is nested inside the guide: one card at the top of the app,
@@ -786,7 +786,7 @@ test.describe('accessibility and onboarding', () => {
   });
 
   test('the guide can be dismissed for good, and brought back', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expect(page.locator('#start-here')).toBeVisible();
     await page.locator('#start-here > summary').click();
     await page.locator('#onboard-dismiss').click();
@@ -808,7 +808,7 @@ test.describe('accessibility and onboarding', () => {
   test('the docs the app cites are actually published', async ({ page }) => {
     // Four places on screen cite docs/*.md; only dist/ is deployed, so these
     // were 404s on the live site and in both native shells.
-    await page.goto('./');
+    await page.goto('./planner.html');
     for (const doc of ['sensor-validation.md', 'coolprop-comparison.md', 'OPERATOR-GUIDE.md']) {
       const status = await page.evaluate(
         async (d) => (await fetch(new URL(`./docs/${d}`, location.href))).status,
@@ -821,7 +821,7 @@ test.describe('accessibility and onboarding', () => {
 
 test.describe('multiple halls', () => {
   test('each hall keeps its own working conditions', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // Hall 1 is working a warm move.
     await page.fill('#a-temp', '75');
@@ -846,7 +846,7 @@ test.describe('multiple halls', () => {
   });
 
   test('the all-halls overview grades every hall and switches on tap', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.fill('#a-temp', '70');
     await page.dispatchEvent('#a-temp', 'input');
@@ -870,7 +870,7 @@ test.describe('multiple halls', () => {
   });
 
   test('the overview shows the halls the tabs show, and says so', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // Two buildings, so the filter has something to do.
     await page.fill('#hall-building', 'A7');
@@ -893,7 +893,7 @@ test.describe('multiple halls', () => {
   });
 
   test('facts every hall shares are stated once, not once per row', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#hall-add').click();
     await expandAll(page);
@@ -913,7 +913,7 @@ test.describe('multiple halls', () => {
   });
 
   test('the overview shows which halls have plant to look at', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#hall-add').click(); // Hall 2 is the one with trouble
     await expandAll(page); // adding a hall rebuilds the editor, closing its panes
@@ -939,7 +939,7 @@ test.describe('multiple halls', () => {
   });
 
   test("each hall's media is graded with its own air, not the open hall's", async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // Hall 1: dry and at sea level, so its media can absorb a lot.
     await page.fill('#hall-elev', '0');
@@ -974,7 +974,7 @@ test.describe('multiple halls', () => {
   });
 
   test('a new hall lands at the site you added it from, not at sea level', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // The default hall is Goodyear, AZ at 1,066 ft — 97.5 kPa, not 101.3.
     await expect(page.locator('#pressure-readout')).toContainText('97.5 kPa');
@@ -995,7 +995,7 @@ test.describe('multiple halls', () => {
   });
 
   test('All halls is a list of buildings you open, not a flat list of halls', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.fill('#hall-building', 'A7');
     await page.dispatchEvent('#hall-building', 'input');
@@ -1034,7 +1034,7 @@ test.describe('multiple halls', () => {
   });
 
   test('a hall tab names only what tells it apart', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     const tabs = page.locator('#hall-tabs button');
 
@@ -1058,7 +1058,7 @@ test.describe('multiple halls', () => {
   });
 
   test('every hall tab carries its own verdict', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#hall-add').click();
     await expandAll(page);
@@ -1084,7 +1084,7 @@ test.describe('multiple halls', () => {
   });
 
   test('one building is a list of halls — no disclosure to press', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#hall-add').click();
     await expandAll(page);
@@ -1095,7 +1095,7 @@ test.describe('multiple halls', () => {
   });
 
   test('a campus code in the building list is labelled as one', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.fill('#hall-building', 'A2');
     await page.dispatchEvent('#hall-building', 'input');
@@ -1114,7 +1114,7 @@ test.describe('multiple halls', () => {
 
 test.describe('equipment inventory', () => {
   test('units are counted individually and totalled against nameplate', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('.eq-add[data-kind="cool"]').click();
     const row = page.locator('.eq-row').first();
@@ -1131,7 +1131,7 @@ test.describe('equipment inventory', () => {
   });
 
   test('one unit offline and one degraded change the total, and say so', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // Two separate humidifier line items: one healthy, one scaled.
     await page.locator('.eq-add[data-kind="humid"]:not([data-evap])').click();
@@ -1156,7 +1156,7 @@ test.describe('equipment inventory', () => {
   });
 
   test('a wetted-media humidifier is computed from the hall condition', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('.eq-add[data-evap="1"]').click();
     const row = page.locator('.eq-row').first();
@@ -1175,7 +1175,7 @@ test.describe('equipment inventory', () => {
   });
 
   test('the inventory can drive the hall rates', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('.eq-add[data-kind="dehum"]').click();
     const row = page.locator('.eq-row').first();
@@ -1188,7 +1188,7 @@ test.describe('equipment inventory', () => {
   });
 
   test('a live rate follows the plant instead of going stale', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('.eq-add[data-kind="humid"]:not([data-evap])').click();
     const row = page.locator('.eq-row').first();
@@ -1213,7 +1213,7 @@ test.describe('equipment inventory', () => {
   });
 
   test('taking the rates back by hand restores what was typed before', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // A commissioning-observed rate, typed by a person.
     await page.locator('#cap-hum').check();
@@ -1238,7 +1238,7 @@ test.describe('equipment inventory', () => {
   });
 
   test('live rates survive a reload and stay attached to their hall', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('.eq-add[data-kind="dehum"]').click();
     const row = page.locator('.eq-row').first();
@@ -1255,7 +1255,7 @@ test.describe('equipment inventory', () => {
   });
 
   test('fans are counted and derated like any other machine', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('.eq-add[data-kind="air"]').click();
     const row = page.locator('.eq-row').first();
@@ -1276,7 +1276,7 @@ test.describe('equipment inventory', () => {
   });
 
   test('losing the biggest running machine is answered, not guessed', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // Three 30-ton CRAHs plus one 50-ton AHU.
     await page.locator('.eq-add[data-kind="cool"]').click();
@@ -1310,7 +1310,7 @@ test.describe('equipment inventory', () => {
   });
 
   test('a single machine is called a single point of failure', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('.eq-add[data-kind="humid"]:not([data-evap])').click();
     const row = page.locator('.eq-row').first();
@@ -1327,7 +1327,7 @@ test.describe('equipment inventory', () => {
   });
 
   test("a day's fiddling with a condition is one reading, not a trend", async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('.eq-add[data-kind="humid"]:not([data-evap])').click();
     const cond = () => page.locator('.eq-row').first().locator('[data-k="condPct"]');
@@ -1355,7 +1355,7 @@ test.describe('equipment inventory', () => {
   });
 
   test('the inventory belongs to its hall', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('.eq-add[data-kind="cool"]').click();
     await expect(page.locator('.eq-row')).toHaveCount(1);
@@ -1368,7 +1368,7 @@ test.describe('equipment inventory', () => {
 
 test.describe('evaporative humidifier capacity', () => {
   test('computes output from airflow and effectiveness, and warns what is missing', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#hc-type').selectOption('evap');
     await expect(page.locator('#hc-res')).toContainText('airflow across the media');
@@ -1387,7 +1387,7 @@ test.describe('evaporative humidifier capacity', () => {
   });
 
   test('fouled media shows up as lost capacity', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#hc-type').selectOption('evap');
     await page.fill('#hc-cfm', '10000');
@@ -1415,7 +1415,7 @@ test.describe('evaporative humidifier capacity', () => {
   });
 
   test('applying the computed rate fills the hall\'s humidify capacity', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#hc-type').selectOption('evap');
     await page.fill('#hc-cfm', '10000');
@@ -1432,7 +1432,7 @@ test.describe('phone layout', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
   test('opening a section leaves the header you tapped where it was', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.locator('#selftest-badge').filter({ hasText: 'passed' }).waitFor();
     // Data Hall is the worst of them: it is tall, and the phone stack re-orders
     // the cards above it, so opening it used to fling its own header 2,300 px
@@ -1461,7 +1461,7 @@ test.describe('field usability', () => {
   test.use({ hasTouch: true });
 
   test('the target can be driven outside the SLA, because that is the question', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // Switch to the tightest shipped contract — Recommended, 64.4–80.6 °F.
     // Its lower bound used to become the slider's floor, so an operator could
@@ -1483,7 +1483,7 @@ test.describe('field usability', () => {
   });
 
   test('a clamped typed value snaps back on blur, with an explanation', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     // 300% RH is impossible; the app computes with 100 while the box said 300
     // until blur — which now reconciles the box and says why.
     await page.fill('#a-rh', '300');
@@ -1494,7 +1494,7 @@ test.describe('field usability', () => {
   });
 
   test('deleting an SLA profile asks first, and cancel keeps it', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#sla-add').click(); // Base SLA is locked; make a deletable one
     const tabs = () => page.locator('.sla-tab').count();
@@ -1511,7 +1511,7 @@ test.describe('field usability', () => {
   });
 
   test('a tap pins the chart inspector on a touch screen', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     const canvas = page.locator('#psychCanvas');
     const box = await canvas.boundingBox();
     const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
@@ -1528,7 +1528,7 @@ test.describe('training mode', () => {
   test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
 
   test('a committed recovery gets refereed and scored', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#tr-scenario').selectOption('stuck-humidifier');
     await page.fill('#tr-temp', '72');
@@ -1541,7 +1541,7 @@ test.describe('training mode', () => {
   });
 
   test('hesitating against the stuck humidifier breaches the dew-point cap', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#tr-scenario').selectOption('stuck-humidifier');
     await page.locator('#tr-idle').click();
@@ -1551,7 +1551,7 @@ test.describe('training mode', () => {
   });
 
   test('a challenge code round-trips: copy, open, same scenario and seed', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#tr-scenario').selectOption('cold-snap');
     await page.fill('#tr-seed', '777');
@@ -1584,7 +1584,7 @@ test.describe('training mode', () => {
 test.describe('feature-detected extras', () => {
   test('the NFC button stays hidden where Web NFC does not exist', async ({ page }) => {
     // Desktop Chromium has no NDEFReader — the button must not tease.
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     expect(await page.evaluate(() => 'NDEFReader' in window)).toBe(false);
     await expect(page.locator('#share-nfc')).toBeHidden();
@@ -1597,7 +1597,7 @@ test.describe('feature-detected extras', () => {
       window.__spoken = [];
       window.speechSynthesis.speak = (u) => window.__spoken.push(u.text);
     });
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.locator('#sv-ladder').click();
     await expect(page.locator('#sv-ladder')).toHaveAttribute('aria-pressed', 'true');
@@ -1620,7 +1620,7 @@ test.describe('feature-detected extras', () => {
 
 test.describe('persistence', () => {
   test('a saved scenario survives a reload', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.fill('#scn-name', 'E2E scenario');
     await page.locator('#scn-save').click();
@@ -1632,7 +1632,7 @@ test.describe('persistence', () => {
   });
 
   test('a hall edit survives a reload', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.fill('#hall-name', 'Reload Test Hall');
     await page.dispatchEvent('#hall-name', 'input');
@@ -1646,7 +1646,7 @@ test.describe('persistence', () => {
 
 test.describe('save-file import', () => {
   test('malformed JSON toasts an error and leaves state intact', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     const hallsBefore = await page.evaluate(
       () => document.querySelectorAll('#hall-tabs .sla-tab').length,
@@ -1666,7 +1666,7 @@ test.describe('save-file import', () => {
   });
 
   test('a valid save file merges and reports counts', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     const payload = {
       app: 'SDC Hall Environment Planner',
@@ -1691,7 +1691,7 @@ test.describe('save-file import', () => {
 
 test.describe('units', () => {
   test('switching to °C converts displayed temperatures', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expect(page.locator('#a-temp')).toHaveValue('68');
     await page.locator('#unit-toggle .unit-btn[data-unit="C"]').click();
     await expect(page.locator('#a-temp')).toHaveValue('20'); // 68 °F = 20 °C
@@ -1711,7 +1711,7 @@ test.describe('units', () => {
   });
 
   test('the SLA editor edits the contract in the active display unit', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // Create an editable profile (Base SLA is locked), then flip to °C.
     await page.locator('#sla-add').click();
@@ -1726,7 +1726,7 @@ test.describe('units', () => {
   });
 
   test('a plant rate is typed in the unit on screen, not always °F/hr', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     await page.fill('#rate-cool', '9');
     await page.dispatchEvent('#rate-cool', 'input');
@@ -1747,7 +1747,7 @@ test.describe('units', () => {
   });
 
   test('the ASHRAE class is decided in °C, whatever unit is on screen', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expandAll(page);
     // 22 °C / 45 % sits inside the recommended envelope. The standard is
     // written in °C and the classification runs there; flipping the display
@@ -1770,7 +1770,7 @@ test.describe('download link', () => {
     // DEPLOYED site is dist/, and this exact link 404'd in production while
     // every test was green, because nothing ever fetched the href under the
     // built artifact. Running under both projects closes that hole for good.
-    const href = await page.goto('./').then(() => page.locator('#app-download').getAttribute('href'));
+    const href = await page.goto('./planner.html').then(() => page.locator('#app-download').getAttribute('href'));
     expect(href, 'the download anchor names a file').toBeTruthy();
     const res = await page.evaluate(async (u) => {
       const r = await fetch(new URL(u, location.href), { method: 'GET' });
@@ -1789,7 +1789,7 @@ test.describe('privacy', () => {
     // store-console URL. The footer button opens it as a dialog — inline text,
     // no fetch — so this holds in every artifact including file:// and the
     // native shells.
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.locator('#privacy-link').click();
     const dialog = page.locator('.ntf-dialog');
     await expect(dialog).toBeVisible();
@@ -1802,7 +1802,7 @@ test.describe('offline', () => {
   test('the app still boots with the network cut', async ({ page, context }, testInfo) => {
     // Proves the service worker cached everything the app references — the
     // exact guarantee the manifest-hashing bug silently broke.
-    await page.goto('./');
+    await page.goto('./planner.html');
     await expect(page.locator('#selftest-badge')).toContainText('passed');
     await page.evaluate(() => navigator.serviceWorker.ready);
 

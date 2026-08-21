@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- Security hardening: the app is fully self-contained (no CDNs, fonts,
+     analytics, or API calls). This CSP blocks any request to an external
+     host, so injected or tampered code can't load resources or exfiltrate.
+     'unsafe-inline' is required because all script/style is inline by design
+     (single-file offline app). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; manifest-src 'self'; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<!-- Keep the tool out of search engines — public URL, but unlisted. -->
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1a3a5c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Psychro">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Stream Hall Environment Planner</title>
+<style>
+  :root {
+    /* Brand palette. These literals are the no-JavaScript fallback; the real
+       values are SAMPLED from the logo artwork by scripts/sample-brand-colors.mjs
+       into src/config/brand.js, and applyBrand() overrides them at boot. Swapping
+       the branding means new artwork + `npm run brand:sample -- --write`, not
+       editing hex codes here. */
+    --bg:#0d1b2a; --surface:#13263a; --border:#1f3a52;
+    --accent:#10a8c6; --accent2:#10a8c6; --danger:#f85149;
+    --ok:#3fb950; --warn:#f0a500; --text:#e6edf3; --muted:#7d96ad;
+    --stream-navy:#193c76; --stream-teal:#10a8c6;
+    --brand-primary:#193c76; --brand-primary-dark:#11284e; --brand-primary-light:#4c6794;
+    --brand-accent:#10a8c6; --brand-accent-dark:#0b758b;
+    /* Tints of the accent, so a brand swap carries every hover and highlight
+       with it. These replaced nine uses of a hardcoded #3b9eff — a blue in no
+       brand file, which meant hovering a button changed its hue, not just its
+       value. color-mix keeps them derived rather than re-picked. */
+    --tint-accent: color-mix(in srgb, var(--brand-accent) 10%, transparent);
+    --tint-accent-strong: color-mix(in srgb, var(--brand-accent) 16%, transparent);
+    --tint-accent-line: color-mix(in srgb, var(--brand-accent) 32%, transparent);
+    --mono:'Courier New',monospace; --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  :focus-visible { outline:2px solid var(--accent, #00a9ce); outline-offset:2px; }
+  body { background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh; padding:20px 16px 40px; }
+  h1 { font-size:1rem; font-weight:700; color:var(--accent); letter-spacing:.08em; text-transform:uppercase; margin-bottom:3px; }
+  .subtitle { color:var(--muted); font-size:.75rem; margin-bottom:18px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:12px; }
+  .card-title { font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:12px; }
+
+  /* Elevation bar */
+  .elev-bar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .elev-input-grp { display:flex; align-items:center; gap:8px; }
+  .elev-input-grp label { font-size:.72rem; color:var(--muted); }
+  .elev-input-grp input { background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--text); font-family:var(--mono); font-size:.85rem; padding:4px 8px; width:90px; outline:none; -moz-appearance:textfield; }
+  .elev-input-grp input:focus { border-color:var(--accent); }
+  .elev-presets { display:flex; gap:4px; flex-wrap:wrap; }
+  .preset-btn { padding:3px 10px; border-radius:4px; border:1px solid var(--border); background:transparent; color:var(--muted); font-size:.68rem; cursor:pointer; font-family:var(--sans); transition:all .12s; }
+  .preset-btn:hover { border-color:var(--accent2); color:var(--accent2); }
+  .preset-btn.active { background:var(--accent2); color:#000; border-color:var(--accent2); }
+  .pressure-readout { font-family:var(--mono); font-size:.8rem; color:var(--accent); }
+  .pressure-readout .sub { color:var(--muted); font-size:.68rem; }
+
+  /* Conditions header with elevation chip */
+  .conditions-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+  /* ── Unified control rows (slider + inline value) ── */
+  .ctl-group { margin-top:14px; padding-top:12px; border-top:1px solid var(--border); }
+  .ctl-group.ctl-a { margin-top:6px; padding-top:0; border-top:none; }
+  .ctl-head { display:flex; align-items:center; gap:8px; margin-bottom:2px; }
+  .ctl-dot { width:9px; height:9px; border-radius:50%; flex:none; }
+  .ctl-name { font-size:.84rem; font-weight:700; color:var(--text); }
+  .ctl-sub { font-size:.68rem; color:var(--muted); }
+  .ctl-row { display:grid; grid-template-columns:40px 1fr 64px 22px; align-items:center; gap:10px; min-height:46px; }
+  .ctl-k { font-size:.74rem; color:var(--muted); }
+  .ctl-row input[type=range] { width:100%; accent-color:var(--accent); cursor:pointer; min-width:0; height:30px; }
+  .ctl-a .ctl-row input[type=range] { accent-color:#d4d400; }
+  .ctl-num { background:var(--bg); border:1px solid var(--border); border-radius:10px; color:var(--accent); font-family:var(--mono); font-size:.92rem; font-weight:700; padding:8px 6px; width:100%; text-align:center; outline:none; -moz-appearance:textfield; }
+  .ctl-a .ctl-num { color:#d4d400; }
+  .ctl-num::-webkit-inner-spin-button { -webkit-appearance:none; }
+  .ctl-num:focus { border-color:var(--stream-teal); }
+  .ctl-unit { font-size:.72rem; color:var(--muted); }
+  .ctl-flag { font-size:.66rem; font-family:var(--mono); font-weight:700; margin-left:auto; padding:2px 7px; border-radius:6px; }
+  .ctl-flag.wf-add { color:#7fd8ea; background:var(--tint-accent-strong); }
+  .ctl-flag.wf-rem { color:#ffd28a; background:rgba(240,165,0,.14); }
+  /* ── Collapsible sections ── */
+  details.sect { padding:0; }
+  details.sect > summary { list-style:none; display:flex; align-items:center; gap:10px; padding:15px 16px; cursor:pointer; min-height:50px; -webkit-tap-highlight-color:transparent; }
+  details.sect > summary::-webkit-details-marker { display:none; }
+  .sect-title { font-size:.76rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text); flex:none; }
+  .sect-sub { font-size:.72rem; color:var(--brand-accent); flex:1; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sect-chev { color:var(--muted); transition:transform .18s ease; flex:none; font-size:.85rem; }
+  details.sect[open] > summary .sect-chev { transform:rotate(90deg); }
+  details.sect[open] > summary { border-bottom:1px solid var(--border); }
+  .sect-body { padding:14px 16px 16px; }
+  .site-chip { position:relative; }
+  .chip-btn { display:flex; align-items:center; gap:6px; padding:5px 10px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--muted); font-size:.72rem; font-family:var(--sans); cursor:pointer; transition:all .12s; }
+  .chip-btn:hover { border-color:var(--accent2); color:var(--text); }
+  .chip-panel { display:none; position:absolute; right:0; top:calc(100% + 6px); z-index:20; width:300px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,.5); flex-direction:column; gap:10px; }
+  .chip-panel.open { display:flex; }
+  .chip-panel .elev-presets { display:flex; gap:4px; flex-wrap:wrap; }
+  .chip-elev-row { display:flex; align-items:center; gap:8px; }
+  .chip-elev-row label { font-size:.72rem; color:var(--muted); }
+  .chip-elev-row input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:5px; color:var(--text); font-family:var(--mono); font-size:.85rem; padding:6px 8px; outline:none; }
+  .chip-elev-row input:focus { border-color:var(--accent); }
+  .chip-unit { font-size:.72rem; color:var(--muted); }
+  .chip-note { font-size:.62rem; color:var(--muted); line-height:1.45; }
+
+  /* Merged readout — big headline (temp + RH for both points) + collapsible details */
+  .control-readout { margin:16px 0 4px; padding:16px 18px; border-radius:8px; background:var(--bg); border:1px solid var(--border); border-left:3px solid var(--accent); }
+  .cr-lede { color:var(--muted); font-size:.74rem; text-transform:uppercase; letter-spacing:.06em; margin-bottom:10px; }
+  .cr-headline-pair { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .cr-point { display:flex; flex-direction:column; gap:2px; }
+  .cr-ptlabel { font-size:.6rem; font-weight:700; letter-spacing:.08em; }
+  .cr-point .cr-big { font-family:var(--mono); font-size:1.7rem; font-weight:800; line-height:1.05; display:inline; }
+  .cr-point .cr-sep { font-family:var(--mono); font-size:1.3rem; color:var(--muted); margin:0 5px; }
+  .cr-arrow { font-size:1.5rem; color:var(--muted); }
+  .cr-note { color:var(--muted); font-size:.8rem; margin-top:10px; }
+  .cr-rise { color:var(--danger); } .cr-drop { color:var(--ok); } .cr-flat { color:var(--text); }
+
+  /* Temp-unit toggle (°F / °C / K) */
+  .unit-toggle { display:inline-flex; gap:2px; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:2px; }
+  .unit-btn { padding:3px 9px; border-radius:4px; border:none; background:transparent; color:var(--muted); font-size:.72rem; font-weight:700; font-family:var(--mono); cursor:pointer; transition:all .12s; }
+  .unit-btn.active { background:var(--accent); color:#000; }
+  .unit-btn:hover:not(.active) { color:var(--text); }
+
+  /* Ramp-rate advisory */
+  .ramp-advisory { margin-top:14px; padding:12px 14px; border-radius:7px; background:var(--surface); border:1px solid var(--border); }
+  .ramp-row { display:flex; justify-content:space-between; align-items:baseline; font-size:.82rem; font-family:var(--mono); padding:2px 0; }
+  .ramp-k { color:var(--muted); }
+  .ramp-v { color:var(--text); font-weight:600; }
+  .ramp-reco .ramp-v { font-size:1rem; color:var(--accent); }
+  .ramp-reco.ramp-warn .ramp-v { color:var(--warn); }
+  .ramp-bind { font-size:.66rem; color:var(--muted); font-weight:400; }
+  .load-advisory { border-left:3px solid var(--accent); }
+  .load-big { font-size:1rem; color:var(--accent); }
+  .ramp-foot { margin-top:8px; padding-top:8px; border-top:1px solid var(--border); font-size:.72rem; font-family:var(--sans); line-height:1.4; }
+  .cap-note { margin-top:12px; padding:10px 12px; border-radius:6px; background:var(--tint-accent); border-left:3px solid var(--stream-teal); font-size:.76rem; color:#cfe0ee; line-height:1.5; }
+  .cap-note strong { color:#fff; }
+  .why-note { margin-top:12px; padding:11px 13px; border-radius:6px; font-size:.78rem; line-height:1.5; font-weight:500; }
+  .why-note.why-wet  { background:var(--tint-accent-strong); border-left:3px solid #4aa3ff; color:#cfe4ff; }
+  .why-note.why-dry  { background:rgba(240,165,0,.12);  border-left:3px solid #f0a500; color:#ffe6b0; }
+  .why-note.why-hot  { background:rgba(248,81,73,.12);   border-left:3px solid #f85149; color:#ffc9c5; }
+  .why-note.why-cold { background:var(--tint-accent-strong); border-left:3px solid #4aa3ff; color:#cfe4ff; }
+  .ramp-ok { color:var(--ok); }
+  .ramp-bad { color:var(--warn); }
+
+  .detail-grid { display:none; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+  .detail-grid.open { display:grid; }
+  .detail-col { display:flex; flex-direction:column; gap:4px; }
+  .detail-title { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; font-weight:700; margin-bottom:4px; }
+  .result-row { display:flex; justify-content:space-between; font-size:.8rem; font-family:var(--mono); }
+  .result-row .rk { color:var(--muted); }
+  .result-row .rv { color:var(--text); }
+  .results-toggle { display:block; margin:14px auto 0; padding:6px 16px; border-radius:6px; border:1px solid var(--border); background:transparent; color:var(--muted); font-size:.72rem; font-weight:600; font-family:var(--sans); cursor:pointer; transition:all .12s; }
+  .results-toggle:hover { border-color:var(--accent2); color:var(--accent2); }
+  @media (max-width:480px){ .detail-grid { grid-template-columns:1fr; } .cr-point .cr-big { font-size:1.4rem; } }
+
+  /* Footer / self-test badge */
+  .footer-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:4px 2px 0; margin-bottom:6px; }
+  .selftest-badge { display:inline-flex; align-items:center; padding:5px 12px; border-radius:6px; font-size:.7rem; font-weight:700; font-family:var(--mono); cursor:pointer; user-select:none; transition:filter .12s; }
+  .selftest-badge:hover { filter:brightness(1.25); }
+  .selftest-badge.st-ok { background:rgba(63,185,80,.1); border:1px solid rgba(63,185,80,.35); color:var(--ok); }
+  .selftest-badge.st-fail { background:rgba(248,81,73,.1); border:1px solid rgba(248,81,73,.35); color:var(--danger); }
+  .footer-note { font-size:.63rem; color:var(--muted); }
+  .selftest-panel { display:none; margin-bottom:14px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 14px; }
+  .selftest-panel.open { display:block; }
+  .st-table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:.68rem; }
+  .st-table th { text-align:right; color:var(--muted); font-size:.6rem; text-transform:uppercase; letter-spacing:.05em; padding:4px 8px; border-bottom:1px solid var(--border); }
+  .st-table th:first-child { text-align:left; }
+  .st-table td { text-align:right; padding:4px 8px; border-bottom:1px solid #1c2128; }
+  .st-table td:first-child { text-align:left; color:var(--text); }
+  .st-row-ok td:last-child { color:var(--ok); } .st-row-ok td { color:var(--muted); }
+  .st-row-fail td { color:var(--danger); font-weight:700; }
+  .st-foot { font-size:.62rem; color:var(--muted); margin-top:10px; line-height:1.5; }
+  .unit { font-size:.7rem; color:var(--muted); }
+
+
+  /* SLA card */
+  .sla-tabs-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .sla-tabs { display:flex; gap:4px; flex-wrap:wrap; }
+  .sla-tab { padding:5px 12px; border-radius:5px 5px 0 0; border:1px solid var(--border); border-bottom:none; background:transparent; color:var(--muted); font-size:.72rem; font-weight:600; cursor:pointer; font-family:var(--sans); transition:all .12s; }
+  .sla-tab.active { background:rgba(255,255,255,.08); color:var(--text); border-color:rgba(255,255,255,.4); }
+  .sla-tab.locked::after { content:' 🔒'; font-size:.6rem; }
+  /* A status dot on every hall tab. The strip you already use to move between
+     halls is the cheapest possible place to see which one is out of spec —
+     no card to open, no list to read. Sized to stay legible next to 12px
+     type without becoming the loudest thing in the row. */
+  .tab-dot { display:inline-block; width:7px; height:7px; border-radius:50%;
+    margin-right:6px; vertical-align:1px; background:var(--muted); }
+  .tab-dot.td-ok { background:var(--ok); }
+  .tab-dot.td-bad { background:var(--danger); box-shadow:0 0 0 2px color-mix(in srgb, var(--danger) 25%, transparent); }
+  /* A hall nobody has set up yet is context, not a finding. */
+  .tab-dot.td-idle { background:transparent; border:1px solid var(--border); }
+  /* ── One button ────────────────────────────────────────────────────────
+     There were four systems here — .scn-btn, .sla-tab-btn, .sla-tab-add and
+     .calc-apply — with three border radii, three font sizes and three
+     paddings between them, so one row of related actions rendered in five
+     visual weights. They now share a shape and differ only in EMPHASIS:
+     primary is filled, danger is red, everything else is quiet. */
+  .scn-btn, .sla-tab-btn, .sla-tab-add, .calc-apply {
+    padding:7px 13px; border-radius:6px; border:1px solid var(--border);
+    background:var(--surface); color:var(--text);
+    font-family:var(--sans); font-size:.75rem; font-weight:600;
+    white-space:nowrap; cursor:pointer; transition:all .12s;
+  }
+  .scn-btn:hover, .sla-tab-btn:hover, .sla-tab-add:hover, .calc-apply:hover {
+    border-color:var(--brand-accent); background:var(--tint-accent);
+  }
+  .scn-btn:disabled, .sla-tab-btn:disabled, .sla-tab-add:disabled {
+    opacity:.35; cursor:not-allowed;
+  }
+  /* The one action a card is actually FOR. At most one per card. */
+  .sla-tab-add { border-style:dashed; }
+  .sla-tab-add:hover { border-style:solid; }
+  .tab-actions { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-left:auto; }
+  .sla-tab-danger { color:var(--danger); }
+  .sla-tab-danger:hover { border-color:var(--danger); background:color-mix(in srgb, var(--danger) 10%, transparent); }
+  .hall-filter-row { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+  .hall-filter { display:flex; flex-direction:column; gap:3px; flex:1; min-width:140px; }
+  .hall-filter label { font-size:.68rem; color:var(--muted); letter-spacing:0; }
+  .sla-editor { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:12px; }
+  .sla-field { display:flex; flex-direction:column; gap:4px; }
+  .sla-field label { font-size:.7rem; color:var(--muted); letter-spacing:0; }
+  /* A hint inside a field label is a sentence, not a heading: uppercasing it
+     with the label turned "optional — a barometer beats the elevation
+     estimate" into three lines of shouting above a single input. */
+  .sla-field label .cap-hint { font-size:.66rem; opacity:.8; }
+  /* Unit symbols are case-significant: kPa is not KPA, and an engineer reads
+     the difference as sloppiness. Exempt them from the label's uppercasing. */
+  .sla-field input { background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-family:var(--mono); font-size:.85rem; padding:5px 8px; outline:none; -moz-appearance:textfield; }
+  .sla-field input::-webkit-inner-spin-button { -webkit-appearance:none; }
+  .sla-field input:focus { border-color:var(--accent); }
+  .sla-field input:disabled { opacity:.5; cursor:not-allowed; }
+  .sla-select { background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-family:var(--sans); font-size:.82rem; padding:6px 8px; outline:none; cursor:pointer; width:100%; }
+  .sla-select:focus { border-color:var(--accent); }
+  .sla-caps { grid-column:1 / -1; margin-top:8px; padding:10px 12px; background:var(--tint-accent); border:1px solid var(--tint-accent-line); border-radius:6px; }
+  .sla-caps-label { font-size:.72rem; color:var(--text); font-weight:700; letter-spacing:0; margin-bottom:8px; }
+  .cap-check { display:flex; align-items:center; gap:8px; font-size:.82rem; color:var(--text); font-weight:600; padding:4px 0; cursor:pointer; }
+  .cap-check input { width:16px; height:16px; accent-color:var(--stream-teal); cursor:pointer; flex:none; }
+  .cap-hint { font-size:.66rem; color:var(--muted); font-weight:400; }
+  .cap-line { display:grid; grid-template-columns:1fr 88px 56px; align-items:center; gap:8px; min-height:42px; }
+  .cap-name { font-size:.82rem; font-weight:600; color:var(--text); }
+  .cap-ck { display:flex; align-items:center; gap:8px; font-size:.82rem; font-weight:600; color:var(--text); cursor:pointer; }
+  .cap-ck input { width:16px; height:16px; accent-color:var(--stream-teal); flex:none; }
+  .cap-rate { background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:var(--mono); font-size:.86rem; padding:7px 6px; width:100%; text-align:center; outline:none; -moz-appearance:textfield; }
+  .cap-rate::-webkit-inner-spin-button { -webkit-appearance:none; }
+  .cap-rate:focus { border-color:var(--stream-teal); }
+  .cap-rate:disabled { opacity:.35; }
+  .cap-u { font-size:.68rem; color:var(--muted); }
+  details.calc { margin:2px 0 8px; }
+  details.calc > summary { list-style:none; font-size:.74rem; color:var(--stream-teal); font-weight:600; cursor:pointer; padding:6px 0; display:flex; align-items:center; gap:6px; }
+  details.calc > summary::-webkit-details-marker { display:none; }
+  details.calc[open] > summary .sect-chev { transform:rotate(90deg); }
+  .calc-body { padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:10px; }
+  .calc-method { font-size:.74rem; font-weight:700; color:var(--text); margin-bottom:6px; }
+  .calc-grid { display:grid; grid-template-columns:70px 18px 1fr 90px; gap:6px; align-items:center; }
+  .calc-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .calc-x { text-align:center; color:var(--muted); }
+  .calc-sel { padding:7px 6px; font-size:.8rem; }
+  .calc-res { font-family:var(--mono); font-size:.82rem; color:var(--text); margin:8px 0 2px; }
+  .calc-res strong { color:var(--stream-teal); }
+  .calc-apply { margin-left:8px; border-color:var(--brand-accent); background:var(--tint-accent-strong); color:var(--brand-accent); font-weight:700; }
+  .calc-detail { font-size:.72rem; color:#cfe0ee; margin-top:6px; line-height:1.5; }
+  .calc-warn { font-size:.74rem; color:var(--warn); line-height:1.5; }
+  .calc-note { font-size:.66rem; color:var(--muted); margin-top:10px; line-height:1.5; }
+  .calc-intro { font-size:.7rem; color:#cfe0ee; line-height:1.5; margin-bottom:12px; }
+  .calc-hint2 { font-size:.64rem; color:var(--muted); margin-top:5px; line-height:1.4; }
+  .calc-method.mt { margin-top:14px; }
+  .calc-inline-note, .calc-typesel { font-size:.7rem; }
+  .calc-inline-note { color:var(--muted); align-self:center; }
+  /* Sensor Validation card */
+  .sv-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  @media (max-width:560px) { .sv-grid { grid-template-columns:1fr; } }
+  .sv-big { font-size:1.05rem; font-weight:700; color:var(--stream-teal); }
+  .sv-pass { color:var(--ok); font-weight:700; }
+  .sv-marginal { color:var(--warn); font-weight:700; }
+  .sv-fail { color:var(--danger); font-weight:700; }
+  .sv-indet { color:#9db8d0; font-weight:700; }
+  .sv-actions { margin-top:10px; }
+  /* Ladder mode: readable from the floor with the psychrometer still in hand */
+  .sv-ladder-on { font-size:1.4rem; line-height:1.55; }
+  .sv-ladder-on .sv-big { font-size:1.7rem; }
+  .sv-ladder-on .cap-hint { font-size:0.95rem; }
+  /* Method tabs: one strip, six external-validation methods */
+  .sv-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .sv-tab { background:var(--bg); border:1px solid var(--border); color:var(--muted);
+    border-radius:6px; padding:5px 10px; font:600 .68rem var(--sans); cursor:pointer; }
+  .sv-tab[aria-selected="true"] { color:var(--stream-teal); border-color:var(--stream-teal);
+    background:var(--tint-accent); }
+  .sv-pane { display:none; }
+  .sv-pane.active { display:block; }
+  .sv-hint { color:var(--muted); font-size:.7rem; margin-top:6px; line-height:1.5; }
+  /* Ramp playback strip under the chart */
+  .playback-row { display:flex; align-items:center; gap:10px; margin:6px 0 2px; }
+  .playback-row input[type=range] { flex:1; accent-color:var(--stream-teal); }
+  .playback-info { font:600 .7rem var(--mono); color:var(--muted); white-space:nowrap; min-width:120px; text-align:right; }
+  /* Sensor drift logbook table */
+  .svlog-table { width:100%; border-collapse:collapse; font:.68rem var(--mono); margin-top:4px; }
+  .svlog-table th { color:var(--muted); text-align:left; font-weight:600; padding:3px 8px 3px 0; border-bottom:1px solid var(--border); }
+  .svlog-table td { padding:3px 8px 3px 0; border-bottom:1px solid rgba(31,58,82,.5); }
+  .scn-btn:disabled { opacity:.35; cursor:not-allowed; }
+  .calc-typesel { width:100%; margin-bottom:8px; }
+  .dh-pane { margin-bottom:2px; }
+  .cap-explain { font-size:.68rem; color:var(--muted); line-height:1.5; margin-bottom:12px; max-width:62ch; }
+  /* Add-city form */
+  .sla-addcity { grid-column:1 / -1; margin-top:-4px; margin-bottom:4px; }
+  .addcity-toggle { background:none; border:none; color:var(--stream-teal); font-size:.78rem; font-weight:600; font-family:var(--sans); cursor:pointer; padding:4px 0; }
+  .addcity-toggle:hover { text-decoration:underline; }
+  .addcity-form { margin-top:8px; padding:12px; background:var(--surface); border:1px solid var(--border); border-radius:7px; }
+  .addcity-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+  .ac-input { background:var(--bg); border:1px solid var(--border); border-radius:5px; color:var(--text); font-family:var(--sans); font-size:.82rem; padding:7px 9px; outline:none; }
+  .ac-input:focus { border-color:var(--stream-teal); }
+  .ac-input::placeholder { color:var(--muted); }
+  .addcity-actions { display:flex; gap:8px; }
+  .addcity-hint { font-size:.68rem; color:var(--muted); margin-top:8px; line-height:1.4; }
+  /* Scenarios + Export */
+  .scn-row { display:flex; gap:8px; margin-bottom:10px; }
+  .scn-input { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:var(--sans); font-size:.85rem; padding:8px 10px; outline:none; }
+  .scn-input:focus { border-color:var(--stream-teal); }
+  .scn-input::placeholder { color:var(--muted); }
+  .scn-btn-primary { background:var(--brand-accent); border-color:var(--brand-accent); color:#052730; font-weight:700; }
+  .scn-btn-primary:hover { background:var(--brand-accent); filter:brightness(1.08); }
+  .scn-btn-img { background:var(--tint-accent); border-color:var(--tint-accent-line); color:var(--brand-accent); }
+  .scn-list { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+  .scn-item { display:flex; align-items:center; gap:8px; padding:9px 12px; border-radius:7px; background:var(--surface); border:1px solid var(--border); }
+  .scn-item-main { flex:1; cursor:pointer; }
+  .scn-item-name { font-size:.84rem; font-weight:600; color:var(--text); }
+  .scn-item-detail { font-size:.7rem; color:var(--muted); font-family:var(--mono); margin-top:2px; }
+  .scn-item:hover { border-color:var(--stream-teal); }
+  .scn-load { font-size:.72rem; color:var(--stream-teal); font-weight:700; padding:4px 8px; border:1px solid var(--tint-accent-line); border-radius:5px; background:none; cursor:pointer; }
+  .scn-del { font-size:.9rem; color:var(--danger); background:none; border:none; cursor:pointer; padding:2px 6px; }
+  .scn-empty { font-size:.76rem; color:var(--muted); padding:10px; text-align:center; background:var(--surface); border:1px dashed var(--border); border-radius:6px; margin-bottom:12px; }
+  .scn-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .scn-divider { height:1px; background:var(--border); margin:14px 0; }
+  .scn-export-label { font-size:.74rem; color:var(--muted); margin-bottom:8px; }
+  .sla-field.name-field { grid-column:1 / -1; }
+  .sla-actions { display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap; }
+  .sla-btn { padding:5px 12px; border-radius:5px; border:1px solid var(--border); background:transparent; color:var(--accent2); font-size:.72rem; font-weight:600; cursor:pointer; font-family:var(--sans); transition:all .12s; }
+  .sla-btn:hover { border-color:var(--accent2); background:var(--tint-accent); }
+  .sla-btn-danger { color:var(--danger); }
+  .sla-btn-danger:hover { border-color:var(--danger); background:rgba(248,81,73,.08); }
+  .sla-btn:disabled { opacity:.35; cursor:not-allowed; }
+  .badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:5px; font-size:.68rem; font-weight:600; }
+  .badge-ok { background:rgba(63,185,80,.1); border:1px solid rgba(63,185,80,.35); color:var(--ok); }
+  .badge-warn { background:rgba(210,153,34,.1); border:1px solid rgba(210,153,34,.35); color:var(--warn); }
+  .badge-bad { background:rgba(248,81,73,.1); border:1px solid rgba(248,81,73,.35); color:var(--danger); }
+  .badge-info { background:var(--tint-accent); border:1px solid var(--tint-accent-line); color:var(--accent2); }
+
+  .psych-wrap { width:100%; }
+  #psychCanvas { width:100%; height:auto; display:block; border-radius:4px; cursor:grab; touch-action:none; }
+  #psychCanvas.grabbing { cursor:grabbing; }
+  .chart-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; flex-wrap:wrap; }
+  .zoom-toolbar { display:flex; gap:4px; }
+  .zoom-btn { min-width:30px; height:28px; padding:0 8px; border-radius:5px; border:1px solid var(--border); background:transparent; color:var(--muted); font-size:.8rem; font-weight:700; cursor:pointer; font-family:var(--sans); transition:all .12s; }
+  .zoom-btn:hover { border-color:var(--accent2); color:var(--accent2); background:var(--tint-accent); }
+  .zoom-hint { font-size:.63rem; color:var(--muted); margin-bottom:10px; }
+  .legend { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+  .leg-item { display:flex; align-items:center; gap:6px; font-size:.7rem; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:4px 9px; cursor:pointer; font-family:var(--sans); transition:all .12s; }
+  .leg-item:hover { border-color:var(--accent2); }
+  .leg-item.leg-off { opacity:.4; }
+  .leg-item.leg-off .leg-line, .leg-item.leg-off .leg-dot { filter:grayscale(1); }
+  .legend-hint { font-size:.62rem; color:var(--muted); margin-top:6px; }
+  .leg-line { width:20px; height:2px; border-radius:1px; display:inline-block; }
+  .leg-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+
+  .table-scroll { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:.72rem; font-family:var(--mono); }
+  th { color:var(--muted); font-size:.6rem; text-transform:uppercase; letter-spacing:.05em; padding:6px 7px; border-bottom:1px solid var(--border); text-align:right; white-space:nowrap; }
+  th:first-child { text-align:left; }
+  td { padding:5px 7px; border-bottom:1px solid #1c2128; text-align:right; white-space:nowrap; }
+  td:first-child { text-align:left; }
+  tr:last-child td { border-bottom:none; }
+  tr.row-a td { background:rgba(255,255,0,.03); }
+  tr.row-b td { background:rgba(240,165,0,.04); }
+  tr.row-delta td { border-top:1px solid var(--border); color:var(--muted); font-style:italic; }
+  .rh-ok { color:var(--ok); } .rh-warn { color:var(--warn); } .rh-bad { color:var(--danger); font-weight:700; }
+  .delta-pos { color:#f85149; } .delta-neg { color:#3fb950; }
+  .zpill { display:inline-block; padding:1px 6px; border-radius:3px; font-size:.62rem; font-weight:700; }
+  .zA1 { background:rgba(63,185,80,.15); color:#3fb950; } .zA2 { background:rgba(59,158,255,.15); color:#3b9eff; }
+  .zA3 { background:rgba(240,165,0,.15); color:#f0a500; } .zA4 { background:rgba(248,81,73,.15); color:#f85149; }
+  .zOut { background:rgba(125,133,144,.15); color:#7d8590; }
+
+  .formula-note { font-size:.63rem; color:var(--muted); line-height:1.5; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+  .formula-note code { font-family:var(--mono); color:var(--accent2); background:var(--tint-accent); padding:1px 4px; border-radius:3px; }
+
+  /* ── Masthead ──────────────────────────────────────────────────────────
+     A strip, not a billboard. It used to stack company, product and tagline
+     on three lines behind a 3 px rule — about a quarter of a phone screen
+     spent on branding before any content. Colours come from the brand
+     palette (see src/config/brand.js); only their USE changed here. */
+  .masthead {
+    display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 10px;
+    margin:-20px -16px 14px; padding:10px 16px;
+    background:linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 100%);
+    border-bottom:2px solid var(--brand-accent);
+  }
+  .mh-company { font-weight:800; font-size:.95rem; letter-spacing:.16em; color:#fff; }
+  .mh-sub { font-size:.55rem; font-weight:600; letter-spacing:.2em; color:var(--brand-accent);
+    border-left:1px solid rgba(255,255,255,.28); padding-left:9px; }
+  .mh-product { font-size:.8rem; font-weight:700; color:#fff; letter-spacing:.06em;
+    text-transform:uppercase; margin:0 0 0 auto; }
+  .mh-tagline { flex-basis:100%; color:#9db8d0; font-size:.68rem; margin:0; }
+  /* Back to the launcher. Every tool carries this in the same place, so the
+     way out is muscle memory rather than a hunt. Sized to hit on a hall floor. */
+  .mh-tool { margin-left:12px; padding:5px 11px; border-radius:6px;
+    border:1px solid var(--brand-accent); color:#fff; text-decoration:none;
+    font-size:.66rem; font-weight:700; letter-spacing:.06em; white-space:nowrap;
+    background:color-mix(in srgb, var(--brand-accent) 18%, transparent);
+    transition:background .12s; }
+  .mh-tool:hover { background:color-mix(in srgb, var(--brand-accent) 34%, transparent); }
+  @media (pointer:coarse) { .mh-tool { padding:9px 13px; } }
+  /* On a hall floor the tagline is decoration. Below 900 px it goes, and the
+     product name wraps under the brand instead of fighting it for the row. */
+  @media (max-width:900px) {
+    .mh-tagline { display:none; }
+    .mh-product { margin-left:0; font-size:.72rem; }
+    .mh-tool { margin-left:auto; }
+  }
+
+  /* ── Field-first stack ─────────────────────────────────────────────────
+     Below the two-column breakpoint the chart and the live readout come
+     FIRST. Someone standing in a hall opened this to see where the room is,
+     not to re-enter its elevation; setup is real but it is not the reason
+     the app is open. Pure ordering — the DOM stays in reading order for
+     screen readers and for the desktop layout. */
+  @media (max-width:1119px) {
+    /* `display:contents` dissolves the two column wrappers so every card
+       becomes a direct child of the stack and can be ordered independently.
+       Ordering by wrapper cannot interleave them — it buries the sliders
+       under the data table, the sensor suite and the trainer. */
+    .layout { display:flex; flex-direction:column; }
+    .col-left, .col-right { display:contents; }
+    #chart-card { order:1; } /*       where the room IS */
+    #conditions-card { order:2; } /*  and how to move it */
+    .col-left > *, .col-right > * { order:3; } /* setup and the rest, in DOM order */
+    #start-here { order:4; } /*       help belongs after the tool, not before it */
+  }
+  /* Touch screens have no Shift-click. */
+  @media (pointer:coarse) { .mouse-only { display:none; } }
+
+  /* On a phone the chart card's own chrome — title, six zoom buttons, a
+     three-line hint — was pushing the chart itself most of a screen down.
+     The chart is the content; the controls around it are not. */
+  @media (max-width:1119px) {
+    #chart-card .card-title { font-size:.7rem; }
+    #chart-card .zoom-hint { font-size:.62rem; line-height:1.45; }
+    .zoom-toolbar { gap:4px; }
+    .zoom-btn { padding:8px 9px; font-size:.68rem; }
+    /* The legend is ten items. Stacked at touch size it ate half the screen
+       between the chart and the controls; scrolling it sideways keeps every
+       item reachable without spending vertical space on any of them. */
+    .legend { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; padding-bottom:2px; }
+    .legend::-webkit-scrollbar { display:none; }
+    .leg-item { flex:0 0 auto; }
+  }
+  /* Pinch does what these two do, and they are the biggest buttons on the
+     smallest screen. */
+  @media (pointer:coarse) and (max-width:1119px) {
+    #zoom-in, #zoom-out { display:none; }
+    .zoom-btn { padding:9px 11px; font-size:.7rem; min-height:0; }
+  }
+
+  /* ── Desktop layout: controls left, chart pinned right ── */
+  .layout { max-width:1720px; margin:0 auto; }
+  .footer-bar, .selftest-panel { max-width:1720px; margin-left:auto; margin-right:auto; }
+  @media (min-width:1120px) {
+    .layout { display:grid; grid-template-columns:minmax(420px,540px) minmax(0,1fr); gap:14px; align-items:start; }
+    .col-right { position:sticky; top:12px; max-height:calc(100vh - 24px); overflow-y:auto; scrollbar-width:thin; }
+    .col-right .card:last-child { margin-bottom:0; }
+  }
+
+  /* ── Chart hover inspector: crosshair + live psychrometric readout ── */
+  .psych-wrap { position:relative; }
+  .ch-line { position:absolute; pointer-events:none; background:rgba(255,255,255,.22); display:none; z-index:4; }
+  #ch-vline { width:1px; }
+  #ch-hline { height:1px; }
+  #chart-tip { position:absolute; pointer-events:none; display:none; z-index:5; min-width:158px;
+    background:rgba(13,27,42,.95); border:1px solid var(--border); border-left:3px solid var(--accent);
+    border-radius:8px; padding:8px 11px; font-family:var(--mono); font-size:.7rem; line-height:1.6;
+    color:var(--text); box-shadow:0 6px 18px rgba(0,0,0,.5); }
+  #chart-tip .tt-head { font-size:.82rem; font-weight:700; color:var(--accent); margin-bottom:2px; }
+  #chart-tip .tt-row { display:flex; justify-content:space-between; gap:14px; }
+  #chart-tip .tt-k { color:var(--muted); }
+  #chart-tip .tt-sla { margin-top:4px; padding-top:4px; border-top:1px solid var(--border); font-weight:700; }
+
+  /* SLA compliance chips on the Current/Target headline */
+  .cr-slachip { margin-top:5px; }
+  .cr-slachip .badge { font-size:.6rem; padding:2px 7px; }
+
+  /* ── Install-app banner (PWA) ── */
+  .install-banner { display:none; align-items:center; gap:12px; margin:0 -16px 16px; padding:10px 16px;
+    background:linear-gradient(135deg,var(--tint-accent-strong),var(--tint-accent)); border-bottom:1px solid var(--tint-accent-line); }
+  .install-banner.show { display:flex; }
+  .install-icon { width:34px; height:34px; border-radius:8px; flex:none; }
+  .install-copy { flex:1; min-width:0; }
+  .install-title { font-size:.82rem; font-weight:700; color:#fff; }
+  .install-sub { font-size:.68rem; color:#9db8d0; margin-top:1px; }
+  .install-actions { display:flex; gap:8px; flex:none; align-items:center; }
+  .install-btn { padding:7px 14px; border-radius:6px; border:none; background:var(--stream-teal); color:#062a33; font-size:.78rem; font-weight:700; font-family:var(--sans); cursor:pointer; white-space:nowrap; }
+  .install-btn:hover { filter:brightness(1.08); }
+  .install-alt { padding:7px 12px; border-radius:6px; border:1px solid var(--tint-accent-line); background:transparent;
+    color:var(--stream-teal); font-size:.76rem; font-weight:700; font-family:var(--sans); cursor:pointer;
+    white-space:nowrap; text-decoration:none; }
+  .install-alt:hover { background:var(--tint-accent-strong); }
+  /* Onboarding is for the FIRST visit. It sits above the tool, so it stays
+     visually quiet and can be dismissed for good once it has done its job. */
+  .onboard { border-style:dashed; }
+  .onboard > summary .sect-title { font-size:.72rem; }
+  .sub-sect { margin-top:12px; border-top:1px solid var(--border); padding-top:10px; }
+  .sub-sect > summary { cursor:pointer; font-size:.8rem; color:var(--text); list-style:none; }
+  .sub-sect > summary::-webkit-details-marker { display:none; }
+  .sub-sect[open] > summary .sect-chev { transform:rotate(90deg); }
+  #onboard-restore { background:none; border:none; color:var(--muted); font-size:.7rem;
+    cursor:pointer; font-family:var(--sans); padding:2px 0; text-decoration:underline; }
+  #onboard-restore:hover { color:var(--accent2); }
+  /* Equipment inventory rows: name · count × capacity · condition · on/off */
+  .eq-row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:6px;
+    padding:6px; border-radius:6px; background:rgba(255,255,255,.02); }
+  .eq-row.eq-off { opacity:.5; }
+  .eq-row .scn-input { flex:1; min-width:110px; }
+  .eq-row .cap-rate { width:78px; }
+  .eq-row .calc-sel { width:auto; min-width:78px; }
+  .eq-out { font-family:var(--mono); font-size:.7rem; color:var(--stream-teal); margin-left:auto; }
+  /* Condition history: its own line under the row, only when it has fallen. */
+  .eq-trend { flex-basis:100%; font-family:var(--mono); font-size:.66rem; color:var(--warn); }
+  .eq-row.eq-off .eq-out { color:var(--muted); }
+  .eq-totals { display:grid; grid-template-columns:repeat(2,1fr); gap:6px 14px; margin-top:10px;
+    padding-top:10px; border-top:1px solid var(--border); font-size:.76rem; font-family:var(--mono); }
+  @media (max-width:560px) { .eq-totals { grid-template-columns:1fr; } }
+  /* A rate the inventory is producing: still legible, visibly not yours to
+     type into. Readonly rather than disabled so the number stays selectable. */
+  .cap-rate.cap-derived { background:var(--tint-accent); border-color:var(--stream-teal);
+    color:var(--stream-teal); cursor:default; }
+  .eq-live { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px;
+    padding-top:8px; border-top:1px solid var(--border); font-size:.72rem; color:var(--muted); }
+  /* The add-equipment row grows as kinds are added, so it wraps. Its own
+     class rather than .addcity-actions, which is a fixed two-button row and
+     would push a sixth button clean out of the card. */
+  .eq-add-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+  /* Redundancy lines carry a verdict clause, so they stack full width rather
+     than sharing the two-column totals grid. Its own class, not a modifier on
+     .eq-totals, so "the totals" stays one thing on the page. */
+  .eq-redundancy { display:grid; gap:4px; margin-top:8px; padding-top:8px;
+    border-top:1px dashed var(--border); font-size:.76rem; font-family:var(--mono); }
+  .eq-redundancy .sla-caps-label { margin:0 0 2px; }
+  /* All-halls overview: one tappable row per hall. */
+  .hall-row { display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:center;
+    width:100%; text-align:left; padding:10px 12px; margin-bottom:6px; border-radius:7px;
+    border:1px solid var(--border); background:var(--bg); color:var(--text);
+    font-family:var(--sans); font-size:.78rem; cursor:pointer; transition:all .12s; }
+  .hall-row:hover { border-color:var(--accent2); }
+  .hall-row.is-active { border-color:var(--stream-teal); background:var(--tint-accent); }
+  .hall-row .hr-name { font-weight:700; }
+  .hall-row .hr-meta { color:var(--muted); font-size:.7rem; }
+  /* Plant trouble in this hall — same size as the other meta lines, but it is
+     the one thing on the row worth interrupting a scan for. */
+  /* Delete, on the row itself. The hall list is where you notice a hall you
+     did not want; making you switch to it and hunt in another card is how a
+     tidy-up becomes a chore. */
+  .hr-row-wrap { position:relative; }
+  .hr-row-wrap .hall-row { padding-right:44px; }
+  .hr-del { position:absolute; top:8px; right:8px; z-index:2; padding:6px 9px;
+    border:none; background:none; color:var(--muted); font-size:.85rem;
+    line-height:1; cursor:pointer; border-radius:5px; }
+  .hr-del:hover { color:var(--danger); background:color-mix(in srgb, var(--danger) 12%, transparent); }
+  @media (pointer:coarse) { .hr-del { padding:11px 13px; top:2px; right:2px; } }
+  /* The site facts every row shares, said once above them. */
+  .hr-site { font-size:.7rem; color:var(--muted); padding:0 2px 8px; }
+  /* A campus is a list of buildings you open, not a flat list of halls. The
+     header carries the rollup, so a closed building still says whether
+     anything inside it needs walking over for. */
+  .hr-group { margin-bottom:6px; }
+  .hr-bld { display:grid; grid-template-columns:auto auto 1fr auto; gap:9px; align-items:center;
+    width:100%; text-align:left; padding:11px 12px; border-radius:7px;
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
+    font-family:var(--sans); font-size:.8rem; cursor:pointer; transition:all .12s; }
+  .hr-bld:hover { border-color:var(--accent2); }
+  .hr-chev { color:var(--muted); font-size:.7rem; transition:transform .12s; }
+  .hr-group.is-open > .hr-bld .hr-chev { transform:rotate(90deg); }
+  .hr-bld-name { font-weight:700; }
+  .hr-bld-n { color:var(--muted); font-size:.72rem; font-family:var(--mono); }
+  .hr-bld-note { color:var(--muted); font-size:.7rem; text-align:right; }
+  .hr-bld-note.is-bad { color:var(--danger); font-weight:700; }
+  /* Halls sit under their building, indented enough to read as contained. */
+  .hr-halls { display:none; padding:6px 0 2px 14px; border-left:1px solid var(--border); margin-left:11px; }
+  .hr-group.is-open > .hr-halls { display:block; }
+  @media (pointer:coarse) { .hr-bld { padding:14px 12px; } }
+  @media (max-width:560px) {
+    /* The count is the first thing to go: the rollup matters more. */
+    .hr-bld { grid-template-columns:auto 1fr auto; }
+    .hr-bld-n { display:none; }
+  }
+  /* A hall nobody has worked on yet is context, not a finding. */
+  .hall-row.hr-idle { opacity:.72; }
+  .hall-row.hr-idle:hover { opacity:1; }
+  .hall-row .hr-plant { color:var(--warn); font-size:.68rem; font-family:var(--mono); }
+  .hall-row .hr-cond { font-family:var(--mono); color:var(--muted); font-size:.72rem; white-space:nowrap; }
+  /* On a phone the verdict belongs beside the name, not on a line of its own:
+     auto-placement used to push it to a third row where it stretched the full
+     width of the card, so four halls filled the screen and the point of the
+     list — scanning a campus — was lost. Placed explicitly instead. */
+  @media (max-width:560px) {
+    .hall-row { grid-template-columns:1fr auto; row-gap:3px; padding:8px 10px; }
+    .hall-row > :first-child { grid-area:1 / 1; }
+    .hall-row > .badge, .hall-row > .cap-hint { grid-area:1 / 2; justify-self:end; }
+    .hall-row .hr-cond { grid-area:2 / 1 / auto / -1; }
+    .hr-row-wrap .hall-row { padding-right:38px; }
+  }
+  .start-steps { margin:10px 0 0 0; padding-left:20px; color:var(--text); font-size:.82rem; line-height:1.65; }
+  .start-steps li { margin-bottom:8px; }
+  .gloss { margin:0; font-size:.82rem; line-height:1.6; }
+  .gloss dt { color:var(--accent2); font-weight:700; margin-top:12px; }
+  .gloss dt:first-child { margin-top:0; }
+  .gloss dd { margin:2px 0 0 0; color:var(--muted); }
+  /* Field ergonomics: on touch screens (gloved thumbs on a phone in the
+     hall) every tap target grows to the 44 px platform guidance. Desktop
+     pointer users keep the compact layout — this block simply never fires. */
+  @media (pointer:coarse) {
+    .zoom-btn { min-width:44px; height:44px; font-size:.95rem; }
+    .leg-item { padding:11px 12px; font-size:.78rem; }
+    .preset-btn { padding:11px 14px; font-size:.78rem; }
+    .sla-tab, .hall-tab { padding:11px 14px; font-size:.8rem; }
+    .scn-btn { padding:10px 14px; }
+    .scn-del { padding:10px 14px; font-size:1rem; }
+    .unit-btn { padding:10px 14px; }
+    .sv-tab { padding:11px 12px; }
+  }
+  @media (max-width:560px) { .install-alt { display:none; } }
+  .install-dismiss { background:none; border:none; color:var(--muted); font-size:1rem; cursor:pointer; padding:2px 6px; line-height:1; }
+  .install-dismiss:hover { color:var(--text); }
+  @media (max-width:480px) { .install-sub { display:none; } }
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <span class="mh-company" data-brand="company">STREAM</span>
+  <span class="mh-sub" data-brand="companySub">DATA CENTERS</span>
+  <h1 class="mh-product" data-brand="product">Hall Environment Planner</h1>
+  <a class="mh-tool" href="./">◀ All tools</a>
+  <p class="mh-tagline">Plan temperature &amp; humidity moves within SLA · capability-aware timing · ASHRAE psychrometrics</p>
+</div>
+
+<div class="install-banner" id="install-banner">
+  <img class="install-icon" src="icon-192.png" alt="">
+  <div class="install-copy">
+    <div class="install-title" id="install-title">Install this app</div>
+    <div class="install-sub" id="install-sub">Works offline · opens fullscreen like a native app</div>
+  </div>
+  <div class="install-actions">
+    <button class="install-btn" id="install-go">Install</button>
+    <a class="install-alt" id="install-download" href="./StreamHallPlanner.html"
+       download="StreamHallPlanner.html">⤓ Download file</a>
+    <button class="install-dismiss" id="install-dismiss" title="Dismiss" aria-label="Dismiss">✕</button>
+  </div>
+</div>
+
+
+<div class="layout">
+<div class="col-left">
+<!-- START HERE — first-run guidance, dismissible once it has done its job -->
+<details class="card sect onboard" id="start-here">
+  <summary><span class="sect-title">Start here</span><span class="sect-sub">new to this tool? 60 seconds · plain-English glossary</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+    <div class="calc-intro">
+      This tool answers one question: <strong>can I move my hall from where it is
+      now to where I want it, without breaking the customer's contract — and how
+      long will it take?</strong>
+    </div>
+    <ol class="start-steps">
+      <li><strong>Describe your hall</strong> (Data Hall card): where it is, how
+        big it is, and how fast your plant can cool, warm, dry or humidify it.
+        Without those rates the tool can show you the physics but cannot time
+        the move — it will say so rather than guess.</li>
+      <li><strong>Set the contract</strong> (Customer SLA card): the temperature
+        and humidity limits you are not allowed to cross, plus the dew-point cap
+        and how fast you're permitted to change things.</li>
+      <li><strong>Plan the move</strong> (Conditions card): set <em>Current</em>
+        to what the hall reads now and <em>Target</em> to where you want it. The
+        chart draws both, the badge tells you whether each one is inside the
+        contract, and the advisory tells you the earliest honest finish time and
+        which limit is holding you back.</li>
+      <li><strong>Check your instruments</strong> (Sensor Validation card) before
+        you trust any of it — six ways to verify a temperature or humidity
+        sensor against something physical, from a jar of table salt to a pot of
+        boiling water.</li>
+    </ol>
+    <div class="formula-note">Everything here is a planning aid — verify against site instrumentation before acting.</div>
+
+    <details class="sub-sect" id="glossary">
+      <summary><strong>Plain-English glossary</strong> — what the numbers mean <span class="sect-chev">▸</span></summary>
+    <dl class="gloss">
+      <dt>Dry bulb (the "temperature")</dt>
+      <dd>What an ordinary thermometer reads. When this app says "temp", it means this.</dd>
+      <dt>Relative humidity (RH %)</dt>
+      <dd>How full the air is, as a percentage of the most water it could hold <em>at its current temperature</em>. The catch: warm the same air without adding water and RH falls, because warm air can hold more. Nothing about the water changed.</dd>
+      <dt>Humidity ratio (W, g/kg)</dt>
+      <dd>The actual weight of water in the air, per kilogram of dry air. Unlike RH, this only changes when water is genuinely added or removed — which is why the tool plans moves with it.</dd>
+      <dt>Dew point</dt>
+      <dd>The temperature at which that water would start condensing. Any surface colder than the dew point gets wet — cold water pipes, chilled coils, an economizer damper on a winter morning. That's why SLAs cap it.</dd>
+      <dt>Wet bulb</dt>
+      <dd>What a thermometer reads with a wet sock over it, in moving air. Evaporation cools it, so the drier the air the lower it falls. It's what a sling psychrometer measures.</dd>
+      <dt>Enthalpy (kJ/kg)</dt>
+      <dd>The total heat energy in the air — the sensible heat you can feel plus the latent heat hiding in the water vapour. Cooling equipment is really removing enthalpy.</dd>
+      <dt>Sensible vs latent heat, and SHR</dt>
+      <dd>Sensible heat changes the temperature; latent heat changes the moisture. The sensible heat ratio (SHR) is the fraction of the job that's temperature. An SHR near 1.0 means you're almost purely cooling; a lower number means the coil is doing serious dehumidification too.</dd>
+      <dt>ASHRAE classes A1–A4</dt>
+      <dd>Industry envelopes for how far IT equipment is rated to be pushed, from the tightest (A1) to the widest (A4). The badge tells you which one your point falls inside.</dd>
+      <dt>Site pressure</dt>
+      <dd>Air pressure at your elevation. It matters because the same RH holds different amounts of water at different pressures — a plan computed at sea level is wrong in Denver.</dd>
+      <dt>Guard band (on sensor checks)</dt>
+      <dd>To honestly call a sensor "in spec", its error has to be inside tolerance by more than your reference's own uncertainty. If it isn't, the tool says "too close to call" instead of guessing.</dd>
+    </dl>
+    </details>
+
+    <div class="sv-actions"><button class="scn-btn" id="onboard-dismiss">✓ Got it — hide this</button></div>
+  </div>
+</details>
+
+<!-- ALL HALLS — every hall's status at a glance, one row each -->
+<details class="card sect" id="all-halls">
+  <summary><span class="sect-title">All halls</span><span class="sect-sub" id="allhalls-sub">—</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+    <div class="calc-intro">Every hall you have set up, each judged against its own elevation and the active customer SLA. Tap a row to switch to that hall.</div>
+    <div id="allhalls-body"></div>
+  </div>
+</details>
+
+<!-- DATA HALL — the physical facility (site, elevation, volume, plant) -->
+<details class="card sect">
+  <summary><span class="sect-title">Data Hall</span><span class="sect-sub" id="hall-summary">—</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+    <div class="hall-filter-row">
+      <div class="hall-filter"><label for="hall-loc-filter">Location <span class="cap-hint">sets site + elevation</span></label><select id="hall-loc-filter" class="sla-select"></select></div>
+      <div class="hall-filter"><label for="hall-bld-filter">Building</label><select id="hall-bld-filter" class="sla-select"></select></div>
+    </div>
+    <div class="sla-addcity">
+      <button type="button" class="addcity-toggle" id="addcity-toggle">+ Add a city / site</button>
+      <div class="addcity-form" id="addcity-form" style="display:none">
+        <div class="addcity-grid">
+          <input type="text" id="ac-code"  class="ac-input" placeholder="Site code (e.g. DFW VII)">
+          <input type="text" id="ac-city"  class="ac-input" placeholder="City (e.g. Plano)">
+          <input type="text" id="ac-state" class="ac-input" placeholder="State (e.g. Texas)">
+          <input type="number" id="ac-elev" class="ac-input" placeholder="Elevation ft" step="10">
+        </div>
+        <div class="addcity-actions">
+          <button type="button" class="scn-btn scn-btn-primary" id="ac-save">Add site</button>
+          <button type="button" class="scn-btn" id="ac-cancel">Cancel</button>
+        </div>
+        <div class="addcity-hint">Added sites are saved on this device and appear in the Location list, sorted by state.</div>
+      </div>
+    </div>
+    <div class="sla-tabs-row">
+      <div class="sla-tabs" id="hall-tabs" role="tablist" aria-label="Hall profiles"></div>
+      <span class="tab-actions">
+        <button class="sla-tab-add" id="hall-add" title="Add a new hall profile">+ New hall</button>
+        <button class="sla-tab-btn" id="hall-dup" title="Duplicate this hall">⧉ Duplicate</button>
+        <button class="sla-tab-btn sla-tab-danger" id="hall-del" title="Delete this hall">✕ Delete</button>
+        <button class="sla-tab-btn" id="hall-export" title="Export hall profiles to a JSON file">⤓ Export</button>
+        <button class="sla-tab-btn" id="hall-import" title="Import hall profiles from a JSON file">⤒ Import</button>
+        <input type="file" id="hall-file" accept="application/json,.json" style="display:none">
+      </span>
+    </div>
+    <div class="sla-editor" id="hall-editor"></div>
+    <div class="formula-note">Pick a Location (any Stream site — its elevation feeds the chart's barometric pressure), then a Building at that campus, then a hall tab. Each hall profile stores its own plant capability, rates, efficiency factor, and capacity derates, so switching halls recalls that hall's equipment. Leave the selectors on "All" to see every hall at once. Import merges by location + building + hall name (same triple replaces, new ones append), so colleagues' files add to yours. The customer SLAs below are contracts evaluated inside the active hall at its barometric pressure.</div>
+  </div>
+</details>
+
+<!-- CUSTOMER SLA — pure contract (envelope + ramp limits) -->
+<details class="card sect">
+  <summary><span class="sect-title">Customer SLA</span><span class="sect-sub" id="sla-summary">—</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+  <div class="sla-tabs-row">
+    <div class="sla-tabs" id="sla-tabs" role="tablist" aria-label="Customer SLA profiles"></div>
+    <span class="tab-actions">
+      <button class="sla-tab-add" id="sla-add" title="Add a new customer SLA">+ New SLA</button>
+      <button class="sla-tab-btn sla-tab-danger" id="sla-del" title="Delete this SLA">✕ Delete</button>
+      <button class="sla-tab-btn" id="sla-export" title="Export all SLAs to a JSON file">⤓ Export</button>
+      <button class="sla-tab-btn" id="sla-import" title="Import SLAs from a JSON file">⤒ Import</button>
+      <input type="file" id="sla-file" accept="application/json,.json" style="display:none">
+    </span>
+  </div>
+  <div class="sla-editor" id="sla-editor"></div>
+  <div class="formula-note">
+    SLA boundary = the binding constraint at each temperature: RH-max curve vs. dew-point cap (whichever is lower) on top, RH-min vs. dew-point floor on the bottom. Leave dew-point cap blank for an RH-only box. All boundaries recompute at site pressure. ASHRAE TC 9.9 reference ramp limits: 9°F/hr (5°C/hr) where tape media is present; 36°F/hr (20°C/hr) otherwise.
+  </div>
+</div>
+</details>
+
+<!-- CONDITIONS CARD -->
+<div class="card" id="conditions-card">
+  <div class="conditions-head">
+    <div class="card-title" style="margin-bottom:0">Conditions</div>
+    <div class="head-controls">
+      <div class="unit-toggle" id="unit-toggle">
+        <button class="unit-btn active" data-unit="F">°F</button>
+        <button class="unit-btn" data-unit="C">°C</button>
+      </div>
+      <div class="site-chip">
+        <button class="chip-btn" id="chip-toggle" title="Active site (set in SLA profile)">
+          <span id="chip-label">Goodyear, AZ · 1,066 ft</span><span style="opacity:.6">▾</span>
+        </button>
+        <div class="chip-panel" id="chip-panel">
+          <div class="chip-elev-row">
+            <label for="chip-elev-input">Elevation</label><input type="text" inputmode="text" id="chip-elev-input" placeholder="e.g. 1066 or -200">
+            <span class="chip-unit">ft</span>
+          </div>
+          <div class="pressure-readout" id="pressure-readout">— kPa</div>
+          <div class="chip-note">Sets the active site's elevation; pressure recomputes live (ASHRAE Eq. 3). Negative = below sea level or a positive-pressure proxy.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ctl-group ctl-a">
+    <div class="ctl-head"><span class="ctl-dot" style="background:#d4d400"></span><span class="ctl-name">Current</span><span class="ctl-sub">room now · temp &amp; dew pt drive RH</span></div>
+    <div class="ctl-row">
+      <span class="ctl-k">Temp</span>
+      <input type="range" id="slider-a-temp" min="32" max="130" step="1" value="68">
+      <input type="number" id="a-temp" class="ctl-num" value="68" step="any"><span class="ctl-unit tunit">°F</span>
+    </div>
+    <div class="ctl-row">
+      <span class="ctl-k">Dew pt</span>
+      <input type="range" id="slider-a-dp" min="-40" max="100" step="1" value="46">
+      <input type="number" id="a-dp" class="ctl-num" value="46" step="any"><span class="ctl-unit tunit">°F</span>
+    </div>
+    <div class="ctl-row">
+      <span class="ctl-k">RH</span>
+      <input type="range" id="slider-a-rh" min="1" max="100" step="1" value="45">
+      <input type="number" inputmode="decimal" id="a-rh" class="ctl-num" value="45" step="any"><span class="ctl-unit">%</span>
+    </div>
+  </div>
+  <div class="ctl-group ctl-b">
+    <div class="ctl-head"><span class="ctl-dot" style="background:var(--accent)"></span><span class="ctl-name">Target</span><span class="ctl-sub" id="couple-sub">—</span><span class="ctl-flag" id="wflag"></span></div>
+    <div class="ctl-row">
+      <span class="ctl-k">Temp</span>
+      <input type="range" id="slider-b-temp" min="32" max="130" step="1" value="87">
+      <input type="number" id="b-temp" class="ctl-num" value="87" step="any"><span class="ctl-unit tunit">°F</span>
+    </div>
+    <div class="ctl-row">
+      <span class="ctl-k">Dew pt</span>
+      <input type="range" id="slider-b-dp" min="-40" max="100" step="1" value="52">
+      <input type="number" id="b-dp" class="ctl-num" value="52" step="any"><span class="ctl-unit tunit">°F</span>
+    </div>
+    <div class="ctl-row">
+      <span class="ctl-k">RH</span>
+      <input type="range" id="slider-b-rh" min="1" max="100" step="1" value="28">
+      <input type="number" inputmode="decimal" id="b-rh" class="ctl-num" value="28" step="any"><span class="ctl-unit">%</span>
+    </div>
+  </div>
+
+  <!-- Headline + computed details (merged readout) -->
+  <div class="control-readout" id="control-readout"></div>
+</div>
+
+<!-- SCENARIOS + EXPORT CARD -->
+<details class="card sect">
+  <summary><span class="sect-title">Scenarios &amp; Export</span><span class="sect-sub" >save · share · PNG / PDF</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+  <div class="scn-row">
+    <input type="text" id="scn-name" class="scn-input" placeholder="Name this scenario (e.g. Summer economizer case)">
+    <button class="scn-btn scn-btn-primary" id="scn-save">Save</button>
+  </div>
+  <div class="scn-list" id="scn-list"></div>
+  <div class="scn-actions">
+    <button class="scn-btn" id="scn-export-file">⤓ Export scenarios (file)</button>
+    <button class="scn-btn" id="scn-import-file">⤒ Import scenarios</button>
+    <input type="file" id="scn-file" accept="application/json,.json" style="display:none">
+  </div>
+  <div class="scn-divider"></div>
+  <div class="scn-export-label">Share exactly this A→B setup as a link or a scannable code — the recipient lands on the same numbers, same site pressure:</div>
+  <div class="scn-actions">
+    <button class="scn-btn scn-btn-primary" id="share-link">🔗 Copy link</button>
+    <button class="scn-btn" id="share-qr">▦ QR code</button>
+    <button class="scn-btn" id="copy-briefing">📋 Copy briefing</button>
+    <button class="scn-btn" id="share-nfc" style="display:none">📳 Write NFC tag</button>
+  </div>
+  <div class="scn-divider"></div>
+  <div class="scn-export-label">Share your whole setup — every hall, building, SLA, custom site, and scenario — as one save file. Loading a colleague's file adds their data to yours (same names update, new ones append; nothing of yours is deleted):</div>
+  <div class="scn-actions">
+    <button class="scn-btn scn-btn-primary" id="save-share">📤 Share save file</button>
+    <button class="scn-btn" id="save-export">⤓ Export save file</button>
+    <button class="scn-btn" id="save-import">⤒ Load save file</button>
+    <input type="file" id="save-file" accept="application/json,.json" style="display:none">
+  </div>
+  <div class="scn-divider"></div>
+  <div class="scn-export-label">Send someone the whole app as one file — no install, no link, works offline. They open it like a document:</div>
+  <div class="scn-actions">
+    <a class="scn-btn scn-btn-primary" id="app-download" href="./StreamHallPlanner.html"
+       download="StreamHallPlanner.html" style="text-decoration:none; display:inline-block;">⤓ Download the app file</a>
+  </div>
+  <div class="scn-divider"></div>
+  <div class="scn-export-label">Export the current view for a report or email:</div>
+  <div class="scn-actions">
+    <button class="scn-btn scn-btn-img" id="export-png">🖼 Export PNG</button>
+    <button class="scn-btn scn-btn-img" id="export-pdf">📄 Export PDF</button>
+    <button class="scn-btn scn-btn-img" id="export-placard">🚪 Door placard PDF</button>
+  </div>
+</div>
+</details>
+
+</div><!-- /col-left -->
+<div class="col-right">
+
+<!-- CHART CARD -->
+<div class="card" id="chart-card">
+  <div class="chart-head">
+    <div class="card-title" style="margin-bottom:0">Psychrometric Chart — ASHRAE 9.9 Data Center Envelopes</div>
+    <div class="zoom-toolbar">
+      <button class="zoom-btn" id="zoom-in" title="Zoom in">+</button>
+      <button class="zoom-btn" id="zoom-out" title="Zoom out">−</button>
+      <button class="zoom-btn" id="zoom-plan" title="Zoom to the A→B change plan">◎ Plan</button>
+      <button class="zoom-btn" id="zoom-sla" title="Zoom to active SLA">⊡ SLA</button>
+      <button class="zoom-btn" id="zoom-center" title="Center on the points">⊕ Center</button>
+      <button class="zoom-btn" id="zoom-reset" title="Reset view">⟲ Fit</button>
+    </div>
+  </div>
+  <div class="zoom-hint">Pinch or scroll to zoom · drag to pan · double-click to reset · tap to inspect any point<span class="mouse-only"> · with a mouse, <strong>Shift-click sets Target</strong> and <strong>Alt-click sets Current</strong></span>.</div>
+  <div class="playback-row" id="playback-row">
+    <button class="zoom-btn" id="playback-toggle" title="Play the move hour by hour">▶</button>
+    <input type="range" id="playback-scrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the planned move">
+    <span id="playback-info" class="playback-info">—</span>
+  </div>
+  <div class="psych-wrap"><canvas id="psychCanvas" role="application" aria-label="Psychrometric chart. Arrow keys pan, plus and minus zoom, 0 resets the view. The state points and derived properties are also listed in the properties table below." tabindex="0"></canvas><div class="ch-line" id="ch-vline"></div><div class="ch-line" id="ch-hline"></div><div id="chart-tip"></div></div>
+  <div class="legend" id="legend">
+    <button class="leg-item" data-vis="Rec"><span class="leg-line" style="background:rgba(255,255,255,.4);border-top:2px dashed rgba(255,255,255,.4)"></span>Rec.</button>
+    <button class="leg-item" data-vis="A1"><span class="leg-line" style="background:#3fb950"></span>A1</button>
+    <button class="leg-item" data-vis="A2"><span class="leg-line" style="background:#3b9eff"></span>A2</button>
+    <button class="leg-item" data-vis="A3"><span class="leg-line" style="background:#f0a500"></span>A3</button>
+    <button class="leg-item" data-vis="A4"><span class="leg-line" style="background:#f85149"></span>A4</button>
+    <button class="leg-item" data-vis="SLA"><span class="leg-line" style="background:rgba(255,255,255,.7);border-top:2px dashed rgba(255,255,255,.7)"></span>SLA</button>
+    <button class="leg-item" data-vis="plan"><span class="leg-line" style="background:#ff6ef0"></span>A→B</button>
+    <button class="leg-item" data-vis="timepts"><span class="leg-dot" style="background:#ff6ef0;border:1.5px solid #000"></span>Time pts</button>
+    <button class="leg-item" data-vis="actual"><span class="leg-line" style="background:#39d2c0"></span>Actual</button>
+    <button class="leg-item" data-vis="specvol"><span class="leg-line" style="background:rgba(210,180,120,.9)"></span>v m³/kg</button>
+    <button class="leg-item" data-vis="enthalpy"><span class="leg-line" style="background:rgba(170,140,230,.9)"></span>h kJ/kg</button>
+  </div>
+  <div class="legend-hint">Tap a legend item to show / hide it · Time pts are pacing checkpoints, not thermal trajectories · <button class="leg-allnone" id="leg-all">All</button> <button class="leg-allnone" id="leg-none">None</button></div>
+</div>
+
+<!-- TABLE CARD -->
+<details class="card sect">
+  <summary><span class="sect-title">Data Table</span><span class="sect-sub" >full ASHRAE properties</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th style="text-align:left">Point</th>
+          <th>Temp °F</th><th>Temp °C</th><th>RH %</th>
+          <th>p_ws kPa</th><th>p_w kPa</th>
+          <th>W g/kg</th><th>Abs. Hum g/m³</th>
+          <th>Dew Pt °F</th><th>Wet Bulb °F</th>
+          <th>Enthalpy kJ/kg</th><th>Sp. Vol m³/kg</th>
+          <th>ASHRAE Zone</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+  <div class="formula-note">
+    <code>p_ws</code>: ASHRAE Eq. 5/6 (Hyland-Wexler). <code>W</code>: Eq. 20 with fitted enhancement factor <code>f·p_w</code>.
+    <code>h</code>, <code>v</code>: real-gas fits to CoolProp (ASHRAE RP-1485) — max 0.030 kJ/kg and 0.012% vs the reference; see <code>docs/coolprop-comparison.md</code>.
+    All evaluated at site pressure <span id="fn-pressure">—</span>.
+  </div>
+</div>
+</details>
+
+<details class="card sect">
+  <summary><span class="sect-title">Sensor Validation</span><span class="sect-sub" id="sv-summary">6 external reference methods</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+    <div class="calc-intro">Field-check temperature and RH sensors against an independent physical reference. Six methods, each showing the true value <em>and its uncertainty</em> — a verdict is only as good as the reference behind it. See <code>docs/sensor-validation.md</code> for when to use which.</div>
+
+    <div class="sv-tabs" role="tablist" aria-label="Validation method">
+      <button class="sv-tab" id="sv-tab-psy" role="tab" aria-selected="true">Psychrometer</button>
+      <button class="sv-tab" id="sv-tab-dp" role="tab" aria-selected="false">Dew-point meter</button>
+      <button class="sv-tab" id="sv-tab-salt" role="tab" aria-selected="false">Salt chamber</button>
+      <button class="sv-tab" id="sv-tab-ice" role="tab" aria-selected="false">Ice point</button>
+      <button class="sv-tab" id="sv-tab-boil" role="tab" aria-selected="false">Boiling point</button>
+      <button class="sv-tab" id="sv-tab-ref" role="tab" aria-selected="false">Reference instrument</button>
+    </div>
+
+    <!-- 1 · Psychrometer (wet bulb) -->
+    <div class="sv-pane active" id="sv-pane-psy" role="tabpanel">
+      <div class="sv-grid">
+        <div class="sla-field"><label for="sv-db">Dry bulb <span class="tunit">°F</span></label><input type="number" id="sv-db" step="0.1" placeholder="e.g. 75"></div>
+        <div class="sla-field"><label for="sv-wb">Wet bulb <span class="tunit">°F</span></label><input type="number" id="sv-wb" step="0.1" placeholder="e.g. 62"></div>
+        <div class="sla-field"><label for="sv-rh">Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" inputmode="decimal" id="sv-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+      </div>
+      <div class="sla-field" style="margin-top:10px">
+        <label for="sv-method">How was the wet bulb measured?</label><select id="sv-method" class="sla-select">
+          <option value="psy" selected>Sling / aspirated psychrometer — WMO (what an instrument reads)</option>
+          <option value="thermo">Thermodynamic wet bulb — ASHRAE Eq. 35 (a chart property)</option>
+        </select>
+      </div>
+      <div class="sv-hint">Wetted wick, ≥3 m/s airflow. The instrument reads the <em>psychrometric</em> wet bulb; Eq. 35's thermodynamic one differs by ~0.5 %RH, systematically.</div>
+    </div>
+
+    <!-- 2 · Dew-point instrument -->
+    <div class="sv-pane" id="sv-pane-dp" role="tabpanel">
+      <div class="sv-grid">
+        <div class="sla-field"><label for="sv-dp-db">Dry bulb <span class="tunit">°F</span></label><input type="number" id="sv-dp-db" step="0.1" placeholder="e.g. 75"></div>
+        <div class="sla-field"><label for="sv-dp-dp">Dew point (instrument) <span class="tunit">°F</span></label><input type="number" id="sv-dp-dp" step="0.1" placeholder="e.g. 54"></div>
+        <div class="sla-field"><label for="sv-dp-rh">Sensor RH % <span class="cap-hint">optional — reading under test</span></label><input type="number" inputmode="decimal" id="sv-dp-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+      </div>
+      <div class="sv-hint">For sites with a chilled-mirror or other dew-point meter — reference-grade when the mirror is clean. RH follows from T<sub>db</sub> and T<sub>dp</sub> alone (pressure-independent).</div>
+    </div>
+
+    <!-- 3 · Saturated-salt chamber -->
+    <div class="sv-pane" id="sv-pane-salt" role="tabpanel">
+      <div class="sv-grid">
+        <div class="sla-field"><label for="sv-salt-sel">Salt</label><select id="sv-salt-sel" class="sla-select"></select>
+        </div>
+        <div class="sla-field"><label for="sv-salt-t">Chamber temp <span class="tunit">°F</span></label><input type="number" id="sv-salt-t" step="0.1" placeholder="e.g. 72"></div>
+        <div class="sla-field"><label for="sv-salt-rh">Sensor RH % <span class="cap-hint">reading under test</span></label><input type="number" inputmode="decimal" id="sv-salt-rh" step="0.1" min="0" max="100" placeholder="—"></div>
+        <div class="sla-field"><label for="sv-salt-ut">Chamber temp known to ± <span class="cap-hint">drives the uncertainty</span></label><input type="number" inputmode="decimal" id="sv-salt-ut" step="0.1" min="0" placeholder="0.9"></div>
+      </div>
+      <div class="sv-hint" id="sv-salt-note">A saturated-salt jar is an <em>absolute</em> reference — physical chemistry, nothing to drift or expire — and its realized accuracy is set by how well you know the chamber temperature. NaCl barely cares (−0.04 %RH/°C); Mg(NO₃)₂ moves −0.30 %RH/°C. Sealed jar, slurry with visible solids, sensor above the slurry, hours to equilibrate. Reference: Greenspan (1977), NBS.</div>
+    </div>
+
+    <!-- 4 · Ice point (temperature) -->
+    <div class="sv-pane" id="sv-pane-ice" role="tabpanel">
+      <div class="sv-grid">
+        <div class="sla-field"><label for="sv-ice-t">Sensor temp in ice bath <span class="tunit">°F</span></label><input type="number" id="sv-ice-t" step="0.1" placeholder="e.g. 32.4"></div>
+      </div>
+      <div class="sv-hint">Crushed ice + a little distilled water — slush, not floating cubes. Stir, wait 2 min, keep the probe mid-bath off the walls. Reference: 32.0 °F / 0.00 °C by definition.</div>
+    </div>
+
+    <!-- 5 · Boiling point (temperature, altitude-corrected) -->
+    <div class="sv-pane" id="sv-pane-boil" role="tabpanel">
+      <div class="sv-grid">
+        <div class="sla-field"><label for="sv-boil-t">Sensor temp in boiling water <span class="tunit">°F</span></label><input type="number" id="sv-boil-t" step="0.1" placeholder="—"></div>
+      </div>
+      <div class="sv-hint" id="sv-boil-note">Rolling boil, probe mid-water off the pot. The reference is computed from this site's pressure — water does not boil at 212 °F at altitude. Impurities and superheat limit a field check to about ±0.9 °F.</div>
+    </div>
+
+    <!-- 6 · Reference instrument comparison -->
+    <div class="sv-pane" id="sv-pane-ref" role="tabpanel">
+      <div class="sv-grid">
+        <div class="sla-field"><label for="sv-ref-qty">Quantity</label><select id="sv-ref-qty" class="sla-select">
+            <option value="rh" selected>Relative humidity (%)</option>
+            <option value="temp">Temperature</option>
+          </select>
+        </div>
+        <div class="sla-field"><label id="sv-ref-val-label" for="sv-ref-val">Reference reads</label><input type="number" id="sv-ref-val" step="0.1" placeholder="—"></div>
+        <div class="sla-field"><label for="sv-ref-u">Reference uncertainty ± <span class="cap-hint">from its cal certificate</span></label><input type="number" inputmode="decimal" id="sv-ref-u" step="0.1" min="0" placeholder="e.g. 1.0"></div>
+        <div class="sla-field"><label id="sv-ref-reading-label" for="sv-ref-reading">Sensor under test reads</label><input type="number" id="sv-ref-reading" step="0.1" placeholder="—"></div>
+      </div>
+      <div class="sv-hint">Side-by-side with a recently calibrated instrument at the same spot, both settled. The verdict band widens by the reference's own uncertainty — a comparison can never be better than the reference.</div>
+    </div>
+
+    <div class="calc-res" id="sv-res" role="status" aria-live="polite" aria-atomic="true">Enter readings to compute the reference value.</div>
+    <div class="sv-actions" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <button class="scn-btn" id="sv-to-current" disabled>→ Set as Current point</button>
+      <input type="text" id="sv-sensor-label" class="scn-input" style="flex:1; min-width:150px;" placeholder="Sensor label (e.g. CRAH-3 supply)">
+      <input type="text" id="sv-tech" class="scn-input" style="width:110px;" maxlength="12" placeholder="Your initials" title="Recorded with each logged check — the first thing a customer audit asks">
+      <button class="scn-btn" id="sv-log" disabled>＋ Log check</button>
+      <button class="scn-btn" id="sv-ladder" style="display:none" aria-pressed="false" title="Big type + spoken verdicts, for when both hands hold a psychrometer">🔊 Ladder mode</button>
+    </div>
+    <div id="sv-logbook"></div>
+    <div class="formula-note">All methods run at site pressure <span id="sv-pressure">—</span> where pressure matters. Tolerances: RH ±2% / ±5% recalibrate (typical capacitive spec); temperature ±0.9 °F / ±1.8 °F. Verdicts are guard-banded: PASS means the error is inside tolerance <em>by more than the reference's own uncertainty</em>; when the reference's ±u straddles the limit the verdict is "too close to call" — a check can never claim more confidence than its reference has. Methods and references: <code>docs/sensor-validation.md</code>.</div>
+  </div>
+</details>
+
+<!-- TRAINING — ENVELOPE ESCAPE ROOM -->
+<details class="card sect">
+  <summary><span class="sect-title">Training — Envelope Escape Room</span><span class="sect-sub" id="tr-summary">drill the recovery instinct</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+    <div class="calc-intro">A plant fault hits a standard training hall (200,000 ft³ · cool 6 / warm 4 °F/hr · dehum 100 / hum 80 lb/hr · the Base SLA). Commit a recovery target; the physics referee plays out four hours minute-by-minute and scores the SLA time you kept, plus a bonus for finishing genuinely settled. Two things are always true in this hall: the servers never stop heating it — an uncommanded hall drifts warm on its own — and the plant takes minutes to spin up, so committing early beats committing perfectly. Deterministic per seed: share a challenge code and compete on identical faults.</div>
+    <div class="sv-grid">
+      <div class="sla-field"><label for="tr-scenario">Scenario</label><select id="tr-scenario" class="sla-select"></select></div>
+      <div class="sla-field"><label for="tr-seed">Seed <span class="cap-hint">same seed = same fault</span></label><input type="number" inputmode="numeric" id="tr-seed" step="1" min="0" value="42"></div>
+      <div class="sla-field" style="align-self:end"><button class="scn-btn" id="tr-reroll">🎲 New seed</button></div>
+    </div>
+    <div class="calc-res" id="tr-brief">—</div>
+    <div class="sv-grid" style="margin-top:10px">
+      <div class="sla-field"><label for="tr-temp">Your target temp <span class="tunit">°F</span></label><input type="number" id="tr-temp" step="0.5" placeholder="—"></div>
+      <div class="sla-field"><label for="tr-rh">Your target RH %</label><input type="number" inputmode="decimal" id="tr-rh" step="1" min="1" max="99" placeholder="—"></div>
+      <div class="sla-field" style="align-self:end; display:flex; gap:8px;">
+        <button class="scn-btn scn-btn-primary" id="tr-commit">Commit recovery</button>
+        <button class="scn-btn" id="tr-idle" title="See what hesitation costs">Hesitate…</button>
+      </div>
+    </div>
+    <div class="calc-res" id="tr-result" style="display:none"></div>
+    <canvas id="tr-spark" style="width:100%; height:70px; display:none; margin-top:8px;"></canvas>
+    <div class="sv-actions"><button class="scn-btn" id="tr-share" style="display:none">🔗 Copy challenge code</button></div>
+    <div class="formula-note">The referee is <code>src/core/trainer.js</code>: explicit 1-minute Euler steps of the moisture/temperature balance, plant rates capped and first-order-lagged (τ ≈ 8 min), a constant server heat load on any uncommanded hall, verdicts from the same SLA check the badge uses. A drill, not a simulator — real thermal mass and control-loop tuning are deliberately out of scope, and challenge codes carry the referee version so old codes are flagged rather than silently re-scored.</div>
+  </div>
+</details>
+
+</div><!-- /col-right -->
+</div><!-- /layout -->
+
+<div class="footer-bar">
+  <span class="selftest-badge" id="selftest-badge">running self-test…</span>
+  <span class="footer-note">Properties per ASHRAE Fundamentals Ch.1 (Eq. 3, 5/6, 20, 26, 30, 35). Tap the badge for the validation table.</span>
+</div>
+<div class="selftest-panel" id="selftest-panel"></div>
+
+<script type="module" src="./src/app/main.js"></script>
+<footer style="margin:40px -16px -20px; padding:24px 16px calc(24px + env(safe-area-inset-bottom, 0px)); text-align:center; background:linear-gradient(135deg,#1a3a5c 0%,#13263a 100%); border-top:3px solid var(--stream-teal); line-height:1.6;">
+  <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:8px;">
+    <span style="font-weight:800; font-size:1rem; letter-spacing:.18em; color:#fff;" data-brand="company">STREAM</span>
+    <span style="font-size:.55rem; font-weight:600; letter-spacing:.2em; color:var(--stream-teal); border-left:1px solid rgba(255,255,255,.3); padding-left:10px;" data-brand="companySub">DATA CENTERS</span>
+  </div>
+  <div style="color:#9db8d0; font-size:.8rem; margin-bottom:10px;">Hall Environment Planner · Critical Engineering · ASHRAE TC 9.9</div>
+  <div style="font-size:.72rem; color:#9db8d0; line-height:1.5;">
+    ASHRAE Fundamentals Ch.1 psychrometrics, validated against CoolProp (ASHRAE RP-1485) — see the self-test above and <a href="./docs/coolprop-comparison.md" style="color:var(--stream-teal)">docs/coolprop-comparison.md</a>. New here? <a href="./docs/OPERATOR-GUIDE.md" style="color:var(--stream-teal)">Operator guide</a>.
+  </div>
+  <div style="font-size:.68rem; color:#6f8aa3; margin-top:10px; line-height:1.5;">
+    Planning tool, not a control system — verify moves against site instrumentation before acting.
+  </div>
+  <div style="margin-top:10px; display:flex; gap:10px; justify-content:center; align-items:center; font-size:.68rem;">
+    <span id="app-version" style="color:#6f8aa3; font-family:var(--mono);">dev</span>
+    <button id="privacy-link" style="background:none; border:none; padding:0; color:#6f8aa3; font:inherit; text-decoration:underline; cursor:pointer;">Privacy</button>
+    <button id="errorlog-badge" style="display:none; align-items:center; padding:3px 10px; border-radius:6px; font:600 .68rem var(--mono); background:rgba(248,81,73,.1); border:1px solid rgba(248,81,73,.35); color:var(--danger); cursor:pointer;"></button>
+  </div>
+</footer>
+</body>
+</html>

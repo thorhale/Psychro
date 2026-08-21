@@ -108,6 +108,13 @@
     .row input[type=range]{grid-column:1/-1; grid-row:2}
   }
   @media (prefers-reduced-motion:reduce){ *{animation:none!important; transition:none!important} }
+
+  /* Added on import into the Psychro project: the way back to the launcher.
+     Every tool carries this in the same place. */
+  .mh-home { color:#10a8c6; text-decoration:none; font-size:12px; font-weight:700;
+    letter-spacing:.05em; padding:7px 11px; margin-right:10px; border-radius:6px;
+    border:1px solid rgba(16,168,198,.42); white-space:nowrap; }
+  .mh-home:hover { background:rgba(16,168,198,.16); }
 </style>
 
 <div class="deck">
@@ -118,6 +125,7 @@
       <p class="sub">Direct-to-chip glycol loop rejecting 500&nbsp;kW to chilled water through a counterflow plate exchanger.</p>
     </div>
     <div class="units" role="group" aria-label="Temperature units">
+      <a class="mh-home" href="../index.html">&#9664; All tools</a>
       <button id="uC" aria-pressed="true">&deg;C</button>
       <button id="uF" aria-pressed="false">&deg;F</button>
     </div>

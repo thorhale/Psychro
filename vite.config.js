@@ -78,6 +78,7 @@ const UNREFERENCED_ASSETS = [
   'screenshot-narrow.png',
   'robots.txt',
   'privacy.html',
+  'index.html', // the launcher — static, and deliberately not a Vite entry
 ];
 
 function staticCompanions() {
@@ -131,6 +132,11 @@ export default defineConfig({
   build: {
     target: 'es2020',
     rollupOptions: {
+      // The PLANNER is the bundled app, and it now lives at planner.html. The
+      // root index.html is the launcher: hand-written, no modules, copied
+      // through like privacy.html. Naming it here rather than letting Vite
+      // assume index.html is what keeps those two roles apart.
+      input: resolve(__dirname, 'planner.html'),
       output: {
         // Stable names, no content hash. sw.js precaches by literal path and
         // cannot be told what a hash will be, so a fingerprinted manifest is a

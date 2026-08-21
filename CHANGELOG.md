@@ -11,6 +11,32 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — a launcher, because the second tool could not be found
+
+The CDU sim shipped as a link in the planner's masthead, and the person it was
+built for could not find it. That is a design failure, not a user failure: a
+product with two tools needs a front door.
+
+The root is now a launcher — one card per tool, static, no modules, nothing to
+fetch. It is also the PWA `start_url`, so the installed app opens there. Both
+tools carry a link back to it in the same place, so the way out is muscle
+memory; without one the CDU page was a dead end.
+
+**Every existing link still works.** The planner moved to `planner.html`, so
+every share URL, QR code and challenge code this app has produced — all of
+which point at the root with their state in the hash — would have opened a menu
+instead of the hall they encode. The launcher forwards any hash straight
+through before the page paints, and an E2E pins that with a real v1 state link.
+
+While repointing the bundle checks: the service-worker precache verifier only
+ever looked at the top level of `dist/`, so a nested entry like
+`./cdu/index.html` could not be verified at all — it would have passed a
+precache list pointing at nothing. It resolves paths properly now.
+
+The launcher repeats the brand tokens as literals because a static page cannot
+import `brand.js`. Two copies of a palette is how a product ends up with two
+different blues, so a test asserts the copies agree.
+
 ### Added — CDU sim, as a second tool
 
 `thorhale/cdu-sim` imported **byte-for-byte** and reachable from the masthead.

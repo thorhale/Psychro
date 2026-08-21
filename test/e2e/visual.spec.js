@@ -40,7 +40,7 @@ async function settle(page) {
 
 test.describe('chart appearance', () => {
   test('default view', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await settle(page);
     await expect(page.locator(CHART)).toHaveScreenshot('chart-default.png');
   });
@@ -48,7 +48,7 @@ test.describe('chart appearance', () => {
   test('at altitude — envelopes shift with site pressure', async ({ page }) => {
     // Westminster, CO at 5,380 ft. Pressure-aware polygons should visibly differ
     // from the sea-level-ish default; this is the picture of that physics.
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.evaluate(() => document.querySelectorAll('details').forEach((d) => (d.open = true)));
     await page.fill('#hall-elev', '5380');
     await page.dispatchEvent('#hall-elev', 'input');
@@ -57,7 +57,7 @@ test.describe('chart appearance', () => {
   });
 
   test('single envelope — legend filtering', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.locator('#leg-none').click();
     await settle(page);
     await expect(page.locator(CHART)).toHaveScreenshot('chart-legend-none.png');
@@ -69,7 +69,7 @@ test.describe('chart appearance', () => {
     // (No °C variant here: the chart axis is deliberately always °C — the unit
     // toggle drives the controls, table and readout, not the plot. A metric
     // screenshot was byte-identical to the default, so it pinned nothing.)
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.evaluate(() => document.querySelectorAll('details').forEach((d) => (d.open = true)));
     await page.fill('#hall-vol', '200000');
     await page.dispatchEvent('#hall-vol', 'input');
@@ -82,7 +82,7 @@ test.describe('chart appearance', () => {
   });
 
   test('zoomed to the active SLA', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.locator('#zoom-sla').click();
     await settle(page);
     await expect(page.locator(CHART)).toHaveScreenshot('chart-zoom-sla.png');
