@@ -11,6 +11,36 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — the CDU tool is site-programmable
+
+The numbers its README said to edit in the source are a panel now: glycol type
+(PG/EG) and concentration 0–60 % by mass, facility supply temperature, CDU
+design capacity, design approach and loop rises, device count, cold-plate
+resistance, die throttle, and both site ΔT targets. Temperatures follow the
+°C/°F toggle — absolutes convert, deltas scale.
+
+The plate-pack geometry re-anchors live from the design point, running the
+same derivation `tools/cdu_reference.py` ran offline to produce the original
+constants; at the default site it reproduces the original `K_GEO` and
+`R_WALL` and the published preset table, asserted in the sweep. Presets and
+slider ranges scale with the design flows, so a 2 MW unit is not stranded at
+a 500 kW slider. The mixture's freeze point is shown, with a warning when the
+facility supply comes within 5 K of it. Configuration persists per device; a
+corrupted store clamps or falls back rather than half-applying.
+
+Glycol properties are degree-5×5 fits to CoolProp's INCOMP MPG/MEG mixtures
+over −10…60 °C × 0–60 % — fits that RECOVER CoolProp's own polynomial model
+(~1e-8), pinned against a committed 705-point grid. The validator now sweeps
+**370,526 points across three sites** — the default, a MEG-40 cold site, and
+water-water at 2 MW — asserting the same invariants everywhere, because a
+parameterized model's bugs live where nobody hand-tuned.
+
+Found while testing: editing a site field and clicking a preset in one motion
+fired the field's blur-change between mousedown and mouseup, which rebuilt the
+preset buttons and made the click silently die — for a person exactly as for
+the test. The buttons are built once now and resolve their values at click
+time.
+
 ### Added — the Branding card: upload a logo, every tool follows
 
 The logo-to-palette feature has existed since the palette was first derived —

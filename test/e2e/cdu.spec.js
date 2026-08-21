@@ -73,3 +73,70 @@ test.describe('CDU sim', () => {
     expect(external, `unexpected external requests: ${external.join(', ')}`).toHaveLength(0);
   });
 });
+
+test.describe('CDU site configuration', () => {
+  test('the site panel rescales the whole tool and persists', async ({ page }) => {
+    await page.goto('./cdu/index.html');
+    await expect(page.locator('#cap1')).toContainText('500\u00a0kW');
+
+    await page.locator('.site summary').click();
+    // A 1 MW MEG-40 cold site — nothing the original constants were tuned for.
+    await page.locator('#sQdes').fill('1000');
+    await page.locator('#sQdes').dispatchEvent('change');
+    await page.selectOption('#sFluid', 'MEG');
+    await page.locator('#sConc').fill('40');
+    await page.locator('#sConc').dispatchEvent('change');
+
+    await expect(page.locator('#cap1')).toContainText('1\u00a0MW');
+    await expect(page.locator('#legSec')).toHaveText('EG40');
+    await expect(page.locator('#siteNote')).toContainText('EG40 freezes at -23.8');
+    // The sliders rescaled: the design preset must sit inside the new range.
+    const msMax = await page.locator('#ms').getAttribute('max');
+    expect(Number(msMax)).toBeGreaterThan(3000);
+    // The design preset lands at pump x1.00 — the anchor is self-consistent.
+    await page.locator('#presets button', { hasText: 'Design point' }).click();
+    await expect(page.locator('#vPump')).toHaveText('\u00d71.00');
+
+    // Persists: the site belongs to the device, like the hall profiles do.
+    await page.reload();
+    await expect(page.locator('#cap1')).toContainText('1\u00a0MW');
+    await expect(page.locator('#legSec')).toHaveText('EG40');
+
+    // And resets to the original tool.
+    await page.locator('.site summary').click();
+    await page.locator('#sReset').click();
+    await expect(page.locator('#cap1')).toContainText('500\u00a0kW');
+    await expect(page.locator('#legSec')).toHaveText('PG25');
+  });
+
+  test('config temperatures follow the unit toggle as absolutes and deltas', async ({ page }) => {
+    await page.goto('./cdu/index.html');
+    await page.locator('.site summary').click();
+    await expect(page.locator('#sTfws')).toHaveValue('18');
+    await expect(page.locator('#sApp')).toHaveValue('3');
+
+    await page.locator('#uF').click();
+    // Absolute converts (18 C = 64.4 F); a DELTA scales (3 K = 5.4 F).
+    await expect(page.locator('#sTfws')).toHaveValue('64.4');
+    await expect(page.locator('#sApp')).toHaveValue('5.4');
+
+    // Typing in F must store C canonically: 68 F = 20 C.
+    await page.locator('#sTfws').fill('68');
+    await page.locator('#sTfws').dispatchEvent('change');
+    await page.locator('#uC').click();
+    await expect(page.locator('#sTfws')).toHaveValue('20');
+  });
+
+  test('a corrupted site store falls back to the defaults', async ({ page }) => {
+    await page.goto('./cdu/index.html');
+    await page.evaluate(() => {
+      localStorage.setItem('sdc_cdu_site_v1', '{"qDes":"NaN","fluid":"DIHYDROGEN","conc":9999}');
+    });
+    await page.reload();
+    await expect(page.locator('#cap1')).toContainText('500\u00a0kW');
+    await expect(page.locator('#legSec')).toHaveText('PG60'); // conc clamped to range
+    await page.locator('.site summary').click();
+    await page.locator('#sReset').click();
+    await expect(page.locator('#legSec')).toHaveText('PG25');
+  });
+});

@@ -57,6 +57,25 @@ the wrong number to optimise. `G = εC_min` is the one that governs cooling.
 - Facility supply 18 °C, an **ASHRAE W27**-class facility loop.
 - Geometry anchored to a **3 K design approach**, the figure CDU vendors publish.
 
+## Site configuration
+
+Since the import into the Psychro project, the numbers below the fold are no
+longer edit-the-source constants. A **Site configuration** panel under the
+sliders sets: glycol type (PG / EG) and concentration 0–60 % by mass, facility
+supply temperature, CDU design capacity, the design approach and loop rises,
+device count and cold-plate resistance, the die throttle, and both site ΔT
+targets. The plate-pack geometry re-anchors live from the design point — the
+same derivation `tools/cdu_reference.py` ran offline — presets and slider
+ranges scale with it, and the chosen mixture's freeze point is shown (with a
+warning when the facility supply comes within 5 K of it). The configuration
+persists on the device; **Reset** returns the original 500 kW PG25 tool, whose
+outputs the defaults reproduce to a few thousandths of a kelvin.
+
+Glycol properties are degree-5×5 polynomial fits to CoolProp's INCOMP MPG/MEG
+mixtures over −10…60 °C × 0–60 % — fits that *recover* CoolProp's own
+polynomial model to ~1e-8, pinned in CI against `tools/coolant-reference.json`
+(705 points × 4 properties). Regenerate with `tools/fit_glycol.py`.
+
 ### Assumptions that are mine, not a standard
 
 Stated plainly because the page is only as good as these:
