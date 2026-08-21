@@ -57,6 +57,7 @@ import {
   SAVE_FILE_VERSION,
 } from '../state/schema.js';
 import { evapMediaOutput, effectivenessFromOutput } from '../core/evapmedia.js';
+import { ventilationWater } from '../core/ventilation.js';
 import { parseTrendCsv, maxWindowedRate } from '../lib/trendcsv.js';
 import {
   LS_KEY_V1,
@@ -764,6 +765,40 @@ function refreshHallSummary() {
   const bld = (h.building || '').trim();
   el.textContent = `${h.siteName || 'set site'}${bld ? ' · ' + bld : ''} · ${h.name || 'Hall'} · ${(h.elevFt ?? 0).toLocaleString()} ft${vol}${caps ? ' · ' + caps : ''}${fx}`;
 }
+// ── Steady-state ventilation water readout ──────────────────────────────────
+// Painted from update() (it is a readout, not an input, so repainting while
+// someone types into the CFM field above it is safe). Uses the TARGET point:
+// this is the duty of holding the hall where you want it, not where it is.
+function paintVentReadout() {
+  const el = inp('vent-res');
+  if (!el) return;
+  const h = state.hall;
+  if (!(h.doasCfm > 0)) { el.textContent = '—'; return; }
+  const r = ventilationWater({
+    cfm: h.doasCfm, roomTempF: state.bTemp, roomRH: state.bRH,
+    outdoorDpF: h.designDpF, pressureKpa: state.pressure,
+  });
+  if (!r) {
+    el.innerHTML = 'The design outdoor dew point is wetter than the Target room — ventilation <em>adds</em> moisture at this setpoint, so the humidifiers idle. (Dehumidification load is a different question.)';
+    return;
+  }
+  const basis = h.designDpF == null
+    ? 'bone-dry outdoor air assumed'
+    : `outdoor dew point ${dispTs(h.designDpF)}${tLabel()}`;
+  // Duty against the plant as it stands today: nameplate × efficiency × derate.
+  const rate = h.canHumidify && h.rateHumLb > 0
+    ? h.rateHumLb * ((h.effPct ?? 100) / 100) * ((h.derateHumPct ?? 100) / 100)
+    : null;
+  const duty = rate ? ` — <strong>${(r.lbPerHr / rate * 100).toFixed(0)}%</strong> of today's humidify capacity` : '';
+  const sla = state.slaProfiles[state.activeSla];
+  const settle = r.settleRH < (sla?.rhMin ?? 0)
+    ? ` Humidifiers off, the room settles near <strong>${r.settleRH.toFixed(0)}% RH</strong> — below this SLA's ${sla.rhMin}% floor, so this is standing duty, not margin.`
+    : '';
+  el.innerHTML = `Holding Target ${dispTs(state.bTemp)}${tLabel()} / ${Math.round(state.bRH)}% with ${h.doasCfm.toLocaleString()} CFM outside air (${basis}): ` +
+    `<strong>${r.lbPerHr.toFixed(1)} lb/hr · ${r.galPerDay.toFixed(0)} gal/day</strong> of humidifier water${duty}.${settle}` +
+    ` Evaporative units drinking utility water: budget 1.5–3× that for bleed-off.`;
+}
+
 // ── Validity-domain warning chip ────────────────────────────────────────────
 // The physics core is validated against CoolProp over a declared band
 // (src/core/domain.js). When either state point leaves it, say so on the chart
@@ -817,6 +852,7 @@ function update() {
   // outputs move with it — but this rebuilds the rows' markup, so never do it
   // while someone is typing into one.
   if (!inp('equip-panel')?.contains(document.activeElement)) renderEquipment();
+  paintVentReadout(); //         steady-state DOAS water follows the Target
   renderDomainWarnings();
   if (typeof saveProfiles === 'function') saveProfiles();
 }
@@ -975,6 +1011,13 @@ function renderHallEditor() {
       </details>
     </div>
     <div class="sla-caps">
+      <div class="sla-caps-label">Ventilation moisture load — steady-state humidifier duty</div>
+      <div class="cap-explain">Once the hall is holding its Target, the humidifiers only replace what the outside-air ventilation carries out: DOAS dry-air mass × (room moisture − outdoor moisture). Leave the dew point blank to assume bone-dry outdoor air — the worst case no weather record can beat.</div>
+      <div class="cap-line"><span class="cap-name">DOAS outside air <span class="cap-hint">fresh-air makeup, not the recirculating supply</span></span><input type="number" id="hall-doas" class="cap-rate" value="${state.hall.doasCfm ?? ''}" placeholder="—" step="100" min="0"><span class="cap-u">CFM</span></div>
+      <div class="cap-line"><span class="cap-name">Design outdoor dew point <span class="cap-hint">blank = bone dry, the worst case</span></span><input type="number" id="hall-ddp" class="cap-rate" value="${state.hall.designDpF != null ? dispT1(state.hall.designDpF) : ''}" placeholder="—" step="1"><span class="cap-u">${tLabel()}</span></div>
+      <div class="calc-res" id="vent-res">—</div>
+    </div>
+    <div class="sla-caps">
       <div class="sla-caps-label">Real-world factors — efficiency &amp; current capacity</div>
       <div class="cap-explain"><strong>Efficiency factor</strong>: the fraction of nameplate performance this hall actually delivers once mixing losses, stratification, control deadbands, and sensor lag are paid — <strong>85% is the planning default</strong>; calibrate it with logged results below. <strong>Capacity derates</strong>: today's temporary reductions — chillers offline, crusty evaporative media on the humidifiers, fouled coils. Every plant rate is scaled by efficiency × derate before timing a move.</div>
       <div class="cap-line"><span class="cap-name">Efficiency factor <span class="cap-hint">predicted real-world vs. nameplate</span></span><input type="number" id="hall-eff" class="cap-rate" value="${state.hall.effPct ?? 85}" step="1" min="1" max="150"><span class="cap-u">%</span></div>
@@ -1085,6 +1128,21 @@ function renderHallEditor() {
     state.hall.baroKpa = isNaN(v) || v < 55 || v > 110 ? null : v;
     applyElevation(); update();
   });
+
+  // Ventilation moisture load — DOAS CFM plus a unit-aware design dew point.
+  const doasEl = inp('hall-doas');
+  if (doasEl) doasEl.addEventListener('input', function() {
+    const v = parseFloat(this.value);
+    state.hall.doasCfm = isNaN(v) || v <= 0 ? null : Math.min(v, 1e6);
+    update();
+  });
+  const ddpEl = inp('hall-ddp');
+  if (ddpEl) ddpEl.addEventListener('input', function() {
+    const v = parseFloat(this.value);
+    state.hall.designDpF = isNaN(v) ? null : Math.max(-80, Math.min(90, tU().toF(v)));
+    update();
+  });
+  paintVentReadout(); // the freshly built readout div starts painted, not '—'
 
   // Real-world factor fields (%): efficiency + per-system capacity derates.
   const pctWire = (id, key, lo, hi, dflt) => {

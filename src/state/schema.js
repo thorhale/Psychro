@@ -46,6 +46,13 @@ export function normalizeHall(h) {
   h.baroKpa = isNum(h.baroKpa) && h.baroKpa >= 55 && h.baroKpa <= 110 ? h.baroKpa : null;
   h.hallVolFt3 = numOrNull(h.hallVolFt3);
   h.airflowCfm = numOrNull(h.airflowCfm);
+  // DOAS outside-air ventilation, for the steady-state humidifier water load.
+  // Distinct from airflowCfm (recirculating supply): this is the fresh-air
+  // makeup that actually exchanges moisture with the outdoors. designDpF is
+  // the site's design-day outdoor dew point; null means "assume bone dry",
+  // which is the conservative ceiling and needs no weather record to defend.
+  h.doasCfm = isNum(h.doasCfm) && h.doasCfm > 0 ? clamp(h.doasCfm, 0, 1e6) : null;
+  h.designDpF = isNum(h.designDpF) ? clamp(h.designDpF, -80, 90) : null;
   for (const k of ['canHeat', 'canDehumidify', 'canHumidify']) h[k] = h[k] === true;
   for (const k of ['rateCoolF', 'rateWarmF', 'rateDehumLb', 'rateHumLb'])
     h[k] = numOrNull(h[k]);
