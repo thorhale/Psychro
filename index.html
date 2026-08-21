@@ -403,11 +403,21 @@
   .mh-product { font-size:.8rem; font-weight:700; color:#fff; letter-spacing:.06em;
     text-transform:uppercase; margin:0 0 0 auto; }
   .mh-tagline { flex-basis:100%; color:#9db8d0; font-size:.68rem; margin:0; }
+  /* Second tool, not a second tab of this one: liquid cooling is its own
+     problem and its own page. Sized as a target you can hit on a hall floor. */
+  .mh-tool { margin-left:12px; padding:5px 11px; border-radius:6px;
+    border:1px solid var(--brand-accent); color:#fff; text-decoration:none;
+    font-size:.66rem; font-weight:700; letter-spacing:.06em; white-space:nowrap;
+    background:color-mix(in srgb, var(--brand-accent) 18%, transparent);
+    transition:background .12s; }
+  .mh-tool:hover { background:color-mix(in srgb, var(--brand-accent) 34%, transparent); }
+  @media (pointer:coarse) { .mh-tool { padding:9px 13px; } }
   /* On a hall floor the tagline is decoration. Below 900 px it goes, and the
      product name wraps under the brand instead of fighting it for the row. */
   @media (max-width:900px) {
     .mh-tagline { display:none; }
     .mh-product { margin-left:0; font-size:.72rem; }
+    .mh-tool { margin-left:auto; }
   }
 
   /* ── Field-first stack ─────────────────────────────────────────────────
@@ -630,6 +640,7 @@
   <span class="mh-company" data-brand="company">STREAM</span>
   <span class="mh-sub" data-brand="companySub">DATA CENTERS</span>
   <h1 class="mh-product" data-brand="product">Hall Environment Planner</h1>
+  <a class="mh-tool" href="cdu/index.html">CDU sim →</a>
   <p class="mh-tagline">Plan temperature &amp; humidity moves within SLA · capability-aware timing · ASHRAE psychrometrics</p>
 </div>
 

@@ -38,6 +38,11 @@ export default [
       'dist/',
       'node_modules/',
       'blockworld/',
+      // Imported byte-for-byte from thorhale/cdu-sim and deliberately not
+      // reformatted: it is one self-contained ES5 file that is its own source
+      // and its own build output. Its quality gate is its own invariant sweep,
+      // `npm run validate:cdu`, which CI runs — not this config's `no-var`.
+      'cdu/',
       'psychro-demo.html',
       // Native projects hold a COPY of the built web assets plus Capacitor's own
       // generated bridge files. Both are build output, not source.

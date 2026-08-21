@@ -209,6 +209,18 @@ check('no external resource references', externalRefs.length === 0, externalRefs
 
 // ── 7. BlockWorld passthrough ───────────────────────────────────────────────
 check('blockworld/ copied through', existsSync(join(dist, 'blockworld', 'index.html')));
+check('cdu/ copied through', existsSync(join(dist, 'cdu', 'index.html')));
+// The CDU tool's entire promise is that it is one file with no network. If a
+// build ever rewrote it into chunks, or someone added a CDN link, this catches
+// it before it ships offline-broken.
+{
+  const cdu = existsSync(join(dist, 'cdu', 'index.html'))
+    ? readFileSync(join(dist, 'cdu', 'index.html'), 'utf8') : '';
+  check('cdu/index.html has no external references',
+    !/(src|href)\s*=\s*["'](https?:)?\/\//i.test(cdu));
+  check('cdu/index.html is byte-identical to the source',
+    cdu === (existsSync('cdu/index.html') ? readFileSync('cdu/index.html', 'utf8') : null));
+}
 
 // ── 8. Size budget ──────────────────────────────────────────────────────────
 // One artifact serves both web and the native shells, so the Capacitor plugin

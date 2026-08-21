@@ -42,6 +42,13 @@ jobs:
       - name: Unit, CoolProp oracle, invariant and consistency suites
         run: npm test
 
+      - name: CDU sim invariant sweep
+        # The imported tool ships with its own oracle: 124,488 operating points
+        # asserting energy balance, no temperature crossing, and that the page's
+        # constants have not drifted from the test core. It is excluded from
+        # eslint on purpose (imported byte-for-byte), so THIS is its gate.
+        run: npm run validate:cdu
+
       - name: Accuracy report vs CoolProp
         # Printed in the log so any accuracy drift is visible in the PR without
         # having to reproduce it locally.

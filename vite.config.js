@@ -31,7 +31,8 @@
  * pins the root layout; `scripts/verify-bundle.mjs` asserts no fingerprinted
  * PWA asset survives in `dist/`.
  *
- * `blockworld/` is an independent static mini-app; it is copied through untouched.
+ * `blockworld/` and `cdu/` are independent static mini-apps; they are copied
+ * through untouched.
  */
 
 import { defineConfig } from 'vite';
@@ -105,8 +106,14 @@ function staticCompanions() {
           if (f.endsWith('.md')) cpSync(resolve(docsSrc, f), resolve(docsOut, f));
         }
       }
-      if (existsSync(resolve(__dirname, 'blockworld'))) {
-        cpSync(resolve(__dirname, 'blockworld'), resolve(out, 'blockworld'), { recursive: true });
+      // Independent static mini-apps, copied through byte-for-byte. `cdu/` is
+      // imported from thorhale/cdu-sim and MUST NOT be processed: it is one
+      // self-contained file that is its own source and its own build output,
+      // and the whole point is that it stays that way.
+      for (const dir of ['blockworld', 'cdu']) {
+        if (existsSync(resolve(__dirname, dir))) {
+          cpSync(resolve(__dirname, dir), resolve(out, dir), { recursive: true });
+        }
       }
     },
   };
