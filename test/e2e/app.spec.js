@@ -1871,3 +1871,70 @@ test.describe('offline', () => {
     await context.setOffline(false);
   });
 });
+
+test.describe('steady-state ventilation water', () => {
+  const lbPerHr = async (page) => {
+    const txt = await page.locator('#vent-res').textContent();
+    const m = txt.match(/([\d.]+) lb\/hr/);
+    return m ? parseFloat(m[1]) : null;
+  };
+
+  test('DOAS CFM produces a water readout; a design dew point shaves it', async ({ page }) => {
+    await page.goto('./planner.html');
+    await expandAll(page);
+    await expect(page.locator('#vent-res')).toHaveText('—');
+    await page.fill('#hall-doas', '2425');
+    await page.dispatchEvent('#hall-doas', 'input');
+    await expect(page.locator('#vent-res')).toContainText('lb/hr');
+    await expect(page.locator('#vent-res')).toContainText('gal/day');
+    await expect(page.locator('#vent-res')).toContainText('bone-dry outdoor air assumed');
+    const ceiling = await lbPerHr(page);
+    expect(ceiling).toBeGreaterThan(0);
+    // A real design dew point can only reduce the ceiling, never raise it.
+    await page.fill('#hall-ddp', '-10');
+    await page.dispatchEvent('#hall-ddp', 'input');
+    await expect(page.locator('#vent-res')).toContainText('outdoor dew point');
+    const design = await lbPerHr(page);
+    expect(design).toBeGreaterThan(0);
+    expect(design).toBeLessThan(ceiling);
+    // Outdoor wetter than the Target room (87 °F / 28 % ≈ 50 °F dew point):
+    // the humidifiers idle, and the readout says so instead of going negative.
+    await page.fill('#hall-ddp', '70');
+    await page.dispatchEvent('#hall-ddp', 'input');
+    await expect(page.locator('#vent-res')).toContainText('humidifiers idle');
+  });
+
+  test('the DOAS fields persist across a reload', async ({ page }) => {
+    await page.goto('./planner.html');
+    await expandAll(page);
+    await page.fill('#hall-doas', '2425');
+    await page.dispatchEvent('#hall-doas', 'input');
+    await page.fill('#hall-ddp', '-10');
+    await page.dispatchEvent('#hall-ddp', 'input');
+    await page.reload();
+    await expandAll(page);
+    await expect(page.locator('#hall-doas')).toHaveValue('2425');
+    await expect(page.locator('#hall-ddp')).toHaveValue('-10');
+    await expect(page.locator('#vent-res')).toContainText('lb/hr');
+  });
+
+  test('the design dew point is typed and shown in the unit on screen', async ({ page }) => {
+    await page.goto('./planner.html');
+    await expandAll(page);
+    await page.fill('#hall-doas', '2425');
+    await page.dispatchEvent('#hall-doas', 'input');
+    await page.fill('#hall-ddp', '14');
+    await page.dispatchEvent('#hall-ddp', 'input');
+    await page.locator('#unit-toggle .unit-btn[data-unit="C"]').click();
+    await expandAll(page);
+    // 14 °F is exactly −10 °C; the field re-renders converted, not raw.
+    await expect(page.locator('#hall-ddp')).toHaveValue('-10');
+    await expect(page.locator('#vent-res')).toContainText('°C');
+    // Typing in °C stores °F canonically: −10 °C typed comes back as 14 °F.
+    await page.fill('#hall-ddp', '-10');
+    await page.dispatchEvent('#hall-ddp', 'input');
+    await page.locator('#unit-toggle .unit-btn[data-unit="F"]').click();
+    await expandAll(page);
+    await expect(page.locator('#hall-ddp')).toHaveValue('14');
+  });
+});

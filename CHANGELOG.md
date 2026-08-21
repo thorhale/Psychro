@@ -11,6 +11,24 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — steady-state ventilation water on the hall card
+
+Once a hall is holding its Target, humidifier duty is set by the outside-air
+ventilation, not the room volume: DOAS dry-air mass × (room moisture −
+outdoor moisture). The Data Hall card now takes the DOAS outside-air CFM and
+an optional design outdoor dew point, and reports the standing water load in
+lb/hr and gal/day, the share of today's humidify capacity it consumes, where
+the room would settle with the humidifiers off, and the 1.5–3× utility-water
+bleed-off budget for evaporative units.
+
+Leaving the dew point blank assumes bone-dry outdoor air — the worst case no
+weather record can beat, so the figure is defensible without one. A design
+dew point can only shave that ceiling; the ice-branch saturation curve is
+used below freezing. The load is computed at the Target point at site
+pressure — and the core tests pin the neat cancellation that makes water per
+CFM nearly pressure-independent even though dry-air mass and humidity ratio
+each swing well over 15 % between sea level and Denver.
+
 ### Added — the CDU tool is site-programmable
 
 The numbers its README said to edit in the source are a panel now: glycol type

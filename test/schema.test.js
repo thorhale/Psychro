@@ -400,6 +400,27 @@ describe('measured barometer override', () => {
   });
 });
 
+describe('DOAS ventilation fields', () => {
+  it('normalizeHall keeps doasCfm/designDpF, defaults both to null', () => {
+    const h = normalizeHall({ doasCfm: 2425, designDpF: -10 });
+    expect(h.doasCfm).toBe(2425);
+    expect(h.designDpF).toBe(-10);
+    // Every pre-existing save lacks both fields — they must come back null,
+    // meaning "no DOAS entered" and "assume bone-dry outdoor air".
+    const old = normalizeHall({});
+    expect(old.doasCfm).toBeNull();
+    expect(old.designDpF).toBeNull();
+    // Zero/negative flow is "no ventilation", not a number to keep.
+    expect(normalizeHall({ doasCfm: 0 }).doasCfm).toBeNull();
+    expect(normalizeHall({ doasCfm: -5 }).doasCfm).toBeNull();
+    expect(normalizeHall({ doasCfm: 'lots' }).doasCfm).toBeNull();
+    // Dew point clamps to the physics-plausible band instead of clearing:
+    // a typo'd sign should not silently revert to the worst-case ceiling.
+    expect(normalizeHall({ designDpF: -300 }).designDpF).toBe(-80);
+    expect(normalizeHall({ designDpF: 120 }).designDpF).toBe(90);
+  });
+});
+
 describe('guards', () => {
   it('isValidScenario requires all four finite state numbers', () => {
     expect(isValidScenario({ aTemp: 75, aRH: 45, bTemp: 80, bRH: 40 })).toBe(true);
