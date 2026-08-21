@@ -104,6 +104,38 @@ inverse for thermodynamic work. Both are offered, labelled.
 
 ---
 
+## CDU flow calculator
+
+A second tool with a second physics core. Same rules.
+
+| Quantity | Basis | Status |
+|---|---|---|
+| Counterflow effectiveness | **ε–NTU**, `ε = (1−e^{−NTU(1−Cr)}) / (1−Cr·e^{−NTU(1−Cr)})` | Standard heat-exchanger theory. Verified **symbolically in Wolfram**: the Cr→1 limit really is `NTU/(1+NTU)` (the closed form the model swaps to), and ε rises monotonically with NTU for all `0<Cr<1`. The swap fires at `Cr>0.9995` and costs at most **2.3e-4** in ε. |
+| Water properties (facility loop) | CoolProp `Water` at 300 kPa | Polynomial fits, **2.7e-4 %** vs CoolProp. Independently cross-checked against **Wolfram's IAPWS `ThermodynamicData`** — agreement within **0.03 %** on ρ·c_p across 10–50 °C, from a source with no CoolProp in it. |
+| Glycol properties (server loop) | CoolProp `INCOMP::MPG-25%` at 300 kPa | Polynomial fits, **2.7e-4 %** vs CoolProp. **Not independently cross-checked** — Wolfram has no aqueous-glycol mixture data, and no second source was available. This rests on CoolProp alone, which is a narrower footing than the water side. |
+| Film coefficient | Chevron-plate `Nu = C·Re^0.7·Pr^(1/3)`, in series with a fixed wall-and-fouling resistance | A **correlation**, not a standard. The exponent and the plate constant are modelling choices. |
+| Plate-pack geometry `K_GEO`, `R_WALL` | Anchored to a **3 K design approach at 500 kW** | An assumption, and the dominant one — see below. |
+| Die temperature | Rack **outlet** plus its own cold-plate rise, 360 devices at 0.012 K/W | Site figures, not standards. |
+| Pump power | Affinity law, `∝ flow³`, with a glycol viscosity penalty | Ignores pump and motor efficiency curves. |
+
+### What actually limits this tool
+
+The property fits are pinned at 2.7e-4 % and checked in CI against a committed
+CoolProp grid. Retuning them from the original ≤0.1 % moved every reported
+temperature by at most **0.003 K** — so the arithmetic was never the limiting
+factor, and it certainly is not now.
+
+The uncertainty lives entirely in the **model's assumptions**: a 3 K design
+approach, a chevron-plate exponent, 360 devices at 0.012 K/W, a wall resistance
+taken as 5 % of the total. Those are worth whole kelvins, not thousandths. The
+CDU README states them plainly under *"Assumptions that are mine, not a
+standard"*, which is the right place for them.
+
+Chasing the fits further would be polishing a number three orders below the
+first assumption it feeds.
+
+---
+
 ## Sensor-validation references
 
 | Method | Authority | Status |

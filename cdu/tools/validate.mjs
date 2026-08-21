@@ -27,6 +27,34 @@ for (const name of ['RC_SEC','PH_SEC','RC_PRI','PH_PRI']) {
     fail(`drift: ${name} differs between index.html and model.mjs`);
 }
 
+// ---- 1b. the property fits still land on CoolProp ---------------------------
+// The polynomials ARE the physics inputs: rho*cp sets each loop's capacity rate
+// and the phi group sets its film coefficient. A drifting fit is a silently
+// wrong answer, so they are pinned against a committed CoolProp grid rather
+// than trusted. The grid is committed so this runs with no Python and no
+// network, the same bargain the psychrometric core makes.
+//
+// 2.7e-4 % is where the current fits sit; the tolerance is set an order above
+// so it flags a real regression rather than float noise. It used to be 0.1 %
+// (PH_SEC was at 0.0994 %, right on the line) — retuning moved every reported
+// temperature by at most 0.003 K, which is the honest measure of what the
+// property fits were ever worth here.
+{
+  const ref = JSON.parse(readFileSync(join(here, 'property-reference.json'), 'utf8'));
+  const TOL_PCT = 3e-3;
+  const horner = (c, t) => c.reduce((v, a) => v * t + a, 0);
+  for (const [name, key] of [['RC_SEC', 'rc_sec'], ['PH_SEC', 'ph_sec'],
+                             ['RC_PRI', 'rc_pri'], ['PH_PRI', 'ph_pri']]) {
+    let worst = 0, at = 0;
+    for (const r of ref.rows) {
+      const e = Math.abs(horner(M[name], r.t_c) - r[key]) / r[key] * 100;
+      if (e > worst) { worst = e; at = r.t_c; }
+    }
+    if (worst > TOL_PCT) fail(`${name}: ${worst.toExponential(2)}% off CoolProp at ${at} C (max ${TOL_PCT}%)`);
+    else console.log(`${name.padEnd(7)} vs CoolProp  max ${worst.toExponential(2)}%`);
+  }
+}
+
 // ---- 2. thermodynamic invariants over the full control envelope -------------
 let n = 0, maxBal = 0, maxQ = 0;
 for (let Vs = 400; Vs <= 1900; Vs += 20)

@@ -44,7 +44,9 @@ the wrong number to optimise. `G = εC_min` is the one that governs cooling.
 - Counterflow **ε–NTU**, solved for temperature rather than duty: the secondary loop
   floats to whatever temperature it needs in order to reject the load.
 - Fluid properties from **CoolProp** — `INCOMP::MPG-25%` for the glycol loop and
-  `Water` for the facility loop, as polynomial fits over 5–65 °C (max error <0.1%).
+  `Water` for the facility loop, as polynomial fits over 5–65 °C (max error
+  **2.7e-4 %**, pinned in CI against a committed CoolProp grid; the water side is
+  additionally cross-checked against Wolfram's IAPWS data to 0.03 %).
   The two loops are *not* interchangeable: at equal flow the glycol-side film
   coefficient is ~35% lower and it costs ~20% more pumping.
 - Plate-pack film coefficients from a chevron-plate correlation,

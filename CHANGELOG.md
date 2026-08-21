@@ -11,6 +11,47 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — the CDU tool now holds the same accuracy standard as the rest of the app
+
+Its property fits were "max error <0.1 %", and `PH_SEC` sat at **0.0994 %** —
+on the line. Refitted to higher degree, every one of the four polynomials is now
+within **2.7e-4 %** of CoolProp, which is the band the psychrometric core works
+in.
+
+Pinned, not trusted: `cdu/tools/property-reference.json` is a committed CoolProp
+grid over 5–65 °C, and `npm run validate:cdu` checks all four fits against it on
+every push. No Python, no network — the same bargain the psychrometric oracle
+makes. Reverting a coefficient now fails twice, once on drift between the page
+and the test core and once on accuracy.
+
+**What it was worth: 0.003 K.** That is the honest measure. Retuning moved every
+reported temperature — hottest die, facility return, at design point and at both
+extremes of the control envelope — by at most three thousandths of a degree. The
+property fits were never this tool's limiting factor and are now three orders
+below its first modelling assumption.
+
+### Verified — the CDU physics against a source with no CoolProp in it
+
+Everything in this project traced to CoolProp, which is a single point of
+failure for a claim of accuracy. Wolfram is independent, and now cross-checks
+two things:
+
+- **The ε–NTU relation, symbolically.** The Cr→1 limit really is `NTU/(1+NTU)`,
+  which is the closed form the model swaps to; ε rises monotonically with NTU
+  for all `0<Cr<1`; and the swap at `Cr>0.9995` costs at most **2.3e-4** in ε.
+- **The facility-loop water properties.** Wolfram's IAPWS `ThermodynamicData`
+  agrees with the fitted ρ·c_p to **0.03 %** across 10–50 °C.
+
+The glycol loop could **not** be cross-checked — Wolfram has no aqueous-glycol
+mixture data and no second source was available, so it rests on CoolProp alone.
+That is a narrower footing than the water side and `docs/provenance.md` says so
+rather than implying both were verified equally.
+
+The same doc now carries a CDU section stating what actually limits the tool:
+not the arithmetic, but the 3 K design approach, the chevron-plate exponent, the
+360 devices at 0.012 K/W and the wall resistance taken as 5 % of the total.
+Those are worth whole kelvins.
+
 ### Added — a launcher, because the second tool could not be found
 
 The CDU sim shipped as a link in the planner's masthead, and the person it was
