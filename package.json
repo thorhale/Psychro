@@ -23,7 +23,8 @@
     "e2e:update": "playwright test --update-snapshots",
     "test:e2e": "npm run shareable && npm run verify:bundle && npm run e2e",
     "test:all": "npm run lint && npm run typecheck && npm test && npm run test:e2e",
-    "brand:sample": "node scripts/sample-brand-colors.mjs"
+    "brand:sample": "node scripts/sample-brand-colors.mjs",
+    "validate:cdu": "node cdu/tools/validate.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.4.2",

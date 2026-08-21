@@ -11,6 +11,34 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — CDU sim, as a second tool
+
+`thorhale/cdu-sim` imported **byte-for-byte** and reachable from the masthead.
+It is a steady-state model of a 500 kW direct-to-chip Coolant Distribution
+Unit: a PG25 glycol server loop rejecting to a facility chilled-water loop
+through a counterflow plate exchanger, solved by ε–NTU for temperature rather
+than duty. Liquid cooling is its own problem, so it is its own page rather
+than another card on the psychrometric chart.
+
+It lands in `cdu/` alongside `blockworld/` — an independent static mini-app the
+build copies through **unprocessed**. That is deliberate and now enforced:
+`verify-bundle` asserts the shipped copy is byte-identical to the source and
+carries no external references, because the file is its own source and its own
+build output and the whole point is that it stays one offline file.
+
+Its physics keeps its own gate. `npm run validate:cdu` sweeps 124,488
+operating points — energy balance closes to 5.8e-10 W, no temperature crossing
+at either terminal, and the page's constants are checked against the test core
+so the two cannot drift — and CI runs it on every push. `cdu/` is excluded from
+eslint for the same reason it is excluded from the bundler: reformatting an
+imported artefact to satisfy a house `no-var` rule would be the tail wagging
+the dog.
+
+Three E2E tests cover what that sweep cannot see: that the link from the
+planner reaches it, that the build copied it through intact, that a slider
+still moves the answer in the right direction, and that the page makes no
+network requests at all.
+
 ### Fixed — the Target temperature slider stopped at the SLA's floor
 
 It was pinned to the active contract's band, so on the Recommended profile it

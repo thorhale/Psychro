@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>500 kW Data Center CDU — Thermal Bench</title>
+<meta name="description" content="Interactive 500 kW direct-to-chip CDU model: counterflow plate heat exchanger, PG25 glycol secondary loop to chilled-water primary. Fluid properties from CoolProp.">
+</head>
+<body>
+<style>
+  :root{
+    --bg:#000; --fg:#fff; --dim:#9aa0a6; --dim2:#5f6368;
+    --chip:#1b1e20; --chip2:#26292c; --line:#3c4043;
+    --sec:#4a8cf0; --pri:#34c07a; --good:#34c07a; --watch:#f2a33c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0; background:var(--bg)}
+  body{
+    min-height:100svh; display:flex; align-items:center; color:var(--fg);
+    font-family:Roboto,"Segoe UI","Helvetica Neue",system-ui,-apple-system,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .deck{
+    width:100%; max-width:1060px; margin:0 auto;
+    padding:clamp(11px,1.7vw,20px) clamp(16px,2.8vw,32px);
+    display:flex; flex-direction:column; gap:clamp(7px,1.1vw,12px);
+  }
+
+  .top{display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap}
+  h1{font-weight:300; font-size:clamp(22px,3.1vw,33px); line-height:1.1; letter-spacing:-.012em; margin:0}
+  .sub{margin:3px 0 0; color:var(--dim); font-size:clamp(10.5px,1.25vw,13px)}
+
+  .units{display:flex; background:var(--chip); border-radius:999px; padding:3px; flex:none}
+  .units button{
+    appearance:none; border:0; background:transparent; color:var(--dim);
+    font:inherit; font-size:12px; padding:5px 13px; border-radius:999px; cursor:pointer;
+  }
+  .units button[aria-pressed="true"]{background:var(--chip2); color:var(--fg)}
+  .units button:focus-visible{outline:2px solid var(--sec); outline-offset:2px}
+
+  .legend{
+    align-self:center; display:flex; flex-wrap:wrap; justify-content:center; gap:7px 20px;
+    background:var(--chip); border-radius:999px; padding:6px 18px; font-size:clamp(10.5px,1.3vw,12.5px);
+  }
+  .legend span{display:inline-flex; align-items:center; gap:7px; white-space:nowrap}
+  .legend i{width:8px; height:8px; border-radius:50%; flex:none}
+  .legend .ramp{width:74px; height:7px; border-radius:2px; border:0;
+    background:linear-gradient(90deg,#4a8cf0,#5fb0d0,#c9c07a,#e08a30,#e4463c)}
+  .legend em{font-style:normal; color:var(--dim); font-size:11px}
+
+  svg#pid{display:block; width:100%; height:auto}
+
+  .lower{display:flex; flex-direction:column; gap:clamp(9px,1.3vw,14px)}
+  @media (min-width:900px){
+    .lower{display:grid; grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);
+           gap:clamp(20px,3vw,38px); align-items:center}
+  }
+
+  .stats{display:grid; grid-template-columns:1fr 1px 1fr 1px 1fr; align-items:center; gap:clamp(7px,1.2vw,12px)}
+  .stats .rule{background:var(--line); height:44px; width:1px; justify-self:center}
+  .stat{text-align:center; display:flex; flex-direction:column; gap:3px; min-width:0}
+  .stat .k{font-size:clamp(8.5px,1.05vw,10px); letter-spacing:.07em; color:var(--dim); text-transform:uppercase; line-height:1.25}
+  .stat .v{font-size:clamp(19px,2.7vw,28px); font-weight:400; line-height:1; font-variant-numeric:tabular-nums}
+  .stat .n{min-height:13px; font-size:clamp(8.5px,1vw,10px); color:var(--dim2); line-height:1.25}
+  .stat .v.good,.stat .n.good{color:var(--good)}
+  .stat .v.watch,.stat .n.watch{color:var(--watch)}
+
+  .right{display:flex; flex-direction:column; gap:clamp(8px,1.2vw,12px)}
+  .presets{display:flex; flex-wrap:wrap; gap:6px}
+  .presets button{
+    appearance:none; border:1px solid var(--line); background:var(--chip); color:var(--dim);
+    font:inherit; font-size:clamp(10px,1.15vw,11.5px); padding:6px 12px; border-radius:999px; cursor:pointer;
+  }
+  .presets button:hover{color:var(--fg)}
+  .presets button[aria-pressed="true"]{background:var(--chip2); color:var(--fg); border-color:#5f6368}
+  .presets button:focus-visible{outline:2px solid var(--sec); outline-offset:2px}
+
+  .ctl{display:flex; flex-direction:column; gap:clamp(7px,1.1vw,11px)}
+  .row{display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) clamp(74px,7.5vw,96px);
+       align-items:center; gap:clamp(9px,1.6vw,16px)}
+  .row label{font-size:clamp(11px,1.3vw,13.5px)}
+  .row output{background:var(--chip); border-radius:8px; padding:8px 4px; text-align:center;
+       font-size:clamp(12px,1.45vw,14.5px); font-variant-numeric:tabular-nums}
+
+  input[type=range]{-webkit-appearance:none; appearance:none; background:transparent; width:100%; height:22px; margin:0; cursor:pointer}
+  input[type=range]::-webkit-slider-runnable-track{height:3px; background:var(--line); border-radius:2px}
+  input[type=range]::-moz-range-track{height:3px; background:var(--line); border-radius:2px}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; appearance:none; width:14px; height:14px;
+       border-radius:50%; background:var(--fg); border:0; margin-top:-5.5px}
+  input[type=range]::-moz-range-thumb{width:14px; height:14px; border-radius:50%; background:var(--fg); border:0}
+  input[type=range]:focus-visible{outline:2px solid var(--sec); outline-offset:4px; border-radius:4px}
+
+  .foot{text-align:center; font-size:clamp(9px,1.1vw,11px); color:var(--dim2); margin:0; line-height:1.5}
+  .foot b{color:var(--dim); font-weight:400}
+
+  .n-lbl{font-size:14px; font-weight:500; letter-spacing:.07em; fill:var(--fg)}
+  .h-cap{font-size:11px; letter-spacing:.09em; fill:var(--dim)}
+  .h-val{font-size:25px; fill:var(--fg); font-variant-numeric:tabular-nums}
+  .h-val.good{fill:var(--good)} .h-val.watch{fill:var(--watch)}
+  .h-tgt{font-size:10px; fill:var(--dim2)}
+  .h-str{font-size:11.5px; fill:var(--dim); font-variant-numeric:tabular-nums}
+  .b-val{font-size:16px; fill:var(--fg); font-variant-numeric:tabular-nums}
+
+  @media (max-width:560px){
+    .row{grid-template-columns:1fr clamp(70px,20vw,92px); row-gap:2px}
+    .row label{grid-column:1; grid-row:1}
+    .row output{grid-column:2; grid-row:1}
+    .row input[type=range]{grid-column:1/-1; grid-row:2}
+  }
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important; transition:none!important} }
+</style>
+
+<div class="deck">
+
+  <div class="top">
+    <div>
+      <h1>500&nbsp;kW Data Center CDU</h1>
+      <p class="sub">Direct-to-chip glycol loop rejecting 500&nbsp;kW to chilled water through a counterflow plate exchanger.</p>
+    </div>
+    <div class="units" role="group" aria-label="Temperature units">
+      <button id="uC" aria-pressed="true">&deg;C</button>
+      <button id="uF" aria-pressed="false">&deg;F</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:var(--sec)"></i>Secondary (Server) Loop &mdash; PG25</span>
+    <span><i style="background:var(--pri)"></i>Primary (Facility) Loop &mdash; water</span>
+    <span><em>cool</em><i class="ramp"></i><em>hot</em></span>
+  </div>
+
+  <svg id="pid" viewBox="0 96 1000 232" role="img" aria-labelledby="pidT">
+    <title id="pidT">Counterflow plate heat exchanger between the server glycol loop and the facility chilled-water loop</title>
+
+    <path id="secBand" fill="none" stroke="var(--sec)" stroke-width="30" stroke-opacity=".16" stroke-linejoin="round"></path>
+    <path id="priBand" fill="none" stroke="var(--pri)" stroke-width="30" stroke-opacity=".16" stroke-linejoin="round"></path>
+
+    <rect x="450" y="103" width="100" height="214" fill="#fff" fill-opacity=".05" stroke="#fff" stroke-opacity=".28" stroke-width="1.2"></rect>
+    <g stroke="#fff" stroke-opacity=".28" stroke-width="1">
+      <line x1="492" y1="112" x2="492" y2="308"></line>
+      <line x1="500" y1="112" x2="500" y2="308"></line>
+      <line x1="508" y1="112" x2="508" y2="308"></line>
+    </g>
+
+    <g id="parts"></g>
+
+    <g fill="#fff" fill-opacity=".8">
+      <path d="M404 120 l-10 -6 v12 z"></path>
+      <path d="M596 300 l10 -6 v12 z"></path>
+    </g>
+    <g stroke="#fff" stroke-opacity=".8" stroke-width="2" stroke-linecap="round">
+      <line x1="364" y1="120" x2="396" y2="120"></line>
+      <line x1="636" y1="300" x2="604" y2="300"></line>
+    </g>
+
+    <text class="h-cap" x="350" y="176" text-anchor="middle">SERVER LOOP &#916;T</text>
+    <text class="h-val" id="dtSecV" x="350" y="208" text-anchor="middle">&mdash;</text>
+    <text class="h-tgt" id="dtSecT" x="350" y="228" text-anchor="middle">&mdash;</text>
+    <text class="h-str" id="dtSecS" x="350" y="250" text-anchor="middle">&mdash;</text>
+
+    <text class="h-cap" x="650" y="176" text-anchor="middle">FACILITY LOOP &#916;T</text>
+    <text class="h-val" id="dtPriV" x="650" y="208" text-anchor="middle">&mdash;</text>
+    <text class="h-tgt" id="dtPriT" x="650" y="228" text-anchor="middle">&mdash;</text>
+    <text class="h-str" id="dtPriS" x="650" y="250" text-anchor="middle">&mdash;</text>
+
+    <text class="n-lbl" x="112" y="186" text-anchor="middle">SERVER RACK</text>
+    <text class="n-lbl" x="888" y="186" text-anchor="middle">FACILITY CHILLER</text>
+
+    <g>
+      <rect x="52" y="202" width="120" height="36" rx="18" fill="#000" fill-opacity=".7" stroke="#8ab4f8" stroke-opacity=".8" stroke-width="1.3"></rect>
+      <text class="b-val" id="bRack" x="112" y="226" text-anchor="middle">&mdash;</text>
+      <text class="h-tgt" x="112" y="256" text-anchor="middle">hottest die</text>
+    </g>
+    <g>
+      <rect x="828" y="202" width="120" height="36" rx="18" fill="#000" fill-opacity=".7" stroke="#81d6ab" stroke-opacity=".8" stroke-width="1.3"></rect>
+      <text class="b-val" id="bFac" x="888" y="226" text-anchor="middle">&mdash;</text>
+      <text class="h-tgt" x="888" y="256" text-anchor="middle">chilled water supply</text>
+    </g>
+  </svg>
+
+  <div class="lower">
+
+    <div class="stats">
+      <div class="stat">
+        <span class="k">Hottest Die</span>
+        <span class="v" id="vChip">&mdash;</span>
+        <span class="n" id="nChip"></span>
+      </div>
+      <div class="rule"></div>
+      <div class="stat">
+        <span class="k">Facility Return</span>
+        <span class="v" id="vRet">&mdash;</span>
+        <span class="n" id="nRet"></span>
+      </div>
+      <div class="rule"></div>
+      <div class="stat">
+        <span class="k">Pump Power</span>
+        <span class="v" id="vPump">&mdash;</span>
+        <span class="n" id="nPump"></span>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="presets" id="presets"></div>
+      <div class="ctl">
+        <div class="row">
+          <label for="ms">Server Loop Flow (L/min)</label>
+          <input type="range" id="ms" min="400" max="1900" step="10" value="940">
+          <output for="ms" id="oMs">940</output>
+        </div>
+        <div class="row">
+          <label for="mf">Facility Loop Flow (L/min)</label>
+          <input type="range" id="mf" min="250" max="1500" step="10" value="720">
+          <output for="mf" id="oMf">720</output>
+        </div>
+        <div class="row">
+          <label for="q">IT Heat Load (kW)</label>
+          <input type="range" id="q" min="100" max="600" step="10" value="500">
+          <output for="q" id="oQ">500</output>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="foot" id="foot"></p>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---- CoolProp-fitted fluid properties (max error <0.1%, 5-65 C) --------
+  function poly(c, t){ var v = 0; for (var i = 0; i < c.length; i++) v = v * t + c[i]; return v; }
+  var RC_SEC = [-13.7265, 1431.23, 3972770],  PH_SEC = [-0.00293773, 0.0430909, 154.305, 7920.19];
+  var RC_PRI = [0.563701, -1608.63, 4209480], PH_PRI = [0.00052677, -0.552665, 216.187, 13989.7];
+
+  var N_EXP  = 0.7;            // chevron-plate Re exponent
+  var K_GEO  = 0.34703;        // plate-pack constant, anchored to a 3 K design approach at 500 kW
+  var R_WALL = 1.82048e-7;     // K/W  plate wall + fouling
+  var T_FWS  = 18.0;           // facility supply, degC (ASHRAE W27)
+  var T_TRIP = 90.0;           // die throttle setpoint
+  var N_DEV  = 360, R_CP = 0.012;   // 360 devices, 0.012 K/W cold-plate resistance
+  var DP_GLY = 1.19;           // glycol pressure-drop penalty vs water at equal flow
+  var VS_D = 940, VP_D = 720, Q_D = 500e3;
+  var RACK_DT_MAX = 8.0, FAC_DT_MIN = 12.0;   // site design targets, not a standard
+
+  function solve(Vs, Vp, qW){
+    var Tsm = 30, Tpm = 23, Cs, Cp, UA, Cmin, cr, ntu, e, G, q, hotIn, hotOut, facOut, chip, i;
+    for (i = 0; i < 10; i++){
+      Cs = Vs/60000 * poly(RC_SEC, Tsm);
+      Cp = Vp/60000 * poly(RC_PRI, Tpm);
+      UA = 1/(1/(K_GEO*poly(PH_SEC,Tsm)*Math.pow(Vs,N_EXP)) + R_WALL
+            + 1/(K_GEO*poly(PH_PRI,Tpm)*Math.pow(Vp,N_EXP)));
+      Cmin = Math.min(Cs, Cp); cr = Cmin/Math.max(Cs, Cp); ntu = UA/Cmin;
+      if (cr > 0.9995) e = ntu/(1+ntu);
+      else { var x = Math.exp(-ntu*(1-cr)); e = (1-x)/(1-cr*x); }
+      G = e*Cmin;
+      // die sits at the rack OUTLET, so it sees the hot end plus its own cold-plate rise
+      q = Math.min(qW, (T_TRIP - T_FWS)/(1/G + R_CP/N_DEV));
+      hotIn  = T_FWS + q/G;
+      hotOut = hotIn - q/Cs;
+      facOut = T_FWS + q/Cp;
+      chip   = hotIn + (q/N_DEV)*R_CP;
+      Tsm = (hotIn+hotOut)/2; Tpm = (facOut+T_FWS)/2;
+    }
+    return { e:e, ntu:ntu, cr:cr, G:G, q:q, demand:qW, throttled:q < qW - 1,
+             hotIn:hotIn, hotOut:hotOut, facOut:facOut, chip:chip,
+             rackDT:hotIn-hotOut, facDT:facOut-T_FWS, approach:hotOut-T_FWS,
+             Qsec:Cs*(hotIn-hotOut), Qpri:Cp*(facOut-T_FWS),
+             pump:(DP_GLY*Math.pow(Vs/VS_D,3) + Math.pow(Vp/VP_D,3))/(DP_GLY+1) };
+  }
+
+  var isF = false;
+  function T(c){ return isF ? c*9/5 + 32 : c; }
+  function DK(k){ return isF ? k*9/5 : k; }
+  function uT(){ return isF ? "°F" : "°C"; }
+  function uD(){ return isF ? "°F" : "K"; }
+
+  var RAMP = [[16,[74,140,240]],[24,[95,176,208]],[31,[201,192,122]],[38,[224,138,48]],[46,[228,70,60]]];
+  function tcol(t){
+    if (t <= RAMP[0][0]) return "rgb(" + RAMP[0][1] + ")";
+    for (var i = 1; i < RAMP.length; i++){
+      if (t <= RAMP[i][0]){
+        var a = RAMP[i-1], b = RAMP[i], f = (t-a[0])/(b[0]-a[0]);
+        return "rgb(" + Math.round(a[1][0]+f*(b[1][0]-a[1][0])) + ","
+                      + Math.round(a[1][1]+f*(b[1][1]-a[1][1])) + ","
+                      + Math.round(a[1][2]+f*(b[1][2]-a[1][2])) + ")";
+      }
+    }
+    return "rgb(" + RAMP[RAMP.length-1][1] + ")";
+  }
+
+  var SEC = [[230,210],[320,120],[470,120],[470,300],[320,300],[230,210]];
+  var PRI = [[770,210],[680,300],[530,300],[530,120],[680,120],[770,210]];
+  function geo(p){
+    var s = [], t = 0;
+    for (var i = 0; i < p.length-1; i++){
+      var dx = p[i+1][0]-p[i][0], dy = p[i+1][1]-p[i][1], L = Math.hypot(dx,dy);
+      s.push({x:p[i][0], y:p[i][1], dx:dx, dy:dy, L:L, s:t}); t += L;
+    }
+    return {segs:s, tot:t};
+  }
+  function dstr(p){ return "M " + p.map(function(a){ return a[0]+" "+a[1]; }).join(" L "); }
+  var gS = geo(SEC), gP = geo(PRI);
+  function at(g, t, A, B){
+    var d = (t - Math.floor(t)) * g.tot;
+    for (var i = 0; i < g.segs.length; i++){
+      var s = g.segs[i];
+      if (d <= s.s + s.L || i === g.segs.length-1){
+        var f = s.L ? Math.max(0, Math.min(1, (d-s.s)/s.L)) : 0;
+        var Tt = (i===2) ? A+(B-A)*f : (i===4) ? B+(A-B)*f : (i<2 ? A : B);
+        return {x:s.x+s.dx*f, y:s.y+s.dy*f, T:Tt};
+      }
+    }
+    return {x:0, y:0, T:A};
+  }
+
+  var $ = function(i){ return document.getElementById(i); };
+  var NS = "http://www.w3.org/2000/svg";
+  $("secBand").setAttribute("d", dstr(SEC));
+  $("priBand").setAttribute("d", dstr(PRI));
+
+  var N = 22, dS = [], dP = [], holder = $("parts");
+  function build(a){
+    for (var i = 0; i < N; i++){
+      var c = document.createElementNS(NS, "circle");
+      c.setAttribute("r", "5"); holder.appendChild(c); a.push(c);
+    }
+  }
+  build(dS); build(dP);
+
+  var PRESETS = [
+    { id:"des",    label:"Design point",              ms:940,  mf:720, q:500 },
+    { id:"theory", label:"Fast glycol · slow water",  ms:1400, mf:360, q:500 },
+    { id:"tuned",  label:"Tuned",                     ms:1120, mf:450, q:500 }
+  ];
+  var pbox = $("presets");
+  PRESETS.forEach(function(p){
+    var b = document.createElement("button");
+    b.textContent = p.label; b.setAttribute("aria-pressed","false"); b.dataset.id = p.id;
+    b.addEventListener("click", function(){
+      $("ms").value = p.ms; $("mf").value = p.mf; $("q").value = p.q; render();
+    });
+    pbox.appendChild(b);
+  });
+
+  var st = null, ph = 0, last = 0;
+  var BASE = solve(VS_D, VP_D, Q_D);
+
+  function render(){
+    var ms = +$("ms").value, mf = +$("mf").value, qk = +$("q").value;
+    $("oMs").textContent = ms; $("oMf").textContent = mf; $("oQ").textContent = qk;
+    st = solve(ms, mf, qk*1000);
+
+    [].forEach.call(pbox.children, function(b){
+      var p = PRESETS.filter(function(x){ return x.id === b.dataset.id; })[0];
+      b.setAttribute("aria-pressed", (p.ms===ms && p.mf===mf && p.q===qk) ? "true" : "false");
+    });
+
+    var rackOK = st.rackDT <= RACK_DT_MAX, facOK = st.facDT >= FAC_DT_MIN;
+    $("dtSecV").textContent = DK(st.rackDT).toFixed(1) + " " + uD();
+    $("dtSecV").setAttribute("class", "h-val " + (rackOK ? "good" : "watch"));
+    $("dtSecT").textContent = "site target ≤ " + DK(RACK_DT_MAX).toFixed(1) + " " + uD() + " · uniform dies";
+    $("dtSecS").textContent = T(st.hotOut).toFixed(1) + " → " + T(st.hotIn).toFixed(1) + " " + uT();
+
+    $("dtPriV").textContent = DK(st.facDT).toFixed(1) + " " + uD();
+    $("dtPriV").setAttribute("class", "h-val " + (facOK ? "good" : "watch"));
+    $("dtPriT").textContent = "site target ≥ " + DK(FAC_DT_MIN).toFixed(1) + " " + uD() + " · plant efficiency";
+    $("dtPriS").textContent = T(T_FWS).toFixed(1) + " → " + T(st.facOut).toFixed(1) + " " + uT();
+
+    $("bRack").textContent = T(st.chip).toFixed(1) + uT();
+    $("bFac").textContent  = T(T_FWS).toFixed(1) + uT();
+
+    var margin = T_TRIP - st.chip, hot = st.throttled || margin < 10;
+    var dChip = st.chip - BASE.chip;
+    $("vChip").textContent = T(st.chip).toFixed(1) + uT();
+    $("vChip").className = "v" + (hot ? " watch" : (dChip < -0.05 ? " good" : ""));
+    $("nChip").className = "n" + (hot ? " watch" : (dChip < -0.05 ? " good" : ""));
+    $("nChip").textContent = st.throttled
+      ? "throttling · " + (st.q/1000).toFixed(0) + " of " + qk + " kW"
+      : (Math.abs(dChip) < 0.05 ? "at design" : (dChip>0?"+":"") + DK(dChip).toFixed(1) + " " + uD() + " vs design");
+
+    $("vRet").textContent = T(st.facOut).toFixed(1) + uT();
+    $("vRet").className = "v" + (facOK ? " good" : "");
+    $("nRet").className = "n" + (facOK ? " good" : "");
+    $("nRet").textContent = facOK ? "good plant COP" : "too cold for plant COP";
+
+    var pumpOK = st.pump <= 1.0;
+    $("vPump").textContent = "×" + st.pump.toFixed(2);
+    $("vPump").className = "v" + (pumpOK ? " good" : " watch");
+    $("nPump").className = "n" + (pumpOK ? " good" : " watch");
+    $("nPump").textContent = "vs design · flow³";
+
+    $("foot").innerHTML =
+      "Heat across the plates <b>" + (st.Qsec/1000).toFixed(1) + " kW</b> &#8801; IT load <b>" + qk
+      + " kW</b> at every flow setting &mdash; flow sets the <b>temperature</b> you pay, never the heat removed. "
+      + "&epsilon; " + (st.e > 0.9995 ? "&gt;99.9" : (st.e*100).toFixed(1)) + "% &middot; NTU " + st.ntu.toFixed(2)
+      + " &middot; conductance G " + (st.G/1000).toFixed(1) + " kW/K &middot; approach " + DK(st.approach).toFixed(1) + " " + uD()
+      + "<br>Counterflow &epsilon;&ndash;NTU &middot; PG25 + water properties from <b>CoolProp</b> &middot; chevron-plate Nu = C&#8239;Re<sup>0.7</sup>Pr<sup>1/3</sup>"
+      + " &middot; facility supply 18&nbsp;&deg;C (<b>ASHRAE W27</b>) &middot; anchored to a 3&nbsp;K design approach"
+      + " &middot; hottest die = rack outlet + " + DK((qk*1000/N_DEV)*R_CP).toFixed(1) + "&nbsp;" + uD()
+      + " (" + (qk/N_DEV*1000).toFixed(0) + "&nbsp;W/device at 0.012&nbsp;K/W). &Delta;T figures are site targets, not standards.";
+
+    paint();
+  }
+
+  function paint(){
+    if (!st) return;
+    var ms = +$("ms").value, mf = +$("mf").value, i, p;
+    for (i = 0; i < N; i++){
+      p = at(gS, ph*(ms/1900)*0.17 + i/N, st.hotIn, st.hotOut);
+      dS[i].setAttribute("cx", p.x.toFixed(1)); dS[i].setAttribute("cy", p.y.toFixed(1));
+      dS[i].setAttribute("fill", tcol(p.T));
+      p = at(gP, ph*(mf/1500)*0.17 + i/N, T_FWS, st.facOut);
+      dP[i].setAttribute("cx", p.x.toFixed(1)); dP[i].setAttribute("cy", p.y.toFixed(1));
+      dP[i].setAttribute("fill", tcol(p.T));
+    }
+  }
+
+  function frame(ts){
+    if (!last) last = ts;
+    ph += Math.min(ts-last, 60)/1000; last = ts;
+    paint(); requestAnimationFrame(frame);
+  }
+
+  ["ms","mf","q"].forEach(function(i){ $(i).addEventListener("input", render); });
+  function setU(){
+    $("uC").setAttribute("aria-pressed", String(!isF));
+    $("uF").setAttribute("aria-pressed", String(isF));
+    render();
+  }
+  $("uC").addEventListener("click", function(){ isF = false; setU(); });
+  $("uF").addEventListener("click", function(){ isF = true;  setU(); });
+
+  render();
+  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
