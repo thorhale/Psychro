@@ -35,7 +35,7 @@ async function medianMs(page, fn, runs = 21) {
 
 test.describe('interactive performance', () => {
   test('a full update stays well inside a frame', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.locator('#selftest-badge').filter({ hasText: 'passed' }).waitFor();
 
     // Dragging any slider runs the whole update: chart, table, readouts, every
@@ -50,7 +50,7 @@ test.describe('interactive performance', () => {
   });
 
   test('a hall full of equipment does not slow the update down', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.locator('#selftest-badge').filter({ hasText: 'passed' }).waitFor();
     await page.evaluate(() => document.querySelectorAll('details').forEach((d) => (d.open = true)));
 
@@ -89,7 +89,7 @@ test.describe('interactive performance', () => {
   });
 
   test('panning the chart redraws without running the whole app', async ({ page }) => {
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.locator('#selftest-badge').filter({ hasText: 'passed' }).waitFor();
 
     // Timed IN-PAGE. Driving the mouse through the test harness measures the
@@ -119,7 +119,7 @@ test.describe('interactive performance', () => {
 
   test('boots and is interactive quickly', async ({ page }) => {
     const t0 = Date.now();
-    await page.goto('./');
+    await page.goto('./planner.html');
     await page.locator('#selftest-badge').filter({ hasText: 'passed' }).waitFor();
     const ms = Date.now() - t0;
     // The whole app is one file with no network round-trips after it lands.

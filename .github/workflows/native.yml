@@ -23,6 +23,7 @@ on:
     paths:
       - 'src/**'
       - 'index.html'
+      - 'planner.html'
       # The PWA assets live at the repo root, not under public/ — see the
       # header comment in vite.config.js for why.
       - 'manifest.webmanifest'

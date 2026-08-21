@@ -194,7 +194,9 @@ function sharedBehaviour(name, gotoApp, { isFile }) {
 sharedBehaviour(
   'hosted app (raw modules)',
   async (page) => {
-    await page.goto('/', { waitUntil: 'load' });
+    // planner.html, not '/': the root is the launcher now, and this suite is
+    // about the PLANNER as GitHub Pages serves it — raw ES modules, no bundler.
+    await page.goto('./planner.html', { waitUntil: 'load' });
     await page.waitForTimeout(3500); // let the install-banner fallback arm
   },
   { isFile: false },

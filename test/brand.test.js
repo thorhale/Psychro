@@ -63,18 +63,29 @@ describe('nothing hardcodes the brand', () => {
   });
 
   it('the stylesheet fallback agrees with the sampled palette', () => {
-    // index.html carries literals so the app renders before applyBrand runs.
+    // planner.html carries literals so the app renders before applyBrand runs.
     // If they drift, a swap produces a visible flash of the old brand.
-    const html = read('index.html');
+    const html = read('planner.html');
     expect(html).toContain(`--brand-primary:${PALETTE.primary}`);
     expect(html).toContain(`--brand-accent:${PALETTE.accent}`);
     expect(html).toContain(`--stream-teal:${PALETTE.accent}`);
   });
 
+  it('the launcher paints the same brand as the planner', () => {
+    // The launcher is static by design — it cannot import brand.js, so it
+    // repeats the tokens as literals. Two copies of a palette is exactly how a
+    // product ends up with two different blues, so the copies are asserted
+    // rather than trusted. This is the test the launcher's own comment cites.
+    const home = read('index.html');
+    expect(home).toContain(`--brand-primary:${PALETTE.primary}`);
+    expect(home).toContain(`--brand-primary-dark:${PALETTE.primaryDark}`);
+    expect(home).toContain(`--brand-accent:${PALETTE.accent}`);
+  });
+
   it('the wording lives here too, not in the markup', () => {
     // The markup keeps readable defaults, but each is tagged so applyBrand
     // can replace it. A string with no hook is a string that cannot be swapped.
-    const html = read('index.html');
+    const html = read('planner.html');
     for (const key of ['company', 'companySub', 'product']) {
       expect(html, key).toContain(`data-brand="${key}"`);
     }

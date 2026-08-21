@@ -16,11 +16,11 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('CDU sim', () => {
-  test('the planner links to it and it boots', async ({ page }) => {
+  test('the launcher links to it and it boots', async ({ page }) => {
+    // Reached from the launcher now. It used to hang off the planner's
+    // masthead, which is exactly why it could not be found.
     await page.goto('./');
-    await page.locator('#selftest-badge').filter({ hasText: 'passed' }).waitFor();
-
-    await page.locator('.mh-tool').click();
+    await page.locator('.tool', { hasText: 'CDU Flow Calculator' }).click();
     await expect(page).toHaveURL(/cdu\/index\.html$/);
     await expect(page.locator('h1, .t')).toContainText(/CDU/i);
 

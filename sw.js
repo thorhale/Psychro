@@ -22,7 +22,9 @@ const CACHE = 'sdc-psychro-' + (BUILD.charAt(0) === '_' ? RAW_VERSION : BUILD);
 // it. Precaching it makes the offline promise true.
 const ASSETS = [
   './',
-  './index.html',
+  './index.html',   //   the launcher
+  './planner.html', //   the planner (was index.html until the launcher landed)
+  './cdu/index.html', // the CDU tool — one self-contained file
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',

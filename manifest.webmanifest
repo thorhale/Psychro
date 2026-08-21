@@ -2,7 +2,7 @@
   "name": "Stream Hall Environment Planner",
   "short_name": "Psychro",
   "description": "ASHRAE TC 9.9 temperature-to-humidity control tool for data center SLA compliance. Stream Data Centers critical engineering reference.",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

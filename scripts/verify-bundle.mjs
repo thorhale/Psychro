@@ -33,14 +33,15 @@ if (!existsSync(dist)) {
 }
 
 const files = readdirSync(dist);
-const html = readFileSync(join(dist, 'index.html'), 'utf8');
+const html = readFileSync(join(dist, 'planner.html'), 'utf8');
 const sw = existsSync(join(dist, 'sw.js')) ? readFileSync(join(dist, 'sw.js'), 'utf8') : '';
 
 // ── 1. Required files ───────────────────────────────────────────────────────
 // privacy.html is load-bearing for the app stores: both consoles point their
 // mandatory privacy-policy URL at the deployed /privacy.html.
 for (const f of [
-  'index.html',
+  'index.html',   // the launcher
+  'planner.html', // the bundled planner
   'sw.js',
   'manifest.webmanifest',
   'icon-192.png',
@@ -54,10 +55,10 @@ for (const f of [
 // The whole point of vite-plugin-singlefile: index.html must be droppable on its
 // own. Any emitted .js/.css sibling means an inlining regression.
 const strayCode = files.filter((f) => f.endsWith('.js') && f !== 'sw.js');
-check('no stray JS chunks beside index.html', strayCode.length === 0, strayCode.join(', '));
+check('no stray JS chunks beside planner.html', strayCode.length === 0, strayCode.join(', '));
 const strayCss = files.filter((f) => f.endsWith('.css'));
 check('no stray CSS chunks', strayCss.length === 0, strayCss.join(', '));
-check('index.html has no external script src', !/<script[^>]+\ssrc=/.test(html));
+check('planner.html has no external script src', !/<script[^>]+\ssrc=/.test(html));
 
 // ── 3. PWA assets are NOT fingerprinted ─────────────────────────────────────
 // sw.js precaches by literal path. If Vite hashes the manifest or icons, the app
@@ -66,7 +67,7 @@ check('index.html has no external script src', !/<script[^>]+\ssrc=/.test(html))
 const hashed = files.filter((f) => /^(manifest|icon-\d+)-[A-Za-z0-9_-]{6,}\./.test(f));
 check('no fingerprinted manifest/icon variants', hashed.length === 0, hashed.join(', '));
 check(
-  'index.html references ./manifest.webmanifest verbatim',
+  'planner.html references ./manifest.webmanifest verbatim',
   /rel="manifest"\s+href="\.?\/?manifest\.webmanifest"/.test(html),
   (html.match(/rel="manifest"[^>]*/) || ['<none>'])[0],
 );
@@ -79,8 +80,11 @@ if (assetsMatch) {
   const entries = [...assetsMatch[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
   for (const entry of entries) {
     if (entry === './') continue; // the navigation root, served by index.html
+    // existsSync, not `files.includes` — the flat readdir only ever saw the top
+    // level, so a nested entry like ./cdu/index.html could not be verified at
+    // all. It would have passed a precache list pointing at nothing.
     const rel = entry.replace(/^\.\//, '');
-    check(`precached asset present: ${entry}`, files.includes(rel));
+    check(`precached asset present: ${entry}`, existsSync(join(dist, rel)));
   }
   // And the converse for the manifest specifically: what the HTML asks for must
   // be in the precache list.
@@ -208,6 +212,19 @@ const externalRefs = [...html.matchAll(/(?:src|href)="(https?:\/\/[^"]+)"/g)].ma
 check('no external resource references', externalRefs.length === 0, externalRefs.join(', '));
 
 // ── 7. BlockWorld passthrough ───────────────────────────────────────────────
+// The launcher's promise is that it loads instantly with nothing to fetch, and
+// that it is the one place both tools are reachable from. Both are cheap to
+// assert and expensive to notice by hand.
+{
+  const home = readFileSync(join(dist, 'index.html'), 'utf8');
+  check('launcher has no external references',
+    !/(src|href)\s*=\s*["'](https?:)?\/\//i.test(home));
+  check('launcher loads no scripts or styles from files',
+    !/<script[^>]+\ssrc=/.test(home) && !/<link[^>]+rel=["']stylesheet/.test(home));
+  check('launcher links the planner', home.includes('href="planner.html"'));
+  check('launcher links the CDU tool', home.includes('href="cdu/index.html"'));
+  check('launcher forwards deep links to the planner', home.includes("location.replace('planner.html'"));
+}
 check('blockworld/ copied through', existsSync(join(dist, 'blockworld', 'index.html')));
 check('cdu/ copied through', existsSync(join(dist, 'cdu', 'index.html')));
 // The CDU tool's entire promise is that it is one file with no network. If a
@@ -218,8 +235,15 @@ check('cdu/ copied through', existsSync(join(dist, 'cdu', 'index.html')));
     ? readFileSync(join(dist, 'cdu', 'index.html'), 'utf8') : '';
   check('cdu/index.html has no external references',
     !/(src|href)\s*=\s*["'](https?:)?\/\//i.test(cdu));
-  check('cdu/index.html is byte-identical to the source',
+  // Was "byte-identical to thorhale/cdu-sim@ade1927". It no longer is: the tool
+  // gained a link back to the launcher, because without one it is a dead end.
+  // That is a deliberate fork, so the check now asserts what is still true —
+  // the BUILD does not touch the file — rather than a provenance claim that
+  // stopped holding. Upstream physics is still gated by `npm run validate:cdu`,
+  // which checks the page's constants against its own test core.
+  check('cdu/index.html reaches dist unprocessed',
     cdu === (existsSync('cdu/index.html') ? readFileSync('cdu/index.html', 'utf8') : null));
+  check('cdu/index.html can get back to the launcher', cdu.includes('href="../index.html"'));
 }
 
 // ── 8. Size budget ──────────────────────────────────────────────────────────
@@ -254,15 +278,15 @@ check('cdu/ copied through', existsSync(join(dist, 'cdu', 'index.html')));
 // vendored library would still trip this immediately, which is the point.
 const RAW_BUDGET_KB = 450;
 const GZIP_BUDGET_KB = 150;
-const rawKb = statSync(join(dist, 'index.html')).size / 1024;
-const gzipKb = gzipSync(readFileSync(join(dist, 'index.html'))).length / 1024;
+const rawKb = statSync(join(dist, 'planner.html')).size / 1024;
+const gzipKb = gzipSync(readFileSync(join(dist, 'planner.html'))).length / 1024;
 check(
-  `index.html within ${RAW_BUDGET_KB} kB raw`,
+  `planner.html within ${RAW_BUDGET_KB} kB raw`,
   rawKb <= RAW_BUDGET_KB,
   `${rawKb.toFixed(1)} kB`,
 );
 check(
-  `index.html within ${GZIP_BUDGET_KB} kB gzipped`,
+  `planner.html within ${GZIP_BUDGET_KB} kB gzipped`,
   gzipKb <= GZIP_BUDGET_KB,
   `${gzipKb.toFixed(1)} kB`,
 );
