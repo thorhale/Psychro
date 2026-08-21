@@ -71,6 +71,25 @@
   footer { color:var(--muted); font-size:.68rem; padding:0 16px 26px; text-align:center; line-height:1.6; }
   footer a { color:var(--brand-accent); }
 </style>
+<script>
+// Operator brand override, applied before first paint. The Branding card in
+// the planner samples an uploaded logo and stores the palette; this page is
+// deliberately static and cannot import that module, so it reads the same key
+// directly. Only strict #rrggbb strings are ever written into CSS, so a
+// corrupted store cannot inject anything.
+(function () {
+  try {
+    var p = JSON.parse(localStorage.getItem('sdc_psychro_brand_v1') || 'null');
+    if (!p) return;
+    var ok = function (v) { return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v); };
+    if (!ok(p.primary) || !ok(p.primaryDark) || !ok(p.accent)) return;
+    var r = document.documentElement.style;
+    r.setProperty('--brand-primary', p.primary);
+    r.setProperty('--brand-primary-dark', p.primaryDark);
+    r.setProperty('--brand-accent', p.accent);
+  } catch (e) { /* stored garbage must never break the front door */ }
+})();
+</script>
 </head>
 <body>
 

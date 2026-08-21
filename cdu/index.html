@@ -9,9 +9,14 @@
 <body>
 <style>
   :root{
-    --bg:#000; --fg:#fff; --dim:#9aa0a6; --dim2:#5f6368;
-    --chip:#1b1e20; --chip2:#26292c; --line:#3c4043;
+    /* Rethemed on import into the Psychro project: same ground, surface and
+       border tokens as the planner and the launcher, so the dashboard reads as
+       one product. The LOOP colours (--sec glycol blue, --pri water green) are
+       semantic — they mean fluids, not brand — and stay exactly as authored. */
+    --bg:#0d1b2a; --fg:#e6edf3; --dim:#7d96ad; --dim2:#587189;
+    --chip:#13263a; --chip2:#1f3a52; --line:#1f3a52;
     --sec:#4a8cf0; --pri:#34c07a; --good:#34c07a; --watch:#f2a33c;
+    --brand-accent:#10a8c6;
   }
   *{box-sizing:border-box}
   html,body{margin:0; background:var(--bg)}
@@ -111,11 +116,25 @@
 
   /* Added on import into the Psychro project: the way back to the launcher.
      Every tool carries this in the same place. */
-  .mh-home { color:#10a8c6; text-decoration:none; font-size:12px; font-weight:700;
+  .mh-home { color:var(--brand-accent); text-decoration:none; font-size:12px; font-weight:700;
     letter-spacing:.05em; padding:7px 11px; margin-right:10px; border-radius:6px;
-    border:1px solid rgba(16,168,198,.42); white-space:nowrap; }
-  .mh-home:hover { background:rgba(16,168,198,.16); }
+    border:1px solid color-mix(in srgb, var(--brand-accent) 42%, transparent); white-space:nowrap; }
+  .mh-home:hover { background:color-mix(in srgb, var(--brand-accent) 16%, transparent); }
 </style>
+<script>
+/* Added on import into the Psychro project: the operator's brand override,
+   sampled from a logo in the planner's Branding card and stored locally. Only
+   strict #rrggbb strings ever reach CSS. */
+(function(){
+  try{
+    var p = JSON.parse(localStorage.getItem('sdc_psychro_brand_v1') || 'null');
+    if(!p) return;
+    var ok = function(v){ return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v); };
+    var r = document.documentElement.style;
+    if(ok(p.accent)) r.setProperty('--brand-accent', p.accent);
+  }catch(e){}
+})();
+</script>
 
 <div class="deck">
 

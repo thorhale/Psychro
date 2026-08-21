@@ -11,6 +11,39 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — the Branding card: upload a logo, every tool follows
+
+The logo-to-palette feature has existed since the palette was first derived —
+as `npm run brand:sample`, a build-time script nobody on a hall floor will
+ever run. It was reported missing because it had no button. Now it has one.
+
+A Branding card in the planner takes any image, samples its dominant colour on
+a canvas, derives the five-colour palette — primary from the mark's biggest
+saturated solid, accent from its hue rotated toward cyan at a fixed saturation
+and lightness so ANY logo stays legible on the dark interface — previews the
+swatches, and applies on click. The palette persists on the device and is read
+at boot by all three pages: the planner through `applyBrand`, the launcher and
+the CDU tool through small inline scripts, since those two are deliberately
+static and cannot import modules. Reset returns to the built-in brand. Colours
+only — names and wording stay put. The logo is read once and never stored.
+
+One derivation, two doors: the sampling moved to `src/config/palette.js` and
+the build script now imports it, so the button and the script cannot drift.
+The refactored script reproduces the committed palette byte-for-byte, and a
+unit test pins the chain — Stream-navy pixels in, the committed PALETTE out.
+
+Only strict `#rrggbb` strings ever reach CSS, and a corrupted store is
+rejected wholesale — asserted by a test that plants `url(javascript:x)` in the
+key and checks the defaults stand.
+
+### Changed — the CDU tool wears the same skin
+
+Rethemed from its own black/grey tokens onto the planner's ground, surface,
+border and text colours, so the dashboard reads as one product. The loop
+colours — glycol blue, water green — are semantic, mean fluids rather than
+brand, and stay exactly as authored. Its physics constants are untouched and
+its 124,488-point sweep still passes.
+
 ### Changed — the CDU tool now holds the same accuracy standard as the rest of the app
 
 Its property fits were "max error <0.1 %", and `PH_SEC` sat at **0.0994 %** —

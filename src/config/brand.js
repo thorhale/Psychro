@@ -60,10 +60,35 @@ export const CSS_VARS = {
   '--accent': PALETTE.accent,
 };
 
-/** Push the brand onto the document, and the product name into the title. */
-export function applyBrand(doc = document) {
+/**
+ * The CSS custom properties for ANY palette — the committed one or an
+ * operator's override. One function, so the stylesheet names live in exactly
+ * one place whichever palette is being pushed.
+ */
+export function cssVarsFor(p) {
+  return {
+    '--brand-primary': p.primary,
+    '--brand-primary-dark': p.primaryDark,
+    '--brand-primary-light': p.primaryLight,
+    '--brand-accent': p.accent,
+    '--brand-accent-dark': p.accentDark,
+    '--stream-navy': p.primary,
+    '--stream-teal': p.accent,
+    '--accent': p.accent,
+  };
+}
+
+/**
+ * Push the brand onto the document, and the product name into the title.
+ *
+ * `palette` overrides the committed colours — this is what the in-app
+ * Branding card applies after sampling an uploaded logo. Wording always comes
+ * from BRAND; the card changes colours, not who you are.
+ */
+export function applyBrand(doc = document, palette = null) {
   const root = doc.documentElement;
-  for (const [k, v] of Object.entries(CSS_VARS)) root.style.setProperty(k, v);
+  const vars = palette ? cssVarsFor(palette) : CSS_VARS;
+  for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
   const sub = doc.querySelector('[data-brand="company"]');
   if (sub) sub.textContent = BRAND.company;
   const subtitle = doc.querySelector('[data-brand="companySub"]');

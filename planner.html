@@ -332,6 +332,11 @@
   .scn-item:hover { border-color:var(--stream-teal); }
   .scn-load { font-size:.72rem; color:var(--stream-teal); font-weight:700; padding:4px 8px; border:1px solid var(--tint-accent-line); border-radius:5px; background:none; cursor:pointer; }
   .scn-del { font-size:.9rem; color:var(--danger); background:none; border:none; cursor:pointer; padding:2px 6px; }
+  .brand-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+  .brand-pick { display:inline-block; }
+  .brand-preview { display:flex; align-items:center; gap:6px; margin-bottom:10px; }
+  .bp-swatch { width:30px; height:30px; border-radius:6px; border:1px solid var(--border); }
+  .bp-hexes { font-family:var(--mono); font-size:.72rem; color:var(--muted); margin-left:8px; }
   .scn-empty { font-size:.76rem; color:var(--muted); padding:10px; text-align:center; background:var(--surface); border:1px dashed var(--border); border-radius:6px; margin-bottom:12px; }
   .scn-actions { display:flex; gap:8px; flex-wrap:wrap; }
   .scn-divider { height:1px; background:var(--border); margin:14px 0; }
@@ -1088,6 +1093,29 @@
     <canvas id="tr-spark" style="width:100%; height:70px; display:none; margin-top:8px;"></canvas>
     <div class="sv-actions"><button class="scn-btn" id="tr-share" style="display:none">🔗 Copy challenge code</button></div>
     <div class="formula-note">The referee is <code>src/core/trainer.js</code>: explicit 1-minute Euler steps of the moisture/temperature balance, plant rates capped and first-order-lagged (τ ≈ 8 min), a constant server heat load on any uncommanded hall, verdicts from the same SLA check the badge uses. A drill, not a simulator — real thermal mass and control-loop tuning are deliberately out of scope, and challenge codes carry the referee version so old codes are flagged rather than silently re-scored.</div>
+  </div>
+</details>
+
+<details class="card sect">
+  <summary><span class="sect-title">Branding</span><span class="sect-sub" id="brand-sub">upload a logo · palette follows</span><span class="sect-chev">▸</span></summary>
+  <div class="sect-body">
+    <div class="calc-intro">Drop in a company logo and every tool restyles itself
+      around it: the dominant colour becomes the primary, and the interactive
+      accent is derived from its hue at a fixed brightness so any mark stays
+      legible on the dark interface. Applies to the launcher, the planner and
+      the CDU tool, and survives reloads on this device. Colours only — names
+      and wording stay put.</div>
+    <div class="brand-row">
+      <label class="scn-btn brand-pick" for="brand-file">Choose logo…</label>
+      <input type="file" id="brand-file" accept="image/*" style="display:none">
+      <button type="button" class="scn-btn scn-btn-primary" id="brand-apply" disabled>Apply palette</button>
+      <button type="button" class="scn-btn" id="brand-reset">Reset to built-in</button>
+    </div>
+    <div class="brand-preview" id="brand-preview" style="display:none">
+      <span class="bp-swatch" id="bp-primary"></span><span class="bp-swatch" id="bp-primary-dark"></span><span class="bp-swatch" id="bp-primary-light"></span><span class="bp-swatch" id="bp-accent"></span><span class="bp-swatch" id="bp-accent-dark"></span>
+      <span class="bp-hexes" id="brand-hexes"></span>
+    </div>
+    <div class="formula-note">The same sampling the repo's build script uses — one implementation, two doors. The logo itself is read once and never stored or uploaded anywhere.</div>
   </div>
 </details>
 

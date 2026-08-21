@@ -21,6 +21,7 @@ import {
   specificVolume,
 } from '../core/psychro.js';
 import { applyBrand } from '../config/brand.js';
+import { wireBrandUi, storedPalette } from './brand-ui.js';
 import { state, hallVisible } from './state.js';
 import { thermalC, currentW } from './hallphysics.js';
 import {
@@ -2610,7 +2611,10 @@ wireEquipmentUi({
 });
 
 // Branding first: every surface below reads the palette it installs.
-applyBrand();
+// The committed brand, unless this device carries an operator override from
+// the Branding card — sampled from an uploaded logo, persisted locally.
+applyBrand(document, storedPalette());
+wireBrandUi();
 
 async function boot() {
   const { restored, platform } = await hydrateFromNative();

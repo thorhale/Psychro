@@ -76,14 +76,14 @@ export default defineConfig({
   projects: [
     {
       name: 'raw',
-      testMatch: ['app.spec.js', 'artifacts.spec.js', 'cdu.spec.js', 'launcher.spec.js'],
+      testMatch: ['app.spec.js', 'artifacts.spec.js', 'cdu.spec.js', 'launcher.spec.js', 'brand.spec.js'],
       use: { ...chromium, baseURL: `${ROOT}/` },
     },
     {
       name: 'built',
       // perf budgets run against the DEPLOYED artifact — the thing an
       // operator actually loads — and only there, so they are measured once.
-      testMatch: ['app.spec.js', 'visual.spec.js', 'perf.spec.js', 'cdu.spec.js', 'launcher.spec.js'],
+      testMatch: ['app.spec.js', 'visual.spec.js', 'perf.spec.js', 'cdu.spec.js', 'launcher.spec.js', 'brand.spec.js'],
       use: { ...chromium, baseURL: `${ROOT}/dist/` },
     },
   ],
