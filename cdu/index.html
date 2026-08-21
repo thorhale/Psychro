@@ -95,6 +95,20 @@
   input[type=range]::-moz-range-thumb{width:14px; height:14px; border-radius:50%; background:var(--fg); border:0}
   input[type=range]:focus-visible{outline:2px solid var(--sec); outline-offset:4px; border-radius:4px}
 
+  .site{background:var(--chip); border-radius:12px; padding:4px 14px 10px; font-size:12px}
+  .site summary{cursor:pointer; color:var(--dim); padding:7px 0; font-size:12px; letter-spacing:.04em}
+  .site[open] summary{color:var(--fg)}
+  .site-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px 12px; margin-top:4px}
+  .site-grid label{display:flex; flex-direction:column; gap:3px; color:var(--dim); font-size:10.5px}
+  .site-grid .su{color:var(--dim2)}
+  .site-grid input,.site-grid select{background:var(--bg); border:1px solid var(--line); border-radius:6px;
+    color:var(--fg); font:inherit; font-size:12px; padding:5px 7px; width:100%}
+  .site-note{margin:9px 0 0; color:var(--dim); font-size:11px; line-height:1.45}
+  .site-note.watch{color:var(--watch)}
+  .site-actions{margin-top:9px}
+  .site-actions button{appearance:none; border:1px solid var(--line); background:transparent; color:var(--dim);
+    font:inherit; font-size:11px; padding:5px 11px; border-radius:999px; cursor:pointer}
+  .site-actions button:hover{color:var(--fg)}
   .foot{text-align:center; font-size:clamp(9px,1.1vw,11px); color:var(--dim2); margin:0; line-height:1.5}
   .foot b{color:var(--dim); font-weight:400}
 
@@ -140,8 +154,8 @@
 
   <div class="top">
     <div>
-      <h1>500&nbsp;kW Data Center CDU</h1>
-      <p class="sub">Direct-to-chip glycol loop rejecting 500&nbsp;kW to chilled water through a counterflow plate exchanger.</p>
+      <h1 id="cap1">500&nbsp;kW Data Center CDU</h1>
+      <p class="sub" id="cap2">Direct-to-chip glycol loop rejecting 500&nbsp;kW to chilled water through a counterflow plate exchanger.</p>
     </div>
     <div class="units" role="group" aria-label="Temperature units">
       <a class="mh-home" href="../index.html">&#9664; All tools</a>
@@ -151,7 +165,7 @@
   </div>
 
   <div class="legend">
-    <span><i style="background:var(--sec)"></i>Secondary (Server) Loop &mdash; PG25</span>
+    <span><i style="background:var(--sec)"></i>Secondary (Server) Loop &mdash; <span id="legSec">PG25</span></span>
     <span><i style="background:var(--pri)"></i>Primary (Facility) Loop &mdash; water</span>
     <span><em>cool</em><i class="ramp"></i><em>hot</em></span>
   </div>
@@ -246,6 +260,27 @@
           <output for="q" id="oQ">500</output>
         </div>
       </div>
+      <details class="site">
+        <summary>Site configuration</summary>
+        <div class="site-grid">
+          <label>Glycol
+            <select id="sFluid"><option value="MPG">Propylene (PG)</option><option value="MEG">Ethylene (EG)</option></select>
+          </label>
+          <label>Concentration <span class="su">% wt</span><input type="number" id="sConc" min="0" max="60" step="5"></label>
+          <label>Facility supply <span class="su" id="uFws">&deg;C</span><input type="number" id="sTfws" step="0.5"></label>
+          <label>CDU capacity <span class="su">kW</span><input type="number" id="sQdes" min="50" max="5000" step="50"></label>
+          <label>Design approach <span class="su" id="uApp">K</span><input type="number" id="sApp" step="0.5"></label>
+          <label>Design rack &#916;T <span class="su" id="uDts">K</span><input type="number" id="sDts" step="0.5"></label>
+          <label>Design facility &#916;T <span class="su" id="uDtp">K</span><input type="number" id="sDtp" step="0.5"></label>
+          <label>Devices<input type="number" id="sNdev" min="1" max="100000" step="1"></label>
+          <label>Cold plate <span class="su">K/W</span><input type="number" id="sRcp" min="0.001" max="1" step="0.001"></label>
+          <label>Die throttle <span class="su" id="uTrip">&deg;C</span><input type="number" id="sTrip" step="1"></label>
+          <label>Rack &#916;T target &le; <span class="su" id="uRdt">K</span><input type="number" id="sRdt" step="0.5"></label>
+          <label>Facility &#916;T target &ge; <span class="su" id="uFdt">K</span><input type="number" id="sFdt" step="0.5"></label>
+        </div>
+        <p class="site-note" id="siteNote"></p>
+        <div class="site-actions"><button type="button" id="sReset">Reset to 500 kW PG25 defaults</button></div>
+      </details>
     </div>
 
   </div>
@@ -258,45 +293,138 @@
 (function(){
   "use strict";
 
-  // ---- CoolProp-fitted fluid properties (max error <0.1%, 5-65 C) --------
+  // ═══ Fluid properties ═══════════════════════════════════════════════════
+  // Glycol: degree-5x5 polynomial fits to CoolProp INCOMP MPG/MEG mixtures,
+  // -10..60 C x 0..60 % by mass, exact to ~1e-8 relative against
+  // tools/coolant-reference.json (regenerate with tools/fit_glycol.py).
+  // Water: plain polynomials in temperature, 2.7e-4 % against CoolProp.
+  // tools/validate.mjs pins every number here against tools/model.mjs and the
+  // committed grids, so the page cannot drift from its oracle.
   function poly(c, t){ var v = 0; for (var i = 0; i < c.length; i++) v = v * t + c[i]; return v; }
-  var RC_SEC = [0.029558503377469632, -16.83120593278887, 1523.4439956977433, 3972074.4271044964],  PH_SEC = [-1.953969440807018e-09, 5.606143994741473e-07, -5.2320049139895085e-06, -0.007552316537578508, 0.32552809259857235, 148.83027153694547, 7949.728017118769];
-  var RC_PRI = [7.005571912629277e-07, -0.00020353176220472646, 0.026246869157615704, -1.9271441162086773, 78.2735421654597, -3059.193152727693, 4218007.657748665], PH_PRI = [1.4005718700326837e-07, -3.819092066196206e-05, 0.004013370044200002, -0.6872062551669611, 218.31930882818543, 13979.291181203396];
+  function poly2(C, tn, cn){
+    var v = 0, r, i, j;
+    for (i = 0; i < 36; i += 6){
+      r = 0;
+      for (j = 0; j < 6; j++) r = r * cn + C[i + j];
+      v = v * tn + r;
+    }
+    return v;
+  }
 
-  var N_EXP  = 0.7;            // chevron-plate Re exponent
-  var K_GEO  = 0.34703;        // plate-pack constant, anchored to a 3 K design approach at 500 kW
-  var R_WALL = 1.82048e-7;     // K/W  plate wall + fouling
-  var T_FWS  = 18.0;           // facility supply, degC (ASHRAE W27)
-  var T_TRIP = 90.0;           // die throttle setpoint
-  var N_DEV  = 360, R_CP = 0.012;   // 360 devices, 0.012 K/W cold-plate resistance
-  var DP_GLY = 1.19;           // glycol pressure-drop penalty vs water at equal flow
-  var VS_D = 940, VP_D = 720, Q_D = 500e3;
-  var RACK_DT_MAX = 8.0, FAC_DT_MIN = 12.0;   // site design targets, not a standard
+  var GLY = {
+    MPG: {
+      rho: [0.00462949594684191, -0.01227531471055105, 0.011474728632755074, -0.004364646114652704, 0.0005114074045941884, 1.6400406153788043e-05, -0.012533912163426739, 0.03291629489861386, -0.03037599508719926, 0.011300156844898022, -0.0012268983186159246, -6.286271187551399e-05, 0.010860063114014575, -0.028101586646318632, 0.02537240570671509, 1.5101721604672105, -2.561257938374172, 2.5970802682457226, -0.002960245518934232, 0.007361983870077017, -3.880699962174306, -0.6478358080014789, 13.996824839896037, -16.442547249917258, -0.00010006058632979968, -14.391677722736024, 65.08050409920217, -65.75573855085314, -16.63180569570973, 1.8472103860331668, 18.211480212967412, -51.83871473583764, 3.2945814398174957, 37.840334019745676, 48.23417541302133, 1000.2416034323146],
+      cp: [-6.6873588864730135e-06, 2.0250355121775554e-05, -2.3022648205106704e-05, 1.1671812785719417e-05, -2.2661654580871426e-06, 3.640275781865826e-08, 1.2206267092849654e-05, -4.0209510392046824e-05, 4.8935623324950254e-05, -2.590822712723453e-05, 5.0114763271077955e-06, -2.2212155110360393e-08, -5.723312372844763e-06, 2.255445882190715e-05, -3.055001756473103e-05, -0.021898069588455134, 0.033840510556387864, -0.012869908621119173, 7.329413204776622e-08, -1.8550189357117645e-06, -0.15929659622890197, 0.3925864435038659, -0.30617823530633165, 0.07360543871148803, 6.478374682867559e-07, -0.46235001344915716, 1.4898034211968898, -1.7090535358372665, 1.0026606853955125, -0.09475995511981815, -0.38561187576879896, 1.9370756730213106, -3.1660854561356286, 1.7983068367911113, -1.147465772091115, 4.2135409734225835],
+      k: [-2.1724156798583772e-06, 4.4056902913193954e-06, -2.639358274158465e-06, 8.697236416495714e-07, -5.759990028533023e-07, 1.6933125974314609e-07, -2.9323443145240943e-06, 1.035591083977509e-05, -1.2193197616371004e-05, 3.836595127927399e-06, 1.3860074477783707e-06, -6.136793541656462e-07, 9.340810681279864e-06, -2.593509982077248e-05, 2.444537535138049e-05, 0.00444711354358526, -0.0034402966790812667, -0.00015168860581180274, -4.062115089833094e-06, 1.026191580537309e-05, 0.03532436729896062, -0.10451553239970389, 0.09042534318121546, -0.022087608738565374, -4.785245437920601e-08, -0.023359735366594903, -0.025606557199496678, 0.164204678471381, -0.20186610733792087, 0.10403730581490453, 0.016360850995445084, -0.034293050417479154, 0.04064190874055714, 0.006875151996475978, -0.2755353555658099, 0.5610542457689909],
+      mu: [1.0869649463403917e-05, -3.560614033706717e-05, 4.396779296909223e-05, -2.4840572058277202e-05, 6.003834481982139e-06, -3.857921487131799e-07, -3.8246255865679534e-05, 0.00012065718033004821, -0.0001430779766461041, 7.749701850781116e-05, -1.7971678916274404e-05, 1.120365346733935e-06, 4.343044258912834e-05, -0.00013396221408758563, 0.00015480954374448694, -0.020173966170092827, -0.11891827514595063, -0.10875274551932741, -1.698158927306083e-05, 5.232998147518298e-05, -0.8581203957641486, 1.21334832908063, 0.35587222774199195, 0.589595376135223, 1.6806487867962137e-06, 0.2899746188121347, 1.6674015273900946, -2.869010023863178, -0.7534723946793265, -1.679365725317436, 2.7713663997008475, -7.486165202703573, 6.112009768565764, -1.183937404871917, 2.5684080684066224, 0.5915608578525987],
+      freeze: [11.399639457015944, -73.34471476759185, 70.9621085972914, -48.363309502265096, -10.63122514191647, -0.02509592760182121]
+    },
+    MEG: {
+      rho: [-0.00025543361778343336, 0.0013076785401233836, -0.0019390466749505315, 0.0011338229922858796, -0.00025343179542559267, 1.5031372540159912e-05, 0.0016082537416448146, -0.005817303270527992, 0.007287119604983568, -0.003843410028003781, 0.0007896507683746442, -4.114539892070542e-05, -0.0022664167443003464, 0.007222456018635254, -0.008324265483008266, 2.2460431432554424, -2.1791907317704062, 1.1180371955798116, 0.0008887737220961169, -0.0026834745033250157, -6.223184084386216, 1.7378766215669137, 10.114856612648643, -12.668016826546369, 6.74953675655188e-05, -46.72742092399088, 117.2656608020532, -85.34880150127724, -9.449569970356123, 0.09585891132333949, 38.03237554849878, -80.58300223153964, 31.32262950699691, 17.079488277087076, 82.73652336992785, 999.2662732654225],
+      cp: [-1.3679126795671116e-06, -6.482195830528841e-06, 2.030200653763732e-05, -1.754263934537586e-05, 5.489382872350995e-06, -4.515545266116219e-07, -5.417686456472963e-06, 4.297407161045882e-05, -8.087330529141426e-05, 5.9308082204851516e-05, -1.7224837128280452e-05, 1.3769808959946589e-06, 1.7064415454850784e-05, -7.266199920908455e-05, 0.00010796345981154229, -0.032191050955354295, 0.034431341489513115, -0.01093955456694963, -1.2889095454688234e-05, 4.422655931425839e-05, -0.08877906218710013, 0.24399974211427197, -0.2453499609570511, 0.06532386004138203, 3.3054691433558046e-06, -0.2768354504838059, 0.669036859712786, -0.6267267490073206, 0.6588027224751429, -0.08538136319031074, -1.2581571167983494, 3.6089715263250324, -3.56001657022685, 1.1060351062521847, -1.1404801994852813, 4.210578946761974],
+      k: [5.074437365033885e-06, -1.680263406101285e-05, 1.7899369355932296e-05, -7.179747369657513e-06, 8.78321054601066e-07, 1.848086319575251e-08, -3.0824642904083508e-06, 1.818346047012764e-05, -2.3774247069182614e-05, 9.896798721246585e-06, -7.34599722347447e-07, -1.9360504949379084e-07, -8.482612877218273e-06, 1.3002170408541058e-05, -6.051891573472372e-06, 0.0010667732677810463, -0.001952411048554835, 0.0003733938174474574, 7.359064863981061e-06, -1.7335718556707122e-05, 0.02163734389618056, -0.06788881341115917, 0.07016971229822722, -0.023051750139970805, -1.1134500147892146e-06, 0.016560145824695872, -0.08754154375557137, 0.16356374158390752, -0.1731499812585689, 0.10397565113389066, 0.02082403336346691, -0.08116791936730126, 0.14362949555748958, -0.07935222222268765, -0.21795532679861662, 0.5612071186772836],
+      mu: [3.384294130453461e-05, -9.295855990328003e-05, 9.322872322703326e-05, -4.1203847665858314e-05, 7.4143083186512694e-06, -3.0975718857423525e-07, -8.422338422005537e-05, 0.00023235493789050006, -0.00023467141519908338, 0.00010483606682514023, -1.917807829036152e-05, 8.32661604426344e-07, 6.790575669682924e-05, -0.00018873750157339303, 0.00019272477125548108, -0.2914624783668664, 0.17706010908221417, -0.10987095681874964, -1.7244007410141856e-05, 4.905241305643968e-05, 0.2193502955927016, 0.3109133841003373, -0.10253223964503098, 0.5687207608392387, -5.829286169138561e-07, 0.1186499445146606, -0.48834330718409685, 0.288474089528956, -0.6734955359050514, -1.6281257440902783, -1.4502237711850525, 4.05286898845943, -4.076345910825925, 1.8309158579321727, 1.4537154499885054, 0.5750259138305435],
+      freeze: [0.8866751131221295, 10.756515672562976, -40.21662328260015, -4.259421842862747, -18.368354031262914, 0.0003056561085975434]
+    }
+  };
+
+  var RC_PRI = [7.005571912629277e-07, -0.00020353176220472646, 0.026246869157615704, -1.9271441162086773, 78.2735421654597, -3059.193152727693, 4218007.657748665];
+  var PH_PRI = [1.4005718700326837e-07, -3.819092066196206e-05, 0.004013370044200002, -0.6872062551669611, 218.31930882818543, 13979.291181203396];
+
+  var N_EXP  = 0.7;   // chevron-plate Re exponent
+  var DP_GLY = 1.19;  // glycol pressure-drop penalty vs water at equal flow
+
+  // ═══ Site configuration ═════════════════════════════════════════════════
+  // The numbers that used to be constants. The defaults ARE the original
+  // tool: 500 kW, PG25, an ASHRAE W27 facility loop, 360 devices at
+  // 0.012 K/W, anchored to a 3 K design approach.
+  var SITE_DEFAULTS = { fluid:'MPG', conc:25, tFws:18, qDes:500, approach:3,
+    dtSecDes:8, dtPriDes:10, nDev:360, rCp:0.012, tTrip:90, rackDtMax:8, facDtMin:12 };
+  var SITE_KEY = 'sdc_cdu_site_v1';
+  var CLAMP = { conc:[0,60], tFws:[-10,45], qDes:[50,5000], approach:[0.5,10],
+    dtSecDes:[2,20], dtPriDes:[2,20], nDev:[1,100000], rCp:[0.001,1],
+    tTrip:[40,110], rackDtMax:[1,30], facDtMin:[0,30] };
+
+  function loadSite(){
+    var s = {}, k, raw, v;
+    for (k in SITE_DEFAULTS) s[k] = SITE_DEFAULTS[k];
+    try { raw = JSON.parse(localStorage.getItem(SITE_KEY) || 'null'); } catch(e){ raw = null; }
+    if (raw && typeof raw === 'object'){
+      if (raw.fluid === 'MEG' || raw.fluid === 'MPG') s.fluid = raw.fluid;
+      for (k in CLAMP){
+        v = Number(raw[k]);
+        if (isFinite(v)) s[k] = Math.max(CLAMP[k][0], Math.min(CLAMP[k][1], v));
+      }
+    }
+    return s;
+  }
+  function saveSite(){ try { localStorage.setItem(SITE_KEY, JSON.stringify(SITE)); } catch(e){} }
+
+  var SITE = loadSite();
+
+  // ═══ Property groups and the design anchor ═══════════════════════════════
+  function secProps(t){
+    var F = GLY[SITE.fluid] || GLY.MPG;
+    var tn = t / 50, cn = SITE.conc / 60;
+    var rho = poly2(F.rho, tn, cn);
+    var cp  = poly2(F.cp, tn, cn) * 1000;
+    var k   = poly2(F.k, tn, cn);
+    var mu  = Math.exp(poly2(F.mu, tn, cn)) / 1000;
+    return { rc: rho * cp,
+      phi: Math.pow(k, 2/3) * Math.pow(cp, 1/3) * Math.pow(rho, N_EXP) * Math.pow(mu, 1/3 - N_EXP) };
+  }
+  function priProps(t){ return { rc: poly(RC_PRI, t), phi: poly(PH_PRI, t) }; }
+  function freezeC(){ return poly((GLY[SITE.fluid] || GLY.MPG).freeze, SITE.conc / 60); }
+
+  // The same derivation tools/cdu_reference.py used to anchor the original
+  // K_GEO and R_WALL, run live from the site's design point. Design flows are
+  // rounded to the sliders' 10 L/min step so the design preset is a reachable
+  // position and the pump curve reads x1.00 exactly at it.
+  function anchorSite(){
+    var Q = SITE.qDes * 1000;
+    var Cs = Q / SITE.dtSecDes, Cp = Q / SITE.dtPriDes;
+    var ps = secProps(SITE.tFws + 12), pp = priProps(SITE.tFws + 5);
+    var vsRaw = Cs / ps.rc * 60000, vpRaw = Cp / pp.rc * 60000;
+    var VsD = Math.max(10, Math.round(vsRaw / 10) * 10);
+    var VpD = Math.max(10, Math.round(vpRaw / 10) * 10);
+    var G = Q / (SITE.approach + SITE.dtSecDes);
+    var Cmin = Math.min(Cs, Cp), cr = Cmin / Math.max(Cs, Cp);
+    var eps = G / Cmin;
+    var x = (1 - eps) / (1 - eps * cr);
+    var ntu = -Math.log(x) / (1 - cr);
+    var Rtot = 1 / (ntu * Cmin);
+    var Rw = 0.05 * Rtot;
+    var K = (1 / (ps.phi * Math.pow(vsRaw, N_EXP)) + 1 / (pp.phi * Math.pow(vpRaw, N_EXP))) / (Rtot - Rw);
+    return { K:K, Rw:Rw, VsD:VsD, VpD:VpD };
+  }
+  var GEO = anchorSite();
 
   function solve(Vs, Vp, qW){
-    var Tsm = 30, Tpm = 23, Cs, Cp, UA, Cmin, cr, ntu, e, G, q, hotIn, hotOut, facOut, chip, i;
+    var Tsm = SITE.tFws + 12, Tpm = SITE.tFws + 5;
+    var ps, pp, Cs, Cp, UA, Cmin, cr, ntu, e, G, q, hotIn, hotOut, facOut, chip, i, x;
     for (i = 0; i < 10; i++){
-      Cs = Vs/60000 * poly(RC_SEC, Tsm);
-      Cp = Vp/60000 * poly(RC_PRI, Tpm);
-      UA = 1/(1/(K_GEO*poly(PH_SEC,Tsm)*Math.pow(Vs,N_EXP)) + R_WALL
-            + 1/(K_GEO*poly(PH_PRI,Tpm)*Math.pow(Vp,N_EXP)));
+      ps = secProps(Tsm); pp = priProps(Tpm);
+      Cs = Vs/60000 * ps.rc;
+      Cp = Vp/60000 * pp.rc;
+      UA = 1/(1/(GEO.K*ps.phi*Math.pow(Vs,N_EXP)) + GEO.Rw
+            + 1/(GEO.K*pp.phi*Math.pow(Vp,N_EXP)));
       Cmin = Math.min(Cs, Cp); cr = Cmin/Math.max(Cs, Cp); ntu = UA/Cmin;
       if (cr > 0.9995) e = ntu/(1+ntu);
-      else { var x = Math.exp(-ntu*(1-cr)); e = (1-x)/(1-cr*x); }
+      else { x = Math.exp(-ntu*(1-cr)); e = (1-x)/(1-cr*x); }
       G = e*Cmin;
       // die sits at the rack OUTLET, so it sees the hot end plus its own cold-plate rise
-      q = Math.min(qW, (T_TRIP - T_FWS)/(1/G + R_CP/N_DEV));
-      hotIn  = T_FWS + q/G;
+      q = Math.min(qW, (SITE.tTrip - SITE.tFws)/(1/G + SITE.rCp/SITE.nDev));
+      hotIn  = SITE.tFws + q/G;
       hotOut = hotIn - q/Cs;
-      facOut = T_FWS + q/Cp;
-      chip   = hotIn + (q/N_DEV)*R_CP;
-      Tsm = (hotIn+hotOut)/2; Tpm = (facOut+T_FWS)/2;
+      facOut = SITE.tFws + q/Cp;
+      chip   = hotIn + (q/SITE.nDev)*SITE.rCp;
+      Tsm = (hotIn+hotOut)/2; Tpm = (facOut+SITE.tFws)/2;
     }
     return { e:e, ntu:ntu, cr:cr, G:G, q:q, demand:qW, throttled:q < qW - 1,
              hotIn:hotIn, hotOut:hotOut, facOut:facOut, chip:chip,
-             rackDT:hotIn-hotOut, facDT:facOut-T_FWS, approach:hotOut-T_FWS,
-             Qsec:Cs*(hotIn-hotOut), Qpri:Cp*(facOut-T_FWS),
-             pump:(DP_GLY*Math.pow(Vs/VS_D,3) + Math.pow(Vp/VP_D,3))/(DP_GLY+1) };
+             rackDT:hotIn-hotOut, facDT:facOut-SITE.tFws, approach:hotOut-SITE.tFws,
+             Qsec:Cs*(hotIn-hotOut), Qpri:Cp*(facOut-SITE.tFws),
+             pump:(DP_GLY*Math.pow(Vs/GEO.VsD,3) + Math.pow(Vp/GEO.VpD,3))/(DP_GLY+1) };
   }
 
   var isF = false;
@@ -358,23 +486,131 @@
   }
   build(dS); build(dP);
 
-  var PRESETS = [
-    { id:"des",    label:"Design point",              ms:940,  mf:720, q:500 },
-    { id:"theory", label:"Fast glycol · slow water",  ms:1400, mf:360, q:500 },
-    { id:"tuned",  label:"Tuned",                     ms:1120, mf:450, q:500 }
-  ];
+  // ═══ Presets, slider ranges and captions — all follow the site ═══════════
+  // Ratios are the original tool's: its 400..1900 / 250..1500 ranges and its
+  // 1400/360 and 1120/450 presets, expressed as fractions of the design flows
+  // so they scale with the CDU instead of stranding a 2 MW unit at 1900 L/min.
+  function r10(v){ return Math.max(10, Math.round(v/10)*10); }
+  function presets(){
+    return [
+      { id:"des",    label:"Design point",             ms:GEO.VsD,           mf:GEO.VpD,           q:SITE.qDes },
+      { id:"theory", label:"Fast glycol · slow water", ms:r10(GEO.VsD*1.49), mf:r10(GEO.VpD*0.5),  q:SITE.qDes },
+      { id:"tuned",  label:"Tuned",                    ms:r10(GEO.VsD*1.19), mf:r10(GEO.VpD*0.625),q:SITE.qDes }
+    ];
+  }
+  var PRESETS = presets();
   var pbox = $("presets");
-  PRESETS.forEach(function(p){
+  // Built ONCE. Editing a site field and clicking a preset in one motion makes
+  // the field's blur-change fire between mousedown and mouseup — if that
+  // rebuilt these buttons, the element under the pointer would vanish mid-click
+  // and the click would silently die. Only the preset VALUES follow the site;
+  // the buttons themselves are permanent, and resolve their values at click
+  // time from the current PRESETS.
+  PRESETS.forEach(function(p0){
     var b = document.createElement("button");
-    b.textContent = p.label; b.setAttribute("aria-pressed","false"); b.dataset.id = p.id;
+    b.textContent = p0.label; b.setAttribute("aria-pressed","false"); b.dataset.id = p0.id;
     b.addEventListener("click", function(){
+      var p = PRESETS.filter(function(x){ return x.id === b.dataset.id; })[0];
       $("ms").value = p.ms; $("mf").value = p.mf; $("q").value = p.q; render();
     });
     pbox.appendChild(b);
   });
 
+  function applyRanges(){
+    var r = function(id, lo, hi, step){
+      var el = $(id);
+      el.min = lo; el.max = hi; el.step = step;
+      el.value = Math.max(lo, Math.min(hi, +el.value || lo));
+    };
+    r("ms", r10(GEO.VsD*0.4255), r10(GEO.VsD*2.0213), 10);
+    r("mf", r10(GEO.VpD*0.3472), r10(GEO.VpD*2.0833), 10);
+    r("q",  Math.max(10, Math.round(SITE.qDes*0.02)*10), Math.round(SITE.qDes*0.12)*10, 10);
+  }
+
+  function fmtQ(kw){ return kw >= 1000 ? (kw/1000).toFixed(kw % 1000 ? 1 : 0) + "\u00a0MW" : kw + "\u00a0kW"; }
+  function fluidLabel(){ return (SITE.fluid === "MEG" ? "EG" : "PG") + SITE.conc; }
+  function applyCaptions(){
+    $("cap1").textContent = fmtQ(SITE.qDes) + " Data Center CDU";
+    $("cap2").textContent = "Direct-to-chip " + (SITE.conc > 0 ? "glycol" : "water") +
+      " loop rejecting " + fmtQ(SITE.qDes) + " to chilled water through a counterflow plate exchanger.";
+    $("legSec").textContent = SITE.conc > 0 ? fluidLabel() : "water";
+  }
+
+  // ═══ The site panel ═══════════════════════════════════════════════════════
+  // Absolute temperatures convert to the display unit; deltas SCALE (9 F = 5 K,
+  // never -12.8). kind decides which.
+  var FIELDS = [
+    { id:"sConc", key:"conc",     kind:"plain" },
+    { id:"sTfws", key:"tFws",     kind:"t" },
+    { id:"sQdes", key:"qDes",     kind:"plain" },
+    { id:"sApp",  key:"approach", kind:"dt" },
+    { id:"sDts",  key:"dtSecDes", kind:"dt" },
+    { id:"sDtp",  key:"dtPriDes", kind:"dt" },
+    { id:"sNdev", key:"nDev",     kind:"plain" },
+    { id:"sRcp",  key:"rCp",      kind:"plain" },
+    { id:"sTrip", key:"tTrip",    kind:"t" },
+    { id:"sRdt",  key:"rackDtMax",kind:"dt" },
+    { id:"sFdt",  key:"facDtMin", kind:"dt" }
+  ];
+  function toDisp(v, kind){ return kind === "t" ? T(v) : kind === "dt" ? DK(v) : v; }
+  function fromDisp(v, kind){
+    if (kind === "t")  return isF ? (v - 32) * 5/9 : v;
+    if (kind === "dt") return isF ? v * 5/9 : v;
+    return v;
+  }
+  function paintSitePanel(){
+    $("sFluid").value = SITE.fluid;
+    FIELDS.forEach(function(f){
+      var el = $(f.id);
+      if (document.activeElement === el) return; // never rewrite mid-keystroke
+      var v = toDisp(SITE[f.key], f.kind);
+      el.value = Math.abs(v) < 1 ? +v.toFixed(3) : +v.toFixed(1);
+    });
+    ["uFws","uTrip"].forEach(function(id){ $(id).textContent = uT(); });
+    ["uApp","uDts","uDtp","uRdt","uFdt"].forEach(function(id){ $(id).textContent = uD(); });
+    var fz = freezeC(), note = $("siteNote"), close = SITE.tFws < fz + 5;
+    note.textContent = (SITE.conc > 0
+        ? fluidLabel() + " freezes at " + T(fz).toFixed(1) + " " + uT()
+        : "Plain water freezes at " + T(0).toFixed(1) + " " + uT())
+      + (close ? " — facility supply is within 5 K of it. Raise the concentration." : "")
+      + "  ·  design " + fmtQ(SITE.qDes) + " at " + DK(SITE.approach).toFixed(1) + " " + uD()
+      + " approach → " + GEO.VsD + " / " + GEO.VpD + " L/min";
+    note.className = "site-note" + (close ? " watch" : "");
+  }
+
+  function readSitePanel(){
+    SITE.fluid = $("sFluid").value === "MEG" ? "MEG" : "MPG";
+    FIELDS.forEach(function(f){
+      var v = fromDisp(Number($(f.id).value), f.kind);
+      if (isFinite(v)) SITE[f.key] = Math.max(CLAMP[f.key][0], Math.min(CLAMP[f.key][1], v));
+    });
+  }
+
+  function applyConfig(){
+    GEO = anchorSite();
+    applyRanges();
+    PRESETS = presets();
+    applyCaptions();
+    paintSitePanel();
+    BASE = solve(GEO.VsD, GEO.VpD, SITE.qDes*1000);
+  }
+
+  function onSiteEdit(){
+    var before = JSON.stringify(SITE);
+    readSitePanel();
+    if (JSON.stringify(SITE) === before) return; // blur echo — nothing changed
+    saveSite(); applyConfig(); render();
+  }
+  $("sFluid").addEventListener("change", onSiteEdit);
+  FIELDS.forEach(function(f){ $(f.id).addEventListener("change", onSiteEdit); });
+  $("sReset").addEventListener("click", function(){
+    try { localStorage.removeItem(SITE_KEY); } catch(e){}
+    SITE = loadSite();
+    applyConfig(); render();
+  });
+
   var st = null, ph = 0, last = 0;
-  var BASE = solve(VS_D, VP_D, Q_D);
+  var BASE = solve(GEO.VsD, GEO.VpD, SITE.qDes*1000);
 
   function render(){
     var ms = +$("ms").value, mf = +$("mf").value, qk = +$("q").value;
@@ -386,21 +622,21 @@
       b.setAttribute("aria-pressed", (p.ms===ms && p.mf===mf && p.q===qk) ? "true" : "false");
     });
 
-    var rackOK = st.rackDT <= RACK_DT_MAX, facOK = st.facDT >= FAC_DT_MIN;
+    var rackOK = st.rackDT <= SITE.rackDtMax, facOK = st.facDT >= SITE.facDtMin;
     $("dtSecV").textContent = DK(st.rackDT).toFixed(1) + " " + uD();
     $("dtSecV").setAttribute("class", "h-val " + (rackOK ? "good" : "watch"));
-    $("dtSecT").textContent = "site target ≤ " + DK(RACK_DT_MAX).toFixed(1) + " " + uD() + " · uniform dies";
+    $("dtSecT").textContent = "site target ≤ " + DK(SITE.rackDtMax).toFixed(1) + " " + uD() + " · uniform dies";
     $("dtSecS").textContent = T(st.hotOut).toFixed(1) + " → " + T(st.hotIn).toFixed(1) + " " + uT();
 
     $("dtPriV").textContent = DK(st.facDT).toFixed(1) + " " + uD();
     $("dtPriV").setAttribute("class", "h-val " + (facOK ? "good" : "watch"));
-    $("dtPriT").textContent = "site target ≥ " + DK(FAC_DT_MIN).toFixed(1) + " " + uD() + " · plant efficiency";
-    $("dtPriS").textContent = T(T_FWS).toFixed(1) + " → " + T(st.facOut).toFixed(1) + " " + uT();
+    $("dtPriT").textContent = "site target ≥ " + DK(SITE.facDtMin).toFixed(1) + " " + uD() + " · plant efficiency";
+    $("dtPriS").textContent = T(SITE.tFws).toFixed(1) + " → " + T(st.facOut).toFixed(1) + " " + uT();
 
     $("bRack").textContent = T(st.chip).toFixed(1) + uT();
-    $("bFac").textContent  = T(T_FWS).toFixed(1) + uT();
+    $("bFac").textContent  = T(SITE.tFws).toFixed(1) + uT();
 
-    var margin = T_TRIP - st.chip, hot = st.throttled || margin < 10;
+    var margin = SITE.tTrip - st.chip, hot = st.throttled || margin < 10;
     var dChip = st.chip - BASE.chip;
     $("vChip").textContent = T(st.chip).toFixed(1) + uT();
     $("vChip").className = "v" + (hot ? " watch" : (dChip < -0.05 ? " good" : ""));
@@ -425,22 +661,23 @@
       + " kW</b> at every flow setting &mdash; flow sets the <b>temperature</b> you pay, never the heat removed. "
       + "&epsilon; " + (st.e > 0.9995 ? "&gt;99.9" : (st.e*100).toFixed(1)) + "% &middot; NTU " + st.ntu.toFixed(2)
       + " &middot; conductance G " + (st.G/1000).toFixed(1) + " kW/K &middot; approach " + DK(st.approach).toFixed(1) + " " + uD()
-      + "<br>Counterflow &epsilon;&ndash;NTU &middot; PG25 + water properties from <b>CoolProp</b> &middot; chevron-plate Nu = C&#8239;Re<sup>0.7</sup>Pr<sup>1/3</sup>"
-      + " &middot; facility supply 18&nbsp;&deg;C (<b>ASHRAE W27</b>) &middot; anchored to a 3&nbsp;K design approach"
-      + " &middot; hottest die = rack outlet + " + DK((qk*1000/N_DEV)*R_CP).toFixed(1) + "&nbsp;" + uD()
-      + " (" + (qk/N_DEV*1000).toFixed(0) + "&nbsp;W/device at 0.012&nbsp;K/W). &Delta;T figures are site targets, not standards.";
+      + "<br>Counterflow &epsilon;&ndash;NTU &middot; " + (SITE.conc > 0 ? fluidLabel() : "water") + " + water properties from <b>CoolProp</b> &middot; chevron-plate Nu = C&#8239;Re<sup>0.7</sup>Pr<sup>1/3</sup>"
+      + " &middot; facility supply " + T(SITE.tFws).toFixed(1) + "&nbsp;" + uT() + (SITE.tFws === 18 ? " (<b>ASHRAE W27</b>)" : "")
+      + " &middot; anchored to a " + DK(SITE.approach).toFixed(1) + "&nbsp;" + uD() + " design approach"
+      + " &middot; hottest die = rack outlet + " + DK((qk*1000/SITE.nDev)*SITE.rCp).toFixed(1) + "&nbsp;" + uD()
+      + " (" + (qk/SITE.nDev*1000).toFixed(0) + "&nbsp;W/device at " + SITE.rCp + "&nbsp;K/W). &Delta;T figures are site targets, not standards.";
 
     paint();
   }
 
   function paint(){
     if (!st) return;
-    var ms = +$("ms").value, mf = +$("mf").value, i, p;
+    var ms = +$("ms").value, mf = +$("mf").value, msMax = +$("ms").max || 1, mfMax = +$("mf").max || 1, i, p;
     for (i = 0; i < N; i++){
-      p = at(gS, ph*(ms/1900)*0.17 + i/N, st.hotIn, st.hotOut);
+      p = at(gS, ph*(ms/msMax)*0.17 + i/N, st.hotIn, st.hotOut);
       dS[i].setAttribute("cx", p.x.toFixed(1)); dS[i].setAttribute("cy", p.y.toFixed(1));
       dS[i].setAttribute("fill", tcol(p.T));
-      p = at(gP, ph*(mf/1500)*0.17 + i/N, T_FWS, st.facOut);
+      p = at(gP, ph*(mf/mfMax)*0.17 + i/N, SITE.tFws, st.facOut);
       dP[i].setAttribute("cx", p.x.toFixed(1)); dP[i].setAttribute("cy", p.y.toFixed(1));
       dP[i].setAttribute("fill", tcol(p.T));
     }
@@ -456,11 +693,13 @@
   function setU(){
     $("uC").setAttribute("aria-pressed", String(!isF));
     $("uF").setAttribute("aria-pressed", String(isF));
+    paintSitePanel();
     render();
   }
   $("uC").addEventListener("click", function(){ isF = false; setU(); });
   $("uF").addEventListener("click", function(){ isF = true;  setU(); });
 
+  applyConfig();
   render();
   if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) requestAnimationFrame(frame);
 })();
