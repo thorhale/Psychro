@@ -24,7 +24,7 @@ import { state, hallVisible } from './state.js';
 import { thermalC } from './hallphysics.js';
 import { escHtml } from '../ui/escape.js';
 import { toast } from '../ui/notify.js';
-import { dispTs, tLabel, deltaLabel, fmtSlaReason } from '../ui/format.js';
+import { dispTs, disp1, tLabel, deltaLabel, fmtSlaReason } from '../ui/format.js';
 import { checkSLA as checkSLACore } from '../core/envelopes.js';
 import { pressureFromAltitude } from '../core/psychro.js';
 import { evapMediaOutput } from '../core/evapmedia.js';
@@ -289,8 +289,8 @@ export function renderEquipment() {
   const rows = inv.map((u, i) => {
     const isEvap = !!u.evap;
     const capCell = isEvap
-      ? `<input type="number" inputmode="decimal" class="cap-rate eq-f" data-i="${i}" data-k="evapCfm" value="${u.evap.cfm || ''}" placeholder="CFM" min="0" step="500" title="Airflow across the media, CFM">`
-      : `<input type="number" inputmode="decimal" class="cap-rate eq-f" data-i="${i}" data-k="cap" value="${u.cap || ''}" min="0" step="1" placeholder="each">`;
+      ? `<input type="number" inputmode="decimal" class="cap-rate eq-f" data-i="${i}" data-k="evapCfm" value="${u.evap.cfm || ''}" placeholder="CFM" min="0" step="any" title="Airflow across the media, CFM">`
+      : `<input type="number" inputmode="decimal" class="cap-rate eq-f" data-i="${i}" data-k="cap" value="${u.cap || ''}" min="0" step="0.1" placeholder="each">`;
     const unitCell = isEvap
       ? `<span class="cap-u">CFM ea.</span>`
       : `<select class="sla-select calc-sel eq-f" data-i="${i}" data-k="unit">${unitsForKind(u.kind)
@@ -315,7 +315,7 @@ export function renderEquipment() {
       `<input type="text" class="scn-input eq-f" data-i="${i}" data-k="name" value="${escHtml(u.name)}" placeholder="${EQUIP_LABEL[u.kind]} tag" maxlength="60">` +
       `<input type="number" inputmode="numeric" class="cap-rate eq-f" data-i="${i}" data-k="count" value="${u.count}" min="1" max="999" step="1" title="How many identical units">` +
       `<span class="cap-u">×</span>${capCell}${unitCell}` +
-      `<input type="number" inputmode="decimal" class="cap-rate eq-f" data-i="${i}" data-k="${condKey}" value="${condVal}" min="0" max="100" step="1" title="${condTitle}">` +
+      `<input type="number" inputmode="decimal" class="cap-rate eq-f" data-i="${i}" data-k="${condKey}" value="${condVal}" min="0" max="100" step="0.1" title="${condTitle}">` +
       `<span class="cap-u">%</span>` +
       `<label class="cap-ck" title="In service"><input type="checkbox" class="eq-f" data-i="${i}" data-k="online"${u.online ? ' checked' : ''}> on</label>` +
       `<span class="eq-out">${u.online ? outTxt : 'out of service'}</span>` +
@@ -540,7 +540,7 @@ export function renderAllHalls() {
     // A hall with no working point has no move to show, and "—" spends a
     // whole line saying so.
     const cond = c
-      ? `${dispTs(c.aTemp)}${tLabel()} · ${Math.round(c.aRH)}%  →  ${dispTs(c.bTemp)}${tLabel()} · ${Math.round(c.bRH)}%`
+      ? `${dispTs(c.aTemp)}${tLabel()} · ${disp1(c.aRH)}%  →  ${dispTs(c.bTemp)}${tLabel()} · ${disp1(c.bRH)}%`
       : '';
     // Hall names repeat across buildings — four halls called "Hall 1" is
     // normal on a campus — so the building is what tells them apart and

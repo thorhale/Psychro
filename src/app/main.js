@@ -35,7 +35,7 @@ import {
   renderSensorValidation, renderSensorLogbook, loadSensorLog, loadSensorRegistry,
   sensorSnapshot, mergeSensorData, wireSensorUi,
 } from './sensor-ui.js';
-import { tU, dispTs, dispT1, tLabel, dispDeltaT, deltaLabel, fmtSlaReason } from '../ui/format.js';
+import { tU, dispTs, dispT1, disp1, tLabel, dispDeltaT, deltaLabel, fmtSlaReason } from '../ui/format.js';
 import { escHtml } from '../ui/escape.js';
 import {
   fToC, cToF, deltaFromF,
@@ -337,14 +337,19 @@ function setControl(sliderId, inputId, valId, valF, kind, skipInput) {
   // sliders are bounded; input boxes are free
   const sliderClampF = kind === 'dp' ? clampDpF
     : (sliderId.includes('-b-')) ? clampTargetF : clampF;
+  // Everything here lands on a tenth, matching the sliders' step and the
+  // display formatters. Rounding to whole units used to destroy typed
+  // precision: type 72.5, touch any other control, and the sync wrote 73 back
+  // over it while the state kept the 72.5 every calculation was using.
+  const tenth = (v) => String(Math.round(v * 10) / 10);
   if (kind === 'temp' || kind === 'dp') {
-    if (slider) slider.value = String(Math.round(sliderClampF(valF))); // slider clamped
+    if (slider) slider.value = tenth(sliderClampF(valF));              // slider clamped
     if (input && inputId !== skipInput)  input.value  = dispTs(valF);  // box: true value
     if (val)    val.textContent = dispTs(valF) + ' ' + tLabel();
   } else {
-    if (slider) slider.value = String(Math.round(clampRH(valF)));
-    if (input && inputId !== skipInput)  input.value  = String(Math.round(valF));
-    if (val)    val.textContent = Math.round(valF) + ' %';
+    if (slider) slider.value = tenth(clampRH(valF));
+    if (input && inputId !== skipInput)  input.value  = disp1(valF);
+    if (val)    val.textContent = disp1(valF) + ' %';
   }
 }
 
@@ -432,8 +437,10 @@ inp('b-dp').addEventListener('input', function() {
     const before = parseFloat(el.value);
     syncAllControls();
     const after = parseFloat(el.value);
-    // > 1 display unit: beyond what integer display rounding can explain.
-    if (isFinite(before) && isFinite(after) && Math.abs(before - after) > 1) {
+    // > 0.15 display units: beyond what tenth-place display rounding can
+    // explain. This was 1 when the boxes rendered whole numbers; leaving it
+    // there would swallow a real half-degree clamp without saying so.
+    if (isFinite(before) && isFinite(after) && Math.abs(before - after) > 0.15) {
       toast(`Using ${el.value} — the number you typed was outside the allowed range (RH stays 0–100%, dew point stays below air temp, Target stays near the SLA).`, {
         kind: 'info', duration: 6000,
       });
@@ -562,15 +569,17 @@ function updateControlReadout() {
   const sgn = v => (v >= 0 ? '+' : '');
   const U = tLabel();
   const dDT = dispDeltaT(dT), dU = deltaLabel();
+  // Tenths here too: this sentence sits directly under the "+4.5 °F" total,
+  // and rounding it to 5 made the card contradict itself.
   const tempPhrase = Math.abs(dT) < 0.5 ? 'holding temperature'
-    : dT > 0 ? `raising temp ${Math.round(Math.abs(dDT))}${dU}` : `lowering temp ${Math.round(Math.abs(dDT))}${dU}`;
+    : dT > 0 ? `raising temp ${disp1(Math.abs(dDT))}${dU}` : `lowering temp ${disp1(Math.abs(dDT))}${dU}`;
 
   const lede = (sameMoisture && Math.abs(dT) >= 0.5)
     ? 'Move on the moisture line — temperature drives RH'
     : 'Planned move — current → target';
   const note = sameMoisture && Math.abs(dT) >= 0.5
     ? `${tempPhrase}, no water added or removed`
-    : `${tempPhrase}, ${Math.abs(dW) >= 0.15 ? `${dW > 0 ? 'adding' : 'removing'} moisture (${Math.abs(dW).toFixed(1)} g/kg)` : `Δ ${sgn(dRH)}${Math.round(dRH)} pts RH`}`;
+    : `${tempPhrase}, ${Math.abs(dW) >= 0.15 ? `${dW > 0 ? 'adding' : 'removing'} moisture (${Math.abs(dW).toFixed(1)} g/kg)` : `Δ ${sgn(dRH)}${disp1(dRH)} pts RH`}`;
 
   const openCls = resultsExpanded ? ' open' : '';
   const row = (k, v) => `<div class="result-row"><span class="rk">${k}</span><span class="rv">${v}</span></div>`;
@@ -578,7 +587,7 @@ function updateControlReadout() {
     <div class="detail-col">
       <div class="detail-title" style="color:${color}">${title}</div>
       ${row('Dry-bulb', `${dispTs(P.tempF)} ${U}`)}
-      ${row('RH', `${Math.round(P.rh)} %`)}
+      ${row('RH', `${disp1(P.rh)} %`)}
       ${row('Humidity ratio', `${P.W.toFixed(2)} g/kg`)}
       ${row('Dew point', P.dpF!=null?`${dispTs(P.dpF)} ${U}`:'—')}
       ${row('Wet bulb', `${dispTs(P.wbF)} ${U}`)}
@@ -622,12 +631,12 @@ function updateControlReadout() {
       : '';
     // "Achievable" is a promise — never make it while plant data is missing.
     const ok = minHrs <= 1 && !plan.needsTempRate && !plan.needsVol;
-    const rampLimT = sla.maxDtHr != null ? `${dispDeltaT(sla.maxDtHr).toFixed(0)}${dU}/hr` : '—';
+    const rampLimT = sla.maxDtHr != null ? `${disp1(dispDeltaT(sla.maxDtHr))}${dU}/hr` : '—';
     rampHtml = `
       <div class="ramp-advisory">
         <div class="ramp-row">
           <span class="ramp-k">Total change</span>
-          <span class="ramp-v">${sgn(dDT)}${dDT.toFixed(0)}${dU} · ${sgn(dRH)}${dRH.toFixed(0)}% RH</span>
+          <span class="ramp-v">${sgn(dDT)}${disp1(dDT)}${dU} · ${sgn(dRH)}${disp1(dRH)}% RH</span>
         </div>
         <div class="ramp-row">
           <span class="ramp-k">SLA ramp limit</span>
@@ -727,14 +736,14 @@ function updateControlReadout() {
     <div class="cr-lede">${lede}</div>
     <div class="cr-headline-pair">
       <div class="cr-point"><span class="cr-ptlabel" style="color:#d4d400">CURRENT</span>
-        <span><span class="cr-big">${dispTs(A.tempF)}${U}</span><span class="cr-sep">·</span><span class="cr-big">${A.rh.toFixed(0)}%</span></span>
+        <span><span class="cr-big">${dispTs(A.tempF)}${U}</span><span class="cr-sep">·</span><span class="cr-big">${disp1(A.rh)}%</span></span>
         ${slaChip(chkA)}</div>
       <span class="cr-arrow">→</span>
       <div class="cr-point"><span class="cr-ptlabel" style="color:var(--accent)">TARGET</span>
-        <span><span class="cr-big">${dispTs(B.tempF)}${U}</span><span class="cr-sep">·</span><span class="cr-big ${cls}">${B.rh.toFixed(0)}%</span></span>
+        <span><span class="cr-big">${dispTs(B.tempF)}${U}</span><span class="cr-sep">·</span><span class="cr-big ${cls}">${disp1(B.rh)}%</span></span>
         ${slaChip(chkB)}</div>
     </div>
-    <div class="cr-note">RH ${verb} ${A.rh.toFixed(0)}% → ${B.rh.toFixed(0)}% · ${note}</div>
+    <div class="cr-note">RH ${verb} ${disp1(A.rh)}% → ${disp1(B.rh)}% · ${note}</div>
     ${whyNote}
     ${rampHtml}
     ${loadHtml}
@@ -792,9 +801,9 @@ function paintVentReadout() {
   const duty = rate ? ` — <strong>${(r.lbPerHr / rate * 100).toFixed(0)}%</strong> of today's humidify capacity` : '';
   const sla = state.slaProfiles[state.activeSla];
   const settle = r.settleRH < (sla?.rhMin ?? 0)
-    ? ` Humidifiers off, the room settles near <strong>${r.settleRH.toFixed(0)}% RH</strong> — below this SLA's ${sla.rhMin}% floor, so this is standing duty, not margin.`
+    ? ` Humidifiers off, the room settles near <strong>${disp1(r.settleRH)}% RH</strong> — below this SLA's ${sla.rhMin}% floor, so this is standing duty, not margin.`
     : '';
-  el.innerHTML = `Holding Target ${dispTs(state.bTemp)}${tLabel()} / ${Math.round(state.bRH)}% with ${h.doasCfm.toLocaleString()} CFM outside air (${basis}): ` +
+  el.innerHTML = `Holding Target ${dispTs(state.bTemp)}${tLabel()} / ${disp1(state.bRH)}% with ${h.doasCfm.toLocaleString()} CFM outside air (${basis}): ` +
     `<strong>${r.lbPerHr.toFixed(1)} lb/hr · ${r.galPerDay.toFixed(0)} gal/day</strong> of humidifier water${duty}.${settle}` +
     ` Evaporative units drinking utility water: budget 1.5–3× that for bleed-off.`;
 }
@@ -893,18 +902,18 @@ function renderHallEditor() {
       <input type="text" id="hall-building" value="${(state.hall.building||'').replace(/"/g,'&quot;')}" placeholder="e.g. DFW VII or Building A">
     </div>
     <div class="sla-field"><label for="hall-site">Site / location <span class="cap-hint">set by the Location picker above</span></label><input type="text" id="hall-site" value="${(state.hall.siteName||'').replace(/"/g,'&quot;')}" placeholder="e.g. Goodyear, AZ" ></div>
-    <div class="sla-field"><label for="hall-elev">Elevation ft <span class="cap-hint">preset from location; fine-tune here</span></label><input type="number" id="hall-elev" value="${state.hall.elevFt ?? 0}" step="10" min="-15000" max="20000" ></div>
+    <div class="sla-field"><label for="hall-elev">Elevation ft <span class="cap-hint">preset from location; fine-tune here</span></label><input type="number" id="hall-elev" value="${state.hall.elevFt ?? 0}" step="any" min="-15000" max="20000" ></div>
     <div class="sla-field"><label for="hall-baro">Measured pressure <span class="u">kPa</span> <span class="cap-hint">optional — a barometer beats the elevation estimate</span></label><input type="number" inputmode="decimal" id="hall-baro" value="${state.hall.baroKpa ?? ''}" step="0.1" min="55" max="110" placeholder="blank = from elevation"></div>
     <div class="sla-caps">
       <div class="sla-caps-label">Plant capability &amp; rates — what this hall can actually do</div>
       <div class="cap-explain">Temperature rates: use commissioning-observed ${deltaLabel()}/hr, or derive a physics estimate below (IT load, excess sensible capacity, thermal mass). Moisture is first-principles: hall air mass × ΔW ÷ equipment lb/hr. Enter NET capacity (nameplate minus steady makeup-air latent load). Blank = not plant-limited; the SLA ramp limit still governs.</div>
       <div id="equip-panel"></div>
-      <div class="cap-line"><span class="cap-name">Hall air volume <span class="cap-hint">for the moisture mass balance</span></span><input type="number" id="hall-vol" class="cap-rate" value="${state.hall.hallVolFt3 ?? ''}" placeholder="—" step="1000" min="0"><span class="cap-u">ft³</span></div>
-      <div class="cap-line"><span class="cap-name">Supply airflow <span class="cap-hint">for the cooling-load estimate</span></span><input type="number" id="hall-cfm" class="cap-rate" value="${state.hall.airflowCfm ?? ''}" placeholder="—" step="1000" min="0"><span class="cap-u">CFM</span></div>
-      <div class="cap-line"><span class="cap-name">Cooling</span><input type="number" id="rate-cool" class="cap-rate" value="${showRate(state.hall.rateCoolF)}" placeholder="—" step="0.5" min="0"><span class="cap-u">${deltaLabel()}/hr</span></div>
-      <div class="cap-line"><span class="cap-name">Warming <span class="cap-hint">reheat or IT load</span></span><input type="number" id="rate-warm" class="cap-rate" value="${showRate(state.hall.rateWarmF)}" placeholder="—" step="0.5" min="0"><span class="cap-u">${deltaLabel()}/hr</span></div>
-      <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-dehum" ${state.hall.canDehumidify?'checked':''}> Dehumidify</label><input type="number" id="rate-dehum" class="cap-rate" value="${state.hall.rateDehumLb ?? ''}" placeholder="—" step="5" min="0" ${state.hall.canDehumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
-      <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-hum" ${state.hall.canHumidify?'checked':''}> Humidify</label><input type="number" id="rate-hum" class="cap-rate" value="${state.hall.rateHumLb ?? ''}" placeholder="—" step="5" min="0" ${state.hall.canHumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
+      <div class="cap-line"><span class="cap-name">Hall air volume <span class="cap-hint">for the moisture mass balance</span></span><input type="number" id="hall-vol" class="cap-rate" value="${state.hall.hallVolFt3 ?? ''}" placeholder="—" step="any" min="0"><span class="cap-u">ft³</span></div>
+      <div class="cap-line"><span class="cap-name">Supply airflow <span class="cap-hint">for the cooling-load estimate</span></span><input type="number" id="hall-cfm" class="cap-rate" value="${state.hall.airflowCfm ?? ''}" placeholder="—" step="any" min="0"><span class="cap-u">CFM</span></div>
+      <div class="cap-line"><span class="cap-name">Cooling</span><input type="number" id="rate-cool" class="cap-rate" value="${showRate(state.hall.rateCoolF)}" placeholder="—" step="0.1" min="0"><span class="cap-u">${deltaLabel()}/hr</span></div>
+      <div class="cap-line"><span class="cap-name">Warming <span class="cap-hint">reheat or IT load</span></span><input type="number" id="rate-warm" class="cap-rate" value="${showRate(state.hall.rateWarmF)}" placeholder="—" step="0.1" min="0"><span class="cap-u">${deltaLabel()}/hr</span></div>
+      <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-dehum" ${state.hall.canDehumidify?'checked':''}> Dehumidify</label><input type="number" id="rate-dehum" class="cap-rate" value="${state.hall.rateDehumLb ?? ''}" placeholder="—" step="0.1" min="0" ${state.hall.canDehumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
+      <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-hum" ${state.hall.canHumidify?'checked':''}> Humidify</label><input type="number" id="rate-hum" class="cap-rate" value="${state.hall.rateHumLb ?? ''}" placeholder="—" step="0.1" min="0" ${state.hall.canHumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
       <details class="calc">
         <summary>Derive your rates from equipment specs <span class="sect-chev">▸</span></summary>
         <div class="calc-body">
@@ -912,8 +921,8 @@ function renderHallEditor() {
 
           <div class="calc-method">Shared — thermal mass</div>
           <div class="calc-grid2">
-            <input type="number" id="rc-it" class="cap-rate" value="${(state.hall.calc||{}).it ?? ''}" placeholder="IT load kW" min="0" step="10">
-            <input type="number" id="rc-mass" class="cap-rate" value="${(state.hall.calc||{}).mass ?? ''}" placeholder="equip mass lb (opt)" min="0" step="1000">
+            <input type="number" id="rc-it" class="cap-rate" value="${(state.hall.calc||{}).it ?? ''}" placeholder="IT load kW" min="0" step="any">
+            <input type="number" id="rc-mass" class="cap-rate" value="${(state.hall.calc||{}).mass ?? ''}" placeholder="equip mass lb (opt)" min="0" step="any">
           </div>
           <div class="calc-hint2">Capacitance = hall air + equipment mass (cₚ≈0.12 BTU/lb·°F). Blank mass = air-only ceiling.</div>
 
@@ -921,7 +930,7 @@ function renderHallEditor() {
           <div class="calc-grid">
             <input type="number" id="cc-units" class="cap-rate" value="${(state.hall.calc||{}).ccUnits ?? ''}" placeholder="units" min="0" step="1">
             <span class="calc-x">×</span>
-            <input type="number" id="cc-cap" class="cap-rate" value="${(state.hall.calc||{}).ccCap ?? ''}" placeholder="sensible ea." min="0" step="1">
+            <input type="number" id="cc-cap" class="cap-rate" value="${(state.hall.calc||{}).ccCap ?? ''}" placeholder="sensible ea." min="0" step="0.1">
             <select id="cc-capunit" class="sla-select calc-sel">
               <option value="kw"${((state.hall.calc||{}).ccUnit??'kw')==='kw'?' selected':''}>kW</option>
               <option value="ton"${(state.hall.calc||{}).ccUnit==='ton'?' selected':''}>tons</option>
@@ -933,7 +942,7 @@ function renderHallEditor() {
 
           <div class="calc-method mt">Warming <span class="cap-hint">IT load, cooling backed off</span></div>
           <div class="calc-grid2">
-            <input type="number" id="wc-reheat" class="cap-rate" value="${(state.hall.calc||{}).reheat ?? ''}" placeholder="+ reheat kW (opt)" min="0" step="5">
+            <input type="number" id="wc-reheat" class="cap-rate" value="${(state.hall.calc||{}).reheat ?? ''}" placeholder="+ reheat kW (opt)" min="0" step="0.1">
             <span class="calc-inline-note">uses IT load above</span>
           </div>
           <div class="calc-res" id="wc-res">—</div>
@@ -948,7 +957,7 @@ function renderHallEditor() {
             <div class="calc-grid">
               <input type="number" id="dh-qty" class="cap-rate" value="${(state.hall.calc||{}).dhQty ?? ''}" placeholder="units" min="0" step="1">
               <span class="calc-x">×</span>
-              <input type="number" id="dh-each" class="cap-rate" value="${(state.hall.calc||{}).dhEach ?? ''}" placeholder="removal ea." min="0" step="1">
+              <input type="number" id="dh-each" class="cap-rate" value="${(state.hall.calc||{}).dhEach ?? ''}" placeholder="removal ea." min="0" step="0.1">
               <select id="dh-unit" class="sla-select calc-sel">
                 <option value="lbhr"${((state.hall.calc||{}).dhUnit??'lbhr')==='lbhr'?' selected':''}>lb/hr</option>
                 <option value="pintday"${(state.hall.calc||{}).dhUnit==='pintday'?' selected':''}>pints/day</option>
@@ -960,7 +969,7 @@ function renderHallEditor() {
             <div class="calc-grid">
               <input type="number" id="dh-lqty" class="cap-rate" value="${(state.hall.calc||{}).dhLQty ?? ''}" placeholder="units" min="0" step="1">
               <span class="calc-x">×</span>
-              <input type="number" id="dh-lat" class="cap-rate" value="${(state.hall.calc||{}).dhLat ?? ''}" placeholder="latent ea." min="0" step="0.5">
+              <input type="number" id="dh-lat" class="cap-rate" value="${(state.hall.calc||{}).dhLat ?? ''}" placeholder="latent ea." min="0" step="0.1">
               <select id="dh-latunit" class="sla-select calc-sel">
                 <option value="ton"${((state.hall.calc||{}).dhLatUnit??'ton')==='ton'?' selected':''}>lat. tons</option>
                 <option value="kw"${(state.hall.calc||{}).dhLatUnit==='kw'?' selected':''}>kW</option>
@@ -970,8 +979,8 @@ function renderHallEditor() {
           </div>
           <div id="dh-coil" class="dh-pane" style="display:none">
             <div class="calc-grid2">
-              <input type="number" id="dc-cfm" class="cap-rate" value="${(state.hall.calc||{}).cfm ?? ''}" placeholder="total CFM" min="0" step="100">
-              <input type="number" id="dc-dp" class="cap-rate" value="${(state.hall.calc||{}).dp != null ? dispT1((state.hall.calc||{}).dp) : ''}" placeholder="supply DP ${tLabel()}" step="1">
+              <input type="number" id="dc-cfm" class="cap-rate" value="${(state.hall.calc||{}).cfm ?? ''}" placeholder="total CFM" min="0" step="any">
+              <input type="number" id="dc-dp" class="cap-rate" value="${(state.hall.calc||{}).dp != null ? dispT1((state.hall.calc||{}).dp) : ''}" placeholder="supply DP ${tLabel()}" step="0.1">
             </div>
           </div>
           <div class="calc-res" id="dh-res">—</div>
@@ -985,19 +994,19 @@ function renderHallEditor() {
           </div>
           <div id="hc-evap" style="display:none">
             <div class="calc-grid2">
-              <input type="number" inputmode="decimal" id="hc-cfm" class="cap-rate" value="${(state.hall.calc||{}).hCfm ?? ''}" placeholder="airflow across media CFM" min="0" step="500">
-              <input type="number" inputmode="decimal" id="hc-eff" class="cap-rate" value="${(state.hall.calc||{}).hEff ?? ''}" placeholder="saturation eff. %" min="1" max="100" step="1">
+              <input type="number" inputmode="decimal" id="hc-cfm" class="cap-rate" value="${(state.hall.calc||{}).hCfm ?? ''}" placeholder="airflow across media CFM" min="0" step="any">
+              <input type="number" inputmode="decimal" id="hc-eff" class="cap-rate" value="${(state.hall.calc||{}).hEff ?? ''}" placeholder="saturation eff. %" min="1" max="100" step="0.1">
             </div>
             <div class="calc-hint2">Saturation effectiveness comes from your media's own data — the fraction of the theoretical maximum it actually achieves. <strong>This is the number mineral scale destroys:</strong> as deposits block wetted surface and channel air past it, effectiveness falls and so does capacity. Re-enter it as the media fouls, or measure it below.</div>
             <div class="calc-grid2" style="margin-top:8px">
-              <input type="number" inputmode="decimal" id="hc-meas" class="cap-rate" value="${(state.hall.calc||{}).hMeas ?? ''}" placeholder="measured output lb/hr (optional)" min="0" step="1">
+              <input type="number" inputmode="decimal" id="hc-meas" class="cap-rate" value="${(state.hall.calc||{}).hMeas ?? ''}" placeholder="measured output lb/hr (optional)" min="0" step="0.1">
               <span class="calc-inline-note">↳ back-calculates the effectiveness you are really getting</span>
             </div>
           </div>
           <div class="calc-grid" id="hc-rated">
             <input type="number" id="hc-qty" class="cap-rate" value="${(state.hall.calc||{}).hQty ?? ''}" placeholder="units" min="0" step="1">
             <span class="calc-x">×</span>
-            <input type="number" id="hc-each" class="cap-rate" value="${(state.hall.calc||{}).hEach ?? ''}" placeholder="output ea." min="0" step="1">
+            <input type="number" id="hc-each" class="cap-rate" value="${(state.hall.calc||{}).hEach ?? ''}" placeholder="output ea." min="0" step="0.1">
             <select id="hc-unit" class="sla-select calc-sel">
               <option value="lbhr"${((state.hall.calc||{}).hUnit??'lbhr')==='lbhr'?' selected':''}>lb/hr</option>
               <option value="gph"${(state.hall.calc||{}).hUnit==='gph'?' selected':''}>GPH</option>
@@ -1013,25 +1022,25 @@ function renderHallEditor() {
     <div class="sla-caps">
       <div class="sla-caps-label">Ventilation moisture load — steady-state humidifier duty</div>
       <div class="cap-explain">Once the hall is holding its Target, the humidifiers only replace what the outside-air ventilation carries out: DOAS dry-air mass × (room moisture − outdoor moisture). Leave the dew point blank to assume bone-dry outdoor air — the worst case no weather record can beat.</div>
-      <div class="cap-line"><span class="cap-name">DOAS outside air <span class="cap-hint">fresh-air makeup, not the recirculating supply</span></span><input type="number" id="hall-doas" class="cap-rate" value="${state.hall.doasCfm ?? ''}" placeholder="—" step="100" min="0"><span class="cap-u">CFM</span></div>
-      <div class="cap-line"><span class="cap-name">Design outdoor dew point <span class="cap-hint">blank = bone dry, the worst case</span></span><input type="number" id="hall-ddp" class="cap-rate" value="${state.hall.designDpF != null ? dispT1(state.hall.designDpF) : ''}" placeholder="—" step="1"><span class="cap-u">${tLabel()}</span></div>
+      <div class="cap-line"><span class="cap-name">DOAS outside air <span class="cap-hint">fresh-air makeup, not the recirculating supply</span></span><input type="number" id="hall-doas" class="cap-rate" value="${state.hall.doasCfm ?? ''}" placeholder="—" step="any" min="0"><span class="cap-u">CFM</span></div>
+      <div class="cap-line"><span class="cap-name">Design outdoor dew point <span class="cap-hint">blank = bone dry, the worst case</span></span><input type="number" id="hall-ddp" class="cap-rate" value="${state.hall.designDpF != null ? dispT1(state.hall.designDpF) : ''}" placeholder="—" step="0.1"><span class="cap-u">${tLabel()}</span></div>
       <div class="calc-res" id="vent-res">—</div>
     </div>
     <div class="sla-caps">
       <div class="sla-caps-label">Real-world factors — efficiency &amp; current capacity</div>
       <div class="cap-explain"><strong>Efficiency factor</strong>: the fraction of nameplate performance this hall actually delivers once mixing losses, stratification, control deadbands, and sensor lag are paid — <strong>85% is the planning default</strong>; calibrate it with logged results below. <strong>Capacity derates</strong>: today's temporary reductions — chillers offline, crusty evaporative media on the humidifiers, fouled coils. Every plant rate is scaled by efficiency × derate before timing a move.</div>
-      <div class="cap-line"><span class="cap-name">Efficiency factor <span class="cap-hint">predicted real-world vs. nameplate</span></span><input type="number" id="hall-eff" class="cap-rate" value="${state.hall.effPct ?? 85}" step="1" min="1" max="150"><span class="cap-u">%</span></div>
-      <div class="cap-line"><span class="cap-name">Cooling capacity today <span class="cap-hint">e.g. chillers down for service</span></span><input type="number" id="der-cool" class="cap-rate" value="${state.hall.derateCoolPct ?? 100}" step="5" min="1" max="100"><span class="cap-u">%</span></div>
-      <div class="cap-line"><span class="cap-name">Warming capacity today</span><input type="number" id="der-warm" class="cap-rate" value="${state.hall.derateWarmPct ?? 100}" step="5" min="1" max="100"><span class="cap-u">%</span></div>
-      <div class="cap-line"><span class="cap-name">Dehumidify capacity today</span><input type="number" id="der-dehum" class="cap-rate" value="${state.hall.derateDehumPct ?? 100}" step="5" min="1" max="100"><span class="cap-u">%</span></div>
-      <div class="cap-line"><span class="cap-name">Humidify capacity today <span class="cap-hint">e.g. crusty evap media</span></span><input type="number" id="der-hum" class="cap-rate" value="${state.hall.derateHumPct ?? 100}" step="5" min="1" max="100"><span class="cap-u">%</span></div>
+      <div class="cap-line"><span class="cap-name">Efficiency factor <span class="cap-hint">predicted real-world vs. nameplate</span></span><input type="number" id="hall-eff" class="cap-rate" value="${state.hall.effPct ?? 85}" step="0.1" min="1" max="150"><span class="cap-u">%</span></div>
+      <div class="cap-line"><span class="cap-name">Cooling capacity today <span class="cap-hint">e.g. chillers down for service</span></span><input type="number" id="der-cool" class="cap-rate" value="${state.hall.derateCoolPct ?? 100}" step="0.1" min="1" max="100"><span class="cap-u">%</span></div>
+      <div class="cap-line"><span class="cap-name">Warming capacity today</span><input type="number" id="der-warm" class="cap-rate" value="${state.hall.derateWarmPct ?? 100}" step="0.1" min="1" max="100"><span class="cap-u">%</span></div>
+      <div class="cap-line"><span class="cap-name">Dehumidify capacity today</span><input type="number" id="der-dehum" class="cap-rate" value="${state.hall.derateDehumPct ?? 100}" step="0.1" min="1" max="100"><span class="cap-u">%</span></div>
+      <div class="cap-line"><span class="cap-name">Humidify capacity today <span class="cap-hint">e.g. crusty evap media</span></span><input type="number" id="der-hum" class="cap-rate" value="${state.hall.derateHumPct ?? 100}" step="0.1" min="1" max="100"><span class="cap-u">%</span></div>
     </div>
     <div class="sla-caps">
       <div class="sla-caps-label">Predicted vs. actual — calibrate the efficiency factor</div>
       <div class="cap-explain">After a real move finishes, log how long it actually took. Implied efficiency = time predicted at nameplate (with today's capacity derates) ÷ actual time. Runs where the SLA ramp limit — not the plant — was the binding constraint are kept for the record but excluded from calibration, since they can't reveal plant efficiency.</div>
       <div class="calc-res" id="pva-pred">—</div>
       <div class="calc-grid2">
-        <input type="number" id="pva-actual" class="cap-rate" placeholder="actual duration" min="0" step="5">
+        <input type="number" id="pva-actual" class="cap-rate" placeholder="actual duration" min="0" step="1">
         <select id="pva-unit" class="sla-select calc-sel"><option value="min">minutes</option><option value="hr">hours</option></select>
       </div>
       <div class="addcity-actions" style="margin-top:8px"><button type="button" class="scn-btn scn-btn-primary" id="pva-log">Log this move's result</button></div>
@@ -1118,7 +1127,9 @@ function renderHallEditor() {
   const elevEl = inp('hall-elev');
   if (elevEl) elevEl.addEventListener('input', function() {
     const v = parseFloat(this.value); if (isNaN(v)) return;
-    state.hall.elevFt = Math.max(-15000, Math.min(20000, Math.round(v)));
+    // Not rounded: a surveyed pad elevation can carry a decimal, and the
+    // pressure model has no reason to refuse it.
+    state.hall.elevFt = Math.max(-15000, Math.min(20000, v));
     applyElevation(); update();
   });
   const baroEl = inp('hall-baro');
@@ -1166,7 +1177,7 @@ function renderHallEditor() {
     const predEl = inp('pva-pred');
     if (predEl) {
       if (planNom.hours > 0) {
-        predEl.innerHTML = `Current move ${dispTs(state.aTemp)}${tLabel()}/${Math.round(state.aRH)}% → ${dispTs(state.bTemp)}${tLabel()}/${Math.round(state.bRH)}%: predicted <strong>${fmtHrs(planEff.hours)}</strong> at ${Math.round(state.hall.effPct ?? 100)}% eff · ${fmtHrs(planNom.hours)} at nameplate · binding: ${planNom.binding}`;
+        predEl.innerHTML = `Current move ${dispTs(state.aTemp)}${tLabel()}/${disp1(state.aRH)}% → ${dispTs(state.bTemp)}${tLabel()}/${disp1(state.bRH)}%: predicted <strong>${fmtHrs(planEff.hours)}</strong> at ${Math.round(state.hall.effPct ?? 100)}% eff · ${fmtHrs(planNom.hours)} at nameplate · binding: ${planNom.binding}`;
       } else {
         predEl.textContent = 'Set plant rates (and hall volume for moisture) above to get a prediction worth logging against.';
       }
@@ -1182,7 +1193,7 @@ function renderHallEditor() {
         : r.eff > 0 ? `<strong>${Math.round(r.eff * 100)}%</strong>` : '—';
       return `<div class="scn-item">
         <div class="scn-item-main">
-          <div class="scn-item-name">${dispTs(r.aTemp)}${tLabel()}/${Math.round(r.aRH)}% → ${dispTs(r.bTemp)}${tLabel()}/${Math.round(r.bRH)}%</div>
+          <div class="scn-item-name">${dispTs(r.aTemp)}${tLabel()}/${disp1(r.aRH)}% → ${dispTs(r.bTemp)}${tLabel()}/${disp1(r.bRH)}%</div>
           <div class="scn-item-detail">${new Date(r.date).toLocaleDateString()} · predicted ${fmtHrs(r.nomHrs)} nameplate · actual ${fmtHrs(r.actualHrs)} · implied eff ${r.slaBound ? '(SLA-bound)' : (r.eff > 0 ? Math.round(r.eff * 100) + '%' : '—')}</div>
         </div>
         <span style="font-size:.78rem">${effTxt}</span>
@@ -1314,7 +1325,7 @@ function renderHallEditor() {
         out.innerHTML =
           `${res.rows.length} points over ${fmtHrs(hrs)} (${unitNote}${res.skipped ? `, ${res.skipped} bad row${res.skipped === 1 ? '' : 's'} skipped` : ''}).${dateNote} ` +
           `Achieved <strong>${Math.abs(dispDeltaT(ratePerHr)).toFixed(1)}${deltaLabel()}/hr</strong> average ` +
-          `${dispTs(first.tempF)}→${dispTs(last.tempF)} ${tLabel()}, ${first.rh.toFixed(0)}→${last.rh.toFixed(0)}%RH.` +
+          `${dispTs(first.tempF)}→${dispTs(last.tempF)} ${tLabel()}, ${disp1(first.rh)}→${disp1(last.rh)}%RH.` +
           rampLine + idleLine +
           (hrs > 0
             ? ` <button type="button" class="scn-btn" id="trend-to-pva" style="margin-left:6px">Log to calibration</button>`
@@ -1499,7 +1510,7 @@ function renderHallEditor() {
             ? ` <span class="cap-hint">— measured output implies <strong>${measEff.toFixed(0)}%</strong> effectiveness${cs.hEff > 0 ? `, against ${cs.hEff.toFixed(0)}% entered${measEff < cs.hEff * 0.95 ? ' — media is losing capacity' : ''}` : ''}</span>`
             : '';
           hc.innerHTML =
-            `At the Current point (${dispTs(state.aTemp)}${tLabel()} / ${Math.round(state.aRH)}% RH, wet bulb ${dispTs(r.twbF)}${tLabel()}): ` +
+            `At the Current point (${dispTs(state.aTemp)}${tLabel()} / ${disp1(state.aRH)}% RH, wet bulb ${dispTs(r.twbF)}${tLabel()}): ` +
             `<strong>${r.lbPerHr.toFixed(1)} lb/hr</strong>${measNote}` +
             ` <button class="calc-apply" data-rk="rateHumLb" data-rv="${r.lbPerHr.toFixed(1)}">Apply</button>` +
             `<div class="cap-hint">Air leaves at ${dispTs(r.leavingTempF)}${tLabel()} — evaporative humidification also cools, by ${(Math.round(dispDeltaT(state.aTemp - r.leavingTempF) * 10) / 10)}${deltaLabel()} here. Output falls as the hall gets damper: this figure is for the condition above, not a fixed rating.</div>`;
@@ -1914,11 +1925,11 @@ function renderSlaEditor() {
       <label for="sla-name">Profile name</label>
       <input type="text" id="sla-name" value="${sla.name.replace(/"/g,'&quot;')}" ${lock}>
     </div>
-    <div class="sla-field"><label for="sla-tmin">Temp min <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-tmin" value="${showT(sla.tMinF)}" step="0.5" ${lock}></div>
-    <div class="sla-field"><label for="sla-tmax">Temp max <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-tmax" value="${showT(sla.tMaxF)}" step="0.5" ${lock}></div>
-    <div class="sla-field"><label for="sla-rhmin">RH min %</label><input type="number" id="sla-rhmin" value="${sla.rhMin}" step="1" ${lock}></div>
-    <div class="sla-field"><label for="sla-rhmax">RH max %</label><input type="number" id="sla-rhmax" value="${sla.rhMax}" step="1" ${lock}></div>
-    <div class="sla-field"><label for="sla-dpmax">Dew pt cap <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-dpmax" value="${showT(sla.dpMaxF != null ? Number(sla.dpMaxF) : null)}" step="0.5" placeholder="none" ${lock}></div>
+    <div class="sla-field"><label for="sla-tmin">Temp min <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-tmin" value="${showT(sla.tMinF)}" step="0.1" ${lock}></div>
+    <div class="sla-field"><label for="sla-tmax">Temp max <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-tmax" value="${showT(sla.tMaxF)}" step="0.1" ${lock}></div>
+    <div class="sla-field"><label for="sla-rhmin">RH min %</label><input type="number" id="sla-rhmin" value="${sla.rhMin}" step="0.1" ${lock}></div>
+    <div class="sla-field"><label for="sla-rhmax">RH max %</label><input type="number" id="sla-rhmax" value="${sla.rhMax}" step="0.1" ${lock}></div>
+    <div class="sla-field"><label for="sla-dpmax">Dew pt cap <span class="tunit">${tLabel()}</span></label><input type="number" id="sla-dpmax" value="${showT(sla.dpMaxF != null ? Number(sla.dpMaxF) : null)}" step="0.1" placeholder="none" ${lock}></div>
     <div class="sla-field"><label for="sla-dthr">Max ΔT /hr ${deltaLabel()}</label><input type="number" id="sla-dthr" value="${showDT(sla.maxDtHr)}" step="0.5" placeholder="none" ${lock}></div>
     <div class="sla-field"><label for="sla-drhhr">Max ΔRH /hr %</label><input type="number" id="sla-drhhr" value="${sla.maxDrhHr ?? ''}" step="1" placeholder="none" ${lock}></div>
   `;
@@ -2185,7 +2196,7 @@ function renderScenarios() {
     return `<div class="scn-item">
       <div class="scn-item-main" data-idx="${i}">
         <div class="scn-item-name">${(s.name || '').replace(/</g,'&lt;')}</div>
-        <div class="scn-item-detail">${cv(s.aTemp)}${u}/${Math.round(s.aRH)}% → ${cv(s.bTemp)}${u}/${Math.round(s.bRH)}% · ${(s.slaName||'').replace(/</g,'&lt;')}</div>
+        <div class="scn-item-detail">${cv(s.aTemp)}${u}/${disp1(s.aRH)}% → ${cv(s.bTemp)}${u}/${disp1(s.bRH)}% · ${(s.slaName||'').replace(/</g,'&lt;')}</div>
       </div>
       <button class="scn-load" data-load="${i}">Load</button>
       <button class="scn-del" data-del="${i}" title="Delete">✕</button>
@@ -2527,7 +2538,7 @@ function playbackReadout() {
   const tc = tcA + (tcB - tcA) * playback.f;
   const w = wA + (wB - wA) * playback.f;
   const rh = Math.min(100, Math.max(0, rhFromW(tc, w, p)));
-  info.textContent = `t+${fmtHrs(totalH * playback.f)} · ${dispTs(cToF(tc))}${tLabel()} · ${rh.toFixed(0)}%`;
+  info.textContent = `t+${fmtHrs(totalH * playback.f)} · ${dispTs(cToF(tc))}${tLabel()} · ${disp1(rh)}%`;
 }
 
 function playbackSet(f, fromScrub = false) {

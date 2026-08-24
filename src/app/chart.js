@@ -13,7 +13,7 @@
  */
 
 import { state } from './state.js';
-import { dispTs, tLabel, fmtSlaReason } from '../ui/format.js';
+import { dispTs, disp1, tLabel, fmtSlaReason } from '../ui/format.js';
 import { fToC, cToF } from '../core/units.js';
 import { saturationHumidityRatio, wetBulb } from '../core/psychro.js';
 import { ASHRAE_ENVELOPES, envelopePolygon, slaPolygon } from '../core/envelopes.js';
@@ -501,8 +501,8 @@ export function drawChart() {
     ctx.fillStyle=color; ctx.font=`bold ${fs(0.013)}px sans-serif`; ctx.textAlign='center'; ctx.fillText(top,cx,ly);
     ctx.font=`${fs(0.010)}px sans-serif`; ctx.fillStyle=color+'aa'; ctx.fillText(bot,cx,ly+12);
   }
-  drawDot(axp,ayp,'#ffff00',`A  ${state.aRH.toFixed(0)}% RH`,`${Math.round(state.aTemp)}°F / ${Math.round(tcA)}°C`,true);
-  drawDot(bxp,byp,'#f0a500',`B  ${state.bRH.toFixed(0)}% RH`,`${Math.round(state.bTemp)}°F / ${Math.round(tcB)}°C`,byp>ayp+20);
+  drawDot(axp,ayp,'#ffff00',`A  ${disp1(state.aRH)}% RH`,`${disp1(state.aTemp)}°F / ${disp1(tcA)}°C`,true);
+  drawDot(bxp,byp,'#f0a500',`B  ${disp1(state.bRH)}% RH`,`${disp1(state.bTemp)}°F / ${disp1(tcB)}°C`,byp>ayp+20);
 
   // End clip — axes/labels live in the margins, outside the plot rect
   ctx.restore();
@@ -690,7 +690,7 @@ function centerView() {
       const d = deriveState(tc, rh, p);
       const dpC = d.tdpC, wbC = d.twbC, h = d.h, zone = d.zone;
       const chk = shell.checkSLA(tF, rh);
-      body = `<div class="tt-head">${dispTs(tF)}${tLabel()} · ${rh.toFixed(0)}% RH</div>
+      body = `<div class="tt-head">${dispTs(tF)}${tLabel()} · ${disp1(rh)}% RH</div>
         <div class="tt-row"><span class="tt-k">W</span><span>${hr.toFixed(2)} g/kg</span></div>
         <div class="tt-row"><span class="tt-k">Dew pt</span><span>${dpC != null ? dispTs(cToF(dpC)) + ' ' + tLabel() : '—'}</span></div>
         <div class="tt-row"><span class="tt-k">Wet bulb</span><span>${dispTs(cToF(wbC))} ${tLabel()}</span></div>
