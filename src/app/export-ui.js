@@ -12,7 +12,7 @@
 import { state } from './state.js';
 import { BRAND } from '../config/brand.js';
 import { toast } from '../ui/notify.js';
-import { dispTs, dispDeltaT, tLabel, deltaLabel } from '../ui/format.js';
+import { dispTs, dispDeltaT, disp1, tLabel, deltaLabel } from '../ui/format.js';
 import { deriveStateF } from '../core/derive.js';
 import { fmtHrs } from '../core/planner.js';
 import { drawQr } from '../lib/qr.js';
@@ -78,8 +78,8 @@ function buildExportCanvas() {
   x.fillStyle = '#9db8d0'; x.font = '13px -apple-system,Segoe UI,sans-serif';
   x.fillText(`${state.hall.name || 'Hall'}  ·  ${sla.name}  ·  ${state.hall.siteName || '—'}  ·  ${(state.hall.elevFt ?? 0).toLocaleString()} ft  ·  ${state.pressure.toFixed(1)} kPa  ·  eff ${Math.round(state.hall.effPct ?? 100)}%`, 28, 92);
   x.fillStyle = '#e6edf3'; x.font = '600 15px -apple-system,Segoe UI,sans-serif';
-  const cur = `${dispTs(state.aTemp)}${U} / ${Math.round(state.aRH)}%`;
-  const tgt = `${dispTs(state.bTemp)}${U} / ${Math.round(state.bRH)}%`;
+  const cur = `${dispTs(state.aTemp)}${U} / ${disp1(state.aRH)}%`;
+  const tgt = `${dispTs(state.bTemp)}${U} / ${disp1(state.bRH)}%`;
   const plan = shell.planMove();
   const planTxt = plan.hours > 0 ? `      ·      est. ≥ ${fmtHrs(plan.hours)} (${plan.binding})` : '';
   x.fillText(`CURRENT  ${cur}      →      TARGET  ${tgt}${planTxt}`, 28, 112);

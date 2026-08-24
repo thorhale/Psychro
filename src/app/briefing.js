@@ -46,6 +46,9 @@
  */
 export function buildBriefing(p) {
   const { a, b, plan, hall, sla, verdicts, fmtT, fmtDT, fmtHrs, hourly, generatedAt, pressureBasis } = p;
+  // RH to a tenth, trailing '.0' trimmed — the ticket must not round a
+  // 45.5 % setpoint to 46 % when that is the number being worked to.
+  const rh1 = (v) => (Math.round(v * 10) / 10).toString();
   const dT = b.tempF - a.tempF;
   const dRH = b.rh - a.rh;
   const dDp = b.tdpF != null && a.tdpF != null ? b.tdpF - a.tdpF : null;
@@ -55,12 +58,12 @@ export function buildBriefing(p) {
   const lines = [];
   const where = [hall?.name, hall?.siteName].filter(Boolean).join(' · ');
   lines.push(
-    `${dir} ${where || 'the hall'}: ${fmtT(a.tempF)} / ${a.rh.toFixed(0)}% RH → ${fmtT(b.tempF)} / ${b.rh.toFixed(0)}% RH.`,
+    `${dir} ${where || 'the hall'}: ${fmtT(a.tempF)} / ${rh1(a.rh)}% RH → ${fmtT(b.tempF)} / ${rh1(b.rh)}% RH.`,
   );
 
   const deltas = [];
   if (Math.abs(dT) > 0.05) deltas.push(`ΔT ${dT > 0 ? '+' : '−'}${fmtDT(Math.abs(dT))}`);
-  if (Math.abs(dRH) > 0.05) deltas.push(`ΔRH ${dRH > 0 ? '+' : '−'}${Math.abs(dRH).toFixed(0)}%`);
+  if (Math.abs(dRH) > 0.05) deltas.push(`ΔRH ${dRH > 0 ? '+' : '−'}${rh1(Math.abs(dRH))}%`);
   if (dDp != null)
     deltas.push(
       Math.abs(dDp) < 0.3
@@ -97,7 +100,7 @@ export function buildBriefing(p) {
       // and calling the last one "arrival" misreported the schedule.
       const at = pt.atHr != null ? pt.atHr : i + 1;
       const label = at >= 10 ? at.toFixed(0) : at.toFixed(1).replace(/\.0$/, '');
-      lines.push(`  +${label} h${last ? ' (arrival)' : ''}: ${fmtT(pt.tempF)} / ${pt.rh.toFixed(0)}% RH`);
+      lines.push(`  +${label} h${last ? ' (arrival)' : ''}: ${fmtT(pt.tempF)} / ${rh1(pt.rh)}% RH`);
     });
   }
 

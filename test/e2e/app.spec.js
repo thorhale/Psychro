@@ -1938,3 +1938,60 @@ test.describe('steady-state ventilation water', () => {
     await expect(page.locator('#hall-ddp')).toHaveValue('14');
   });
 });
+
+test.describe('tenth-place granularity', () => {
+  test('a typed tenth survives touching another control', async ({ page }) => {
+    await page.goto('./planner.html');
+    await expandAll(page);
+    // The regression this pins: syncAllControls used to write a ROUNDED value
+    // back into every box, so typing 72.5 and then moving any other control
+    // silently replaced it with 73 while the state kept 72.5.
+    await page.fill('#b-temp', '72.5');
+    await page.dispatchEvent('#b-temp', 'input');
+    await page.fill('#b-rh', '43.5');
+    await page.dispatchEvent('#b-rh', 'input');
+    await expect(page.locator('#b-temp')).toHaveValue('72.5');
+    await page.locator('#b-temp').blur();
+    await expect(page.locator('#b-temp')).toHaveValue('72.5');
+    await expect(page.locator('#b-rh')).toHaveValue('43.5');
+    // …and the headline reports what was actually entered, not a rounded copy.
+    await expect(page.locator('#control-readout')).toContainText('72.5');
+    await expect(page.locator('#control-readout')).toContainText('43.5');
+  });
+
+  test('the setpoint sliders move in tenths', async ({ page }) => {
+    await page.goto('./planner.html');
+    await expandAll(page);
+    for (const id of ['slider-a-temp', 'slider-b-temp', 'slider-a-rh', 'slider-b-rh',
+      'slider-a-dp', 'slider-b-dp']) {
+      await expect(page.locator(`#${id}`)).toHaveAttribute('step', '0.1');
+    }
+    // A tenth typed into the box is a legal slider position, so the slider
+    // follows it instead of snapping the value to a whole unit.
+    await page.fill('#a-temp', '68.7');
+    await page.dispatchEvent('#a-temp', 'input');
+    await expect(page.locator('#slider-a-temp')).toHaveValue('68.7');
+  });
+
+  test('tenths hold through a °F/°C round trip', async ({ page }) => {
+    await page.goto('./planner.html');
+    await expandAll(page);
+    await page.fill('#b-temp', '72.5');
+    await page.dispatchEvent('#b-temp', 'input');
+    await page.locator('#unit-toggle .unit-btn[data-unit="C"]').click();
+    // 72.5 °F is 22.5 °C exactly.
+    await expect(page.locator('#b-temp')).toHaveValue('22.5');
+    await page.locator('#unit-toggle .unit-btn[data-unit="F"]').click();
+    await expect(page.locator('#b-temp')).toHaveValue('72.5');
+  });
+
+  test('hall plant rates accept a tenth', async ({ page }) => {
+    await page.goto('./planner.html');
+    await expandAll(page);
+    await page.fill('#rate-cool', '2.5');
+    await page.dispatchEvent('#rate-cool', 'input');
+    await expect(page.locator('#rate-cool')).toHaveValue('2.5');
+    await page.locator('#cap-hum').click(); // rebuilds the card's markup
+    await expect(page.locator('#rate-cool')).toHaveValue('2.5');
+  });
+});

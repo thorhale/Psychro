@@ -11,6 +11,24 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — every number reads and writes to a tenth
+
+Typed precision used to be destroyed on the way back to the screen. You could
+set 72.5 °F, touch any other control, and watch the box rewrite itself to 73
+while the state — and every calculation — kept the 72.5 you entered. The
+display and the truth disagreed, silently.
+
+Now the setpoint sliders step in tenths, the boxes keep what was typed through
+any sync, and every readout renders a tenth with a bare trailing zero trimmed,
+so whole-degree work still looks like whole-degree work. Number inputs across
+the hall card, the derive-from-specs calculators, the equipment inventory, the
+SLA contract and the trainer accept a decimal instead of rejecting one.
+
+This also fixes verdicts that misquoted their own bound: the Recommended
+envelope's 18 °C floor is 64.4 °F, and the chip read "T below 64 °F". The
+move summary contradicted itself the same way, calling a +4.5 °F change
+"raising temp 5 °F" directly under the line that said +4.5.
+
 ### Added — steady-state ventilation water on the hall card
 
 Once a hall is holding its Target, humidifier duty is set by the outside-air

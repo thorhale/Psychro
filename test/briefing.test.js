@@ -114,7 +114,10 @@ describe('briefing generator', () => {
     );
     expect(text).toContain('Set-point ladder (elapsed from start):');
     expect(text).toContain('+1 h: 70.5 °F / 44% RH');
-    expect(text).toContain('+2 h: 73 °F / 42% RH');
+    // The rung really is 41.6 %, and the ticket says so. This asserted 42 %
+    // while the briefing rounded RH to whole percent — an operator working the
+    // ladder would have been handed a number the chart disagreed with.
+    expect(text).toContain('+2 h: 73 °F / 41.6% RH');
     expect(text).toContain('+3 h (arrival): 75 °F / 35% RH');
     // No ladder requested → no header.
     expect(buildBriefing(makeParams())).not.toContain('Set-point ladder');
