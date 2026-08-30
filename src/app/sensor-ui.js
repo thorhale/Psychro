@@ -17,7 +17,7 @@ import { escHtml } from '../ui/escape.js';
 import { toast, confirmDialog } from '../ui/notify.js';
 import { tU, tLabel, dispT1, dispDeltaT, deltaLabel } from '../ui/format.js';
 import { fToC, cToF, deltaFromF } from '../core/units.js';
-import { vaporPressure, rhFromDewPoint, rhFromWetBulb, rhFromPsychrometer, dewPoint } from '../core/psychro.js';
+import { vaporPressure, rhFromDewPoint, rhFromWetBulb, rhFromPsychrometer, dewPointFrom } from '../core/psychro.js';
 import { SALTS, SALT_T_MIN_C, SALT_T_MAX_C, saltRh, saltRhSlope } from '../core/saltref.js';
 import { boilingPointC, U_PRACTICAL_C } from '../core/boilref.js';
 import { SV_TOL, svVerdict } from '../core/svverdict.js';
@@ -144,7 +144,7 @@ const SV_METHODS = {
       };
     const pw = vaporPressure(tc, rh);
     const W = shell.humidityRatioGPw(pw, p, tc);
-    const dpC = dewPoint(pw);
+    const dpC = dewPointFrom(tc, rh, p);
     const depF = svState.dbF - svState.wbF;
     // The instrument formulas are the reference here; their systematic spread
     // (~0.5 %RH between the two wet-bulb definitions) is the honest floor.
@@ -173,7 +173,9 @@ const SV_METHODS = {
         summary: 'invalid reading',
       };
     const tc = fToC(svState.dpDbF), tdpC = fToC(svState.dpDpF);
-    const rh = Math.min(100, Math.max(0, rhFromDewPoint(tc, tdpC)));
+    // Site pressure, not the standard atmosphere: this was defaulting, so a
+    // chilled-mirror check at altitude was graded against sea-level physics.
+    const rh = Math.min(100, Math.max(0, rhFromDewPoint(tc, tdpC, state.pressure)));
     // A maintained chilled mirror is reference-grade: ±0.2 °C dew point ≈
     // ±1 %RH at hall conditions; stated, not hidden.
     const uRef = 1.0;

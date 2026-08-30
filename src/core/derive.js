@@ -18,7 +18,7 @@ import {
   satPressure,
   vaporPressure,
   humidityRatioFromPw,
-  dewPoint,
+  dewPointFrom,
   wetBulbSolve,
   enthalpy,
   specificVolume,
@@ -55,6 +55,29 @@ import { ashraeZone } from './envelopes.js';
  */
 
 /**
+ * A tiny memo over the last few derivations.
+ *
+ * "Once" in the docblock above was aspirational: a single `update()` derives
+ * Current and Target in `buildTable`, then derives the SAME two points again in
+ * `updateControlReadout`, and the export header derives them a third time when
+ * it runs. Four wet-bulb bisections per keystroke where two would do.
+ *
+ * Memoising is safe because `deriveState` is pure — it reads nothing but its
+ * three arguments and the frozen physics core. Four slots covers Current and
+ * Target with room for the chart's hover point without ever growing; the
+ * result object is shared, so callers must treat it as read-only, which every
+ * one of them already does (they spread it into their own shape).
+ */
+const MEMO_SLOTS = 4;
+/** @type {{tc:number, rh:number, p:number, out:DerivedState}[]} */
+let memo = [];
+
+/** Drop the memo. Only needed if the physics core itself could change. */
+export function clearDeriveMemo() {
+  memo = [];
+}
+
+/**
  * Derive every displayed property of a state point, once.
  *
  * @param {number} tc dry bulb °C
@@ -63,10 +86,29 @@ import { ashraeZone } from './envelopes.js';
  * @returns {DerivedState}
  */
 export function deriveState(tc, rh, p) {
+  for (let i = 0; i < memo.length; i++) {
+    const m = memo[i];
+    if (m.tc === tc && m.rh === rh && m.p === p) return m.out;
+  }
+  const out = deriveStateUncached(tc, rh, p);
+  memo.unshift({ tc, rh, p, out });
+  if (memo.length > MEMO_SLOTS) memo.length = MEMO_SLOTS;
+  return out;
+}
+
+/** The real derivation, unmemoised. Exported for tests that must not hit the memo. */
+export function deriveStateUncached(tc, rh, p) {
   const pws = satPressure(tc);
   const pw = vaporPressure(tc, rh);
   const W = humidityRatioFromPw(pw, p, tc);
-  const tdpC = dewPoint(pw);
+  // dewPointFrom, not dewPoint(pw). The two differ by up to 2.3e-2 °C because
+  // the cheap form inverts the saturation curve alone and drops the
+  // enhancement factor, which does not cancel here — it would be evaluated at
+  // the dry bulb on one side and the dew point on the other. The accurate
+  // solver has existed and been validated at 3.8e-4 °C for a long time; this
+  // call site was simply never switched over, so every dew point the app
+  // DISPLAYED was 60x worse than the figure the docs quote.
+  const tdpC = dewPointFrom(tc, rh, p);
   const wb = wetBulbSolve(tc, rh, p);
 
   return {

@@ -11,6 +11,39 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — the dew point the app displayed was 60x looser than documented
+
+`docs/provenance.md` has quoted 3.8e-4 °C for dew point since the accurate
+solver was written. The app was not using it. `src/core/derive.js` — which
+feeds the properties table, the Current→Target readout, the chart hover
+inspector and the PNG/PDF export — still called `dewPoint(pw)`, the cheap
+saturation-curve inversion, worth **2.3e-2 °C**. The solver had been built,
+validated and documented, and the call site was never switched over.
+
+`test/consistency.test.js` was asserting the old call, so it pinned the gap in
+place instead of catching it. Two more call sites went with it: the dew-point
+slider and box, which were also not pressure-aware and so disagreed with the
+table beside them at altitude, and the chilled-mirror sensor check, which was
+grading against the standard atmosphere instead of the site's.
+
+### Changed — a slider drag costs 40 % less
+
+A CPU profile of a drag put `drawChart` at 44 % of all self-time, ahead of
+every canvas primitive combined. Almost none of it depended on where Current
+and Target were: the grid, the constant-RH curves, the wet-bulb and
+specific-volume families, the envelopes and the SLA polygon are functions of
+the view, the site pressure and the legend. Dragging a temperature slider
+recomputed all of it, saturation pressures included, on every frame.
+
+That half now renders once into an offscreen canvas and is blitted. A full
+update drops from 5.7 ms to 3.4 ms. Panning is exempt — the view changes every
+frame, so caching is a pure loss there, and measuring caught it regressing to
+5.9 ms before the bypass went in.
+
+`deriveState` also memoises: one `update()` derived the same two points four
+times over, twice in the table and twice in the readout.
+
+
 ### Changed — transport properties are 25x more accurate
 
 Viscosity and thermal conductivity were the only two properties in the tool an

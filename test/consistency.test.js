@@ -22,7 +22,6 @@ import {
   satPressure,
   vaporPressure,
   humidityRatioFromPw,
-  dewPoint,
   dewPointFrom,
   wetBulbSolve,
   enthalpy,
@@ -65,7 +64,11 @@ describe('deriveState equals independent recomputation', () => {
       const pws = satPressure(s.tc);
       const pw = vaporPressure(s.tc, s.rh);
       const W = humidityRatioFromPw(pw, s.p, s.tc);
-      const tdp = dewPoint(pw);
+      // dewPointFrom, matching derive.js. This asserted dewPoint(pw) — the
+      // cheap saturation-curve inversion — and so pinned in place the very gap
+      // it exists to catch: the app displayed a dew point 60x looser than the
+      // 3.8e-4 °C the docs quote, and this test agreed with it.
+      const tdp = dewPointFrom(s.tc, s.rh, s.p);
       const wb = wetBulbSolve(s.tc, s.rh, s.p);
 
       // Object.is, not toBeCloseTo: the shared function must not merely be
