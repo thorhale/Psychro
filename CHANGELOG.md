@@ -11,6 +11,32 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — an IP/SI toggle for everything that is not a temperature
+
+Temperature has had a °F/°C/K toggle for a long time. Nothing else did, so the
+screen read **kPa beside CFM beside lb/hr beside ft³** — one quantity in SI,
+three in IP, at once. An engineer working in metric converted three of the four
+in their head, on a tool whose whole point is not making people do that.
+
+A second toggle beside the temperature one switches hall volume (ft³ ↔ m³),
+airflow (CFM ↔ m³/h), plant mass rates (lb/hr ↔ kg/h), water (gal ↔ L) and
+pressure (kPa ↔ inHg).
+
+**Storage never moves.** Volume is always ft³ internally, flow always CFM, mass
+rate always lb/hr, pressure always kPa — so a save file means the same thing
+whichever system the person who wrote it was using, and switching how you read
+a hall cannot edit it. A value typed in m³/h is converted back on the way in,
+the same discipline the temperature rates already used.
+
+Units chosen for the field rather than for tidiness: m³ not litres, because a
+hall is 14,000 m³ and 14 million litres helps nobody; m³/h not L/s, because a
+DOAS schedule is written in m³/h. Pressure stays kPa under SI, because that is
+what the physics core and every psychrometric reference use — showing inHg
+there would have made the chart stamp and the hall card disagree.
+
+Saves that predate the toggle load as IP, which is what they were written in.
+
+
 ### Fixed — the door placard was printing off the edge of the paper
 
 The site-pressure line grows with the site — "1,066 ft · 97.5 kPa (standard

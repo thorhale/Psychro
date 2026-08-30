@@ -35,7 +35,8 @@ import {
   renderSensorValidation, renderSensorLogbook, loadSensorLog, loadSensorRegistry,
   sensorSnapshot, mergeSensorData, wireSensorUi,
 } from './sensor-ui.js';
-import { tU, dispTs, dispT1, disp1, tLabel, dispDeltaT, deltaLabel, fmtSlaReason } from '../ui/format.js';
+import { tU, dispTs, dispT1, disp1, tLabel, dispDeltaT, deltaLabel, fmtSlaReason,
+  mDisp, mTo, mLabel } from '../ui/format.js';
 import { escHtml } from '../ui/escape.js';
 import {
   fToC, cToF, deltaFromF,
@@ -457,6 +458,18 @@ inp('b-dp').addEventListener('input', function() {
 
 // Back-compat shim: unit toggle calls syncTempInputs(); route to syncAllControls.
 function syncTempInputs() { syncAllControls(); }
+
+// Measurement system (IP / SI) — display only, for everything that is not a
+// temperature. Storage stays canonical, so switching cannot alter a hall.
+document.querySelectorAll('#measure-toggle .unit-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    state.measure = /** @type {any} */ (this.dataset.measure);
+    document.querySelectorAll('#measure-toggle .unit-btn')
+      .forEach(b => b.classList.toggle('active', b === this));
+    renderHallEditor(); // volumes, flows and mass rates are all on that card
+    update();
+  });
+});
 
 // Temperature unit toggle (°F / °C / K) — display only.
 document.querySelectorAll('#unit-toggle .unit-btn').forEach(btn => {
@@ -952,12 +965,12 @@ function renderHallEditor() {
       <div class="sla-caps-label">Plant capability &amp; rates — what this hall can actually do</div>
       <div class="cap-explain">Temperature rates: use commissioning-observed ${deltaLabel()}/hr, or derive a physics estimate below (IT load, excess sensible capacity, thermal mass). Moisture is first-principles: hall air mass × ΔW ÷ equipment lb/hr. Enter NET capacity (nameplate minus steady makeup-air latent load). Blank = not plant-limited; the SLA ramp limit still governs.</div>
       <div id="equip-panel"></div>
-      <div class="cap-line"><span class="cap-name">Hall air volume <span class="cap-hint">for the moisture mass balance</span></span><input type="number" id="hall-vol" aria-label="Hall air volume, cubic feet" class="cap-rate" value="${state.hall.hallVolFt3 ?? ''}" placeholder="—" step="any" min="0"><span class="cap-u">ft³</span></div>
-      <div class="cap-line"><span class="cap-name">Supply airflow <span class="cap-hint">for the cooling-load estimate</span></span><input type="number" id="hall-cfm" aria-label="Supply airflow, CFM" class="cap-rate" value="${state.hall.airflowCfm ?? ''}" placeholder="—" step="any" min="0"><span class="cap-u">CFM</span></div>
+      <div class="cap-line"><span class="cap-name">Hall air volume <span class="cap-hint">for the moisture mass balance</span></span><input type="number" id="hall-vol" aria-label="Hall air volume" class="cap-rate" value="${mDisp(state.hall.hallVolFt3, 'volume')}" placeholder="—" step="any" min="0"><span class="cap-u">${mLabel('volume')}</span></div>
+      <div class="cap-line"><span class="cap-name">Supply airflow <span class="cap-hint">for the cooling-load estimate</span></span><input type="number" id="hall-cfm" aria-label="Supply airflow" class="cap-rate" value="${mDisp(state.hall.airflowCfm, 'flow')}" placeholder="—" step="any" min="0"><span class="cap-u">${mLabel('flow')}</span></div>
       <div class="cap-line"><span class="cap-name">Cooling</span><input type="number" id="rate-cool" aria-label="Cooling rate, degrees per hour" class="cap-rate" value="${showRate(state.hall.rateCoolF)}" placeholder="—" step="0.1" min="0"><span class="cap-u">${deltaLabel()}/hr</span></div>
       <div class="cap-line"><span class="cap-name">Warming <span class="cap-hint">reheat or IT load</span></span><input type="number" id="rate-warm" aria-label="Warming rate, degrees per hour" class="cap-rate" value="${showRate(state.hall.rateWarmF)}" placeholder="—" step="0.1" min="0"><span class="cap-u">${deltaLabel()}/hr</span></div>
-      <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-dehum" ${state.hall.canDehumidify?'checked':''}> Dehumidify</label><input type="number" id="rate-dehum" aria-label="Dehumidify rate, pounds per hour" class="cap-rate" value="${state.hall.rateDehumLb ?? ''}" placeholder="—" step="0.1" min="0" ${state.hall.canDehumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
-      <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-hum" ${state.hall.canHumidify?'checked':''}> Humidify</label><input type="number" id="rate-hum" aria-label="Humidify rate, pounds per hour" class="cap-rate" value="${state.hall.rateHumLb ?? ''}" placeholder="—" step="0.1" min="0" ${state.hall.canHumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
+      <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-dehum" ${state.hall.canDehumidify?'checked':''}> Dehumidify</label><input type="number" id="rate-dehum" aria-label="Dehumidify rate" class="cap-rate" value="${mDisp(state.hall.rateDehumLb, 'massRate')}" placeholder="—" step="0.1" min="0" ${state.hall.canDehumidify?'':'disabled'}><span class="cap-u">${mLabel('massRate')}</span></div>
+      <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-hum" ${state.hall.canHumidify?'checked':''}> Humidify</label><input type="number" id="rate-hum" aria-label="Humidify rate" class="cap-rate" value="${mDisp(state.hall.rateHumLb, 'massRate')}" placeholder="—" step="0.1" min="0" ${state.hall.canHumidify?'':'disabled'}><span class="cap-u">${mLabel('massRate')}</span></div>
       <details class="calc">
         <summary>Derive your rates from equipment specs <span class="sect-chev">▸</span></summary>
         <div class="calc-body">
@@ -1066,7 +1079,7 @@ function renderHallEditor() {
     <div class="sla-caps">
       <div class="sla-caps-label">Ventilation moisture load — steady-state humidifier duty</div>
       <div class="cap-explain">Once the hall is holding its Target, the humidifiers only replace what the outside-air ventilation carries out: DOAS dry-air mass × (room moisture − outdoor moisture). Leave the dew point blank to assume bone-dry outdoor air — the worst case no weather record can beat.</div>
-      <div class="cap-line"><span class="cap-name">DOAS outside air <span class="cap-hint">fresh-air makeup, not the recirculating supply</span></span><input type="number" id="hall-doas" aria-label="DOAS outside air, CFM" class="cap-rate" value="${state.hall.doasCfm ?? ''}" placeholder="—" step="any" min="0"><span class="cap-u">CFM</span></div>
+      <div class="cap-line"><span class="cap-name">DOAS outside air <span class="cap-hint">fresh-air makeup, not the recirculating supply</span></span><input type="number" id="hall-doas" aria-label="DOAS outside air" class="cap-rate" value="${mDisp(state.hall.doasCfm, 'flow')}" placeholder="—" step="any" min="0"><span class="cap-u">${mLabel('flow')}</span></div>
       <div class="cap-line"><span class="cap-name">Design outdoor dew point <span class="cap-hint">blank = bone dry, the worst case</span></span><input type="number" id="hall-ddp" aria-label="Design outdoor dew point" class="cap-rate" value="${state.hall.designDpF != null ? dispT1(state.hall.designDpF) : ''}" placeholder="—" step="0.1"><span class="cap-u">${tLabel()}</span></div>
       <div class="calc-res" id="vent-res" role="status" aria-live="polite">—</div>
     </div>
@@ -1115,13 +1128,22 @@ function renderHallEditor() {
    *   5 °C/hr, not −12.8. Without this, an operator working in °C typed "5"
    *   meaning 5 °C/hr and the hall stored 5 °F/hr — 2.8 °C/hr, so every
    *   predicted duration came out nearly twice as long as the plant can do.
+   * @param {'volume'|'flow'|'massRate'|'water'|'pressure'} [measureKind] set
+   *   for a quantity that follows the IP/SI toggle, so a value typed in m³ is
+   *   stored as the ft³ every calculation uses.
    */
-  const rateWire = (id, key, isTempRate) => {
+  const rateWire = (id, key, isTempRate = false, measureKind = undefined) => {
     const el = inp(id);
     if (el) el.addEventListener('input', function() {
       const typed = parseFloat(this.value);
-      const v = isTempRate ? typed / deltaFromF(1, state.tempUnit || 'F') : typed;
-      state.hall[key] = (isNaN(v) || v <= 0) ? null : v;
+      // Three cases, and getting any of them wrong stores a wrong number
+      // silently: a temperature RATE scales (9 °F/hr is 5 °C/hr), a measured
+      // quantity converts back to canonical (m³ typed, ft³ stored), and
+      // everything else is already canonical.
+      const v = isTempRate ? typed / deltaFromF(1, state.tempUnit || 'F')
+        : measureKind ? mTo(typed, measureKind)
+        : typed;
+      state.hall[key] = (v == null || isNaN(v) || v <= 0) ? null : v;
       update();
     });
   };
@@ -1143,10 +1165,10 @@ function renderHallEditor() {
   }
   rateWire('rate-cool',  'rateCoolF', true);
   rateWire('rate-warm',  'rateWarmF', true);
-  rateWire('rate-dehum', 'rateDehumLb');
-  rateWire('rate-hum',   'rateHumLb');
-  rateWire('hall-vol',   'hallVolFt3');
-  rateWire('hall-cfm',   'airflowCfm');
+  rateWire('rate-dehum', 'rateDehumLb', false, 'massRate');
+  rateWire('rate-hum',   'rateHumLb',   false, 'massRate');
+  rateWire('hall-vol',   'hallVolFt3',  false, 'volume');
+  rateWire('hall-cfm',   'airflowCfm',  false, 'flow');
 
   // Hall identity fields — name renames the tab; building/site feed the
   // Location/Building filters above the tabs; site/elevation drive pressure.
@@ -1187,8 +1209,8 @@ function renderHallEditor() {
   // Ventilation moisture load — DOAS CFM plus a unit-aware design dew point.
   const doasEl = inp('hall-doas');
   if (doasEl) doasEl.addEventListener('input', function() {
-    const v = parseFloat(this.value);
-    state.hall.doasCfm = isNaN(v) || v <= 0 ? null : Math.min(v, 1e6);
+    const v = mTo(parseFloat(this.value), 'flow');
+    state.hall.doasCfm = v == null || isNaN(v) || v <= 0 ? null : Math.min(v, 1e6);
     update();
   });
   const ddpEl = inp('hall-ddp');
@@ -2156,6 +2178,7 @@ function loadProfiles() {
       state.activeSla = Math.min(patch.activeSla, state.slaProfiles.length - 1);
     }
     if (patch.tempUnit) state.tempUnit = patch.tempUnit;
+    if (patch.measure) state.measure = patch.measure;
     return true;
   } catch (e) {
     logError('loadProfiles', e);
@@ -2831,6 +2854,16 @@ loadProfiles();                  // restore persisted profiles if available (re-
 // (Only the hall profiles persist; the top-level A/B state does not, which is
 // why this restore has to happen explicitly and before the first render.)
 restoreHallConditions();
+// The unit toggles are markup with a hard-coded `active` class, so a restored
+// preference has to be reflected onto the buttons or the app reads in °C /
+// SI while the control claims °F / IP. Both toggles, one rule.
+for (const [sel, attr, want] of /** @type {[string,string,string][]} */ ([
+  ['#unit-toggle .unit-btn', 'unit', state.tempUnit || 'F'],
+  ['#measure-toggle .unit-btn', 'measure', state.measure || 'IP'],
+])) {
+  document.querySelectorAll(sel).forEach((b) =>
+    b.classList.toggle('active', /** @type {HTMLElement} */ (b).dataset[attr] === want));
+}
 applyElevation();
 // Ensure TARGET starts physically on CURRENT's moisture line, then sync controls.
 state.bRH = clampRH(rhFromW_F(state.bTemp, currentW()));

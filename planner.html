@@ -833,9 +833,15 @@
   <div class="conditions-head">
     <div class="card-title" style="margin-bottom:0">Conditions</div>
     <div class="head-controls">
-      <div class="unit-toggle" id="unit-toggle">
+      <div class="unit-toggle" id="unit-toggle" role="group" aria-label="Temperature unit">
         <button class="unit-btn active" data-unit="F">°F</button>
         <button class="unit-btn" data-unit="C">°C</button>
+      </div>
+      <!-- Everything that is not a temperature: volume, airflow, mass rate,
+           water, pressure. Storage stays canonical either way. -->
+      <div class="unit-toggle" id="measure-toggle" role="group" aria-label="Measurement system">
+        <button class="unit-btn active" data-measure="IP" title="ft³ · CFM · lb/hr · gal">IP</button>
+        <button class="unit-btn" data-measure="SI" title="m³ · m³/h · kg/h · L">SI</button>
       </div>
       <div class="site-chip">
         <button class="chip-btn" id="chip-toggle" title="Active site (set in SLA profile)">

@@ -107,3 +107,65 @@ export const deltaFromF = (dF, unit) => (unit === 'F' ? dF : (dF * 5) / 9);
 
 /** Label for a temperature DIFFERENCE in the given unit. */
 export const deltaLabelFor = (unit) => (unit === 'F' ? '°F' : unit === 'K' ? 'K' : '°C');
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Measurement system — everything that is NOT a temperature
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Temperature has had a °F/°C/K toggle for a long time. Nothing else did.
+ *
+ * The result was a screen that read kPa beside CFM beside lb/hr beside ft³ —
+ * a pressure in SI, a flow and a volume in IP, and a mass rate in IP, all at
+ * once. An engineer working in metric had to convert three of the four in
+ * their head, on a tool whose entire point is not making people do that.
+ *
+ * Same contract as TEMP_UNITS: `from` converts the STORED canonical value to
+ * what is displayed, `to` converts a typed value back. Storage never changes —
+ * volume is always ft³ internally, flow always CFM, mass rate always lb/hr,
+ * pressure always kPa — so a saved file means the same thing whichever system
+ * the person who wrote it was using.
+ *
+ * Pressure is the one deliberate asymmetry: kPa is what the physics core uses
+ * and what every psychrometric reference quotes, so "IP" shows inHg only where
+ * a site gauge would, and the chart stamp stays kPa in both systems.
+ */
+export const MEASURE = {
+  IP: {
+    label: 'IP',
+    volume:   { label: 'ft³',   from: (v) => v,             to: (v) => v },
+    flow:     { label: 'CFM',   from: (v) => v,             to: (v) => v },
+    massRate: { label: 'lb/hr', from: (v) => v,             to: (v) => v },
+    water:    { label: 'gal',   from: (v) => v,             to: (v) => v },
+    pressure: { label: 'inHg',  from: (v) => v * 0.2952998, to: (v) => v / 0.2952998 },
+  },
+  SI: {
+    label: 'SI',
+    // m³, not litres: a data hall is 14,000 m³, and 14 million litres helps
+    // nobody. Flow in m³/h rather than L/s for the same reason — a DOAS
+    // schedule is written in m³/h.
+    volume:   { label: 'm³',    from: (v) => v * 0.028316847, to: (v) => v / 0.028316847 },
+    flow:     { label: 'm³/h',  from: (v) => v * 1.699010796, to: (v) => v / 1.699010796 },
+    massRate: { label: 'kg/h',  from: (v) => v * 0.45359237,  to: (v) => v / 0.45359237 },
+    water:    { label: 'L',     from: (v) => v * 3.785411784, to: (v) => v / 3.785411784 },
+    pressure: { label: 'kPa',   from: (v) => v,               to: (v) => v },
+  },
+};
+
+/** @typedef {'IP'|'SI'} MeasureSystem */
+
+/**
+ * Convert a stored value into the active system.
+ * @param {number|null|undefined} v canonical value (ft³, CFM, lb/hr, gal, kPa)
+ * @param {'volume'|'flow'|'massRate'|'water'|'pressure'} kind
+ * @param {MeasureSystem} sys
+ */
+export const measFrom = (v, kind, sys) =>
+  v == null || !isFinite(v) ? null : MEASURE[sys][kind].from(v);
+
+/** Convert a typed value in the active system back to canonical. */
+export const measTo = (v, kind, sys) =>
+  v == null || !isFinite(v) ? null : MEASURE[sys][kind].to(v);
+
+/** The unit label for a quantity in the active system. */
+export const measLabel = (kind, sys) => MEASURE[sys][kind].label;

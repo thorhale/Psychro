@@ -26,6 +26,12 @@ export const state = {
    *  @type {'F'|'C'|'K'} */
   tempUnit: 'F',
 
+  /** Display only for everything that is NOT a temperature — volume, airflow,
+   *  mass rate, water, pressure. Storage stays canonical (ft³, CFM, lb/hr,
+   *  gal, kPa) in both, so a save file means the same thing either way.
+   *  @type {'IP'|'SI'} */
+  measure: 'IP',
+
   // ── DATA HALL PROFILES: each is one physical facility — site, elevation,
   //    air volume, installed plant (capabilities + rates), real-world
   //    efficiency factor, and current capacity derates. Every building / hall

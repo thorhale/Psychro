@@ -13,7 +13,7 @@
  * import cycle that makes panels impossible to extract.
  */
 
-import { TEMP_UNITS, deltaFromF, deltaLabelFor } from '../core/units.js';
+import { TEMP_UNITS, deltaFromF, deltaLabelFor, measFrom, measTo, measLabel } from '../core/units.js';
 import { state } from '../app/state.js';
 
 /** The active display unit's conversion table. */
@@ -99,3 +99,28 @@ export function fmtSlaReason(chk) {
     default: return chk.detail || 'out of SLA';
   }
 }
+
+/** The active measurement system, defaulted. @returns {'IP'|'SI'} */
+export const mSys = () => (state.measure === 'SI' ? 'SI' : 'IP');
+
+/**
+ * A stored quantity in the active system, as a number.
+ * @param {number|null|undefined} v canonical (ft³, CFM, lb/hr, gal, kPa)
+ * @param {'volume'|'flow'|'massRate'|'water'|'pressure'} kind
+ */
+export const mFrom = (v, kind) => measFrom(v, kind, mSys());
+
+/** A typed quantity back to canonical storage. */
+export const mTo = (v, kind) => measTo(v, kind, mSys());
+
+/** The unit label for a quantity in the active system. */
+export const mLabel = (kind) => measLabel(kind, mSys());
+
+/**
+ * A stored quantity for reading: converted, rounded to a tenth, trailing zero
+ * trimmed. Same granularity rule as every other number on screen.
+ */
+export const mDisp = (v, kind) => {
+  const x = mFrom(v, kind);
+  return x == null ? '' : (Math.round(x * 10) / 10).toString();
+};

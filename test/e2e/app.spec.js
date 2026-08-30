@@ -2033,3 +2033,66 @@ test.describe('BMS hand-off', () => {
     await expect(page.locator('.ntf-toast').filter({ hasText: /No ramp to schedule/ })).toBeVisible();
   });
 });
+
+test.describe('measurement system', () => {
+  test('IP/SI converts what is shown and never what is stored', async ({ page }) => {
+    await page.goto('./planner.html');
+    await expandAll(page);
+    await page.fill('#hall-vol', '500000');
+    await page.dispatchEvent('#hall-vol', 'input');
+    await page.fill('#hall-doas', '2425');
+    await page.dispatchEvent('#hall-doas', 'input');
+    await page.waitForFunction(() => localStorage.getItem('sdc_hep_v4') !== null);
+
+    const stored = () => page.evaluate(() => {
+      const h = JSON.parse(localStorage.getItem('sdc_hep_v4')).hallProfiles[0];
+      return { vol: h.hallVolFt3, doas: h.doasCfm };
+    });
+    await page.waitForTimeout(600);
+    expect(await stored()).toEqual({ vol: 500000, doas: 2425 });
+
+    await page.locator('#measure-toggle .unit-btn[data-measure="SI"]').click();
+    await expandAll(page);
+    // 500,000 ft³ = 14,158.4 m³ · 2,425 CFM = 4,120.1 m³/h
+    await expect(page.locator('#hall-vol')).toHaveValue('14158.4');
+    await expect(page.locator('#hall-doas')).toHaveValue('4120.1');
+    // The unit labels follow, or the numbers are meaningless.
+    await expect(page.locator('#hall-vol').locator('xpath=following-sibling::span[1]'))
+      .toHaveText('m³');
+
+    // Storage is untouched: switching how you read a hall must not edit it.
+    await page.waitForTimeout(600);
+    expect(await stored()).toEqual({ vol: 500000, doas: 2425 });
+
+    await page.locator('#measure-toggle .unit-btn[data-measure="IP"]').click();
+    await expandAll(page);
+    await expect(page.locator('#hall-vol')).toHaveValue('500000');
+  });
+
+  test('a value typed in SI is stored canonically', async ({ page }) => {
+    await page.goto('./planner.html');
+    await expandAll(page);
+    await page.locator('#measure-toggle .unit-btn[data-measure="SI"]').click();
+    await expandAll(page);
+    // 4,000 m³/h of outside air is 2,354.3 CFM (1 CFM = 1.699011 m³/h).
+    await page.fill('#hall-doas', '4000');
+    await page.dispatchEvent('#hall-doas', 'input');
+    await page.waitForTimeout(600);
+    const cfm = await page.evaluate(
+      () => JSON.parse(localStorage.getItem('sdc_hep_v4')).hallProfiles[0].doasCfm);
+    expect(cfm).toBeCloseTo(2354.3, 1);
+    // …and reading it back in IP shows that same number, not the typed one.
+    await page.locator('#measure-toggle .unit-btn[data-measure="IP"]').click();
+    await expandAll(page);
+    await expect(page.locator('#hall-doas')).toHaveValue('2354.3');
+  });
+
+  test('the choice survives a reload', async ({ page }) => {
+    await page.goto('./planner.html');
+    await page.locator('#measure-toggle .unit-btn[data-measure="SI"]').click();
+    await page.waitForTimeout(600);
+    await page.reload();
+    await expect(page.locator('#measure-toggle .unit-btn[data-measure="SI"]'))
+      .toHaveClass(/active/);
+  });
+});
