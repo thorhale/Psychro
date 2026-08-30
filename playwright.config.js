@@ -76,7 +76,7 @@ export default defineConfig({
   projects: [
     {
       name: 'raw',
-      testMatch: ['app.spec.js', 'artifacts.spec.js', 'cdu.spec.js', 'launcher.spec.js', 'brand.spec.js', 'security.spec.js', 'a11y.spec.js'],
+      testMatch: ['app.spec.js', 'artifacts.spec.js', 'cdu.spec.js', 'launcher.spec.js', 'brand.spec.js', 'security.spec.js', 'a11y.spec.js', 'pwa.spec.js'],
       use: { ...chromium, baseURL: `${ROOT}/` },
     },
     {

@@ -11,6 +11,36 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — a tab left open across a deploy now finds out
+
+The "a new version is ready" toast existed, but nothing ever re-checked.
+`register()` asks once, at load, and that was it — so a tab left open across a
+deploy never learned there was anything newer, which is exactly how this app
+gets used: open on a hall all shift. The only way back was a hard refresh, and
+a stale app is a correctness problem, not a convenience one: an operator acting
+on last week's envelope table is acting on the wrong numbers.
+
+It now re-checks when the tab regains focus — the moment someone is about to
+act on what it says — and on a slow 30-minute heartbeat otherwise, skipping the
+check entirely while the tab is hidden, where the resulting toast could not be
+seen anyway. A worker already sitting in `waiting` when registration resolves
+is also handled; only `updatefound` was, and that race showed up as an app that
+stayed stale.
+
+The prompt is now sticky. It had `duration: 15000`, and the one message that
+must persist was set to vanish while you were looking at the chart. `toast()`
+grew a documented `duration: 0` for that — previously a 0 was handed straight
+to `setTimeout` and dismissed on the next tick.
+
+### Changed — the guide and the first-run card caught up
+
+Both predated the ventilation-water card, the CDU tool and branding, so a new
+user got a tour of a version that no longer exists. `docs/OPERATOR-GUIDE.md`
+gains sections on sizing humidifier water and on branding, and says up front
+that this is one tool among several. The in-app **Start here** card gains the
+ventilation step and a link to the home screen.
+
+
 ### Fixed — the app is usable with a screen reader
 
 191 interactive controls shared six accessible names between them. Every
