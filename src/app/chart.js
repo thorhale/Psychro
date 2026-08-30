@@ -125,6 +125,71 @@ function labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB) {
   const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
   return { x, y, angle };
 }
+/**
+ * Deferred label placement, so labels compete instead of overprinting.
+ *
+ * Every family — constant-RH curves, wet-bulb and specific-volume lines,
+ * enthalpy, the ASHRAE envelope names, the SLA polygon — used to draw its own
+ * labels the moment it drew its curve. At a phone's canvas width they landed
+ * on top of each other: "SLA" printed through "100%", the site stamp ran into
+ * the saturation curve's label, and the specific-volume family stacked three
+ * deep in the top-left corner.
+ *
+ * Instead the curves now REQUEST a label. Requests are resolved after every
+ * curve is drawn, highest priority first, and a request whose box overlaps one
+ * already placed is dropped rather than drawn over. Deferring costs nothing
+ * visually — labels always belonged on top of every curve, so drawing them
+ * last is if anything more correct.
+ *
+ * Priority is what an operator needs most when the chart is crowded: the
+ * contract boundary and the ASHRAE classes first, then humidity, then the
+ * iso-property families that are context rather than compliance.
+ */
+const LABEL_PRIORITY = { sla: 0, envelope: 1, rh: 2, wetbulb: 3, specvol: 4, enthalpy: 5 };
+/** @type {{text:string,x:number,y:number,color:string,angle:number,font:string,prio:number}[]} */
+let labelQueue = [];
+/** @type {{l:number,t:number,r:number,b:number}[]} */
+let placedBoxes = [];
+
+/** Reserve a rectangle so nothing is allowed to print inside it. */
+function reserveBox(l, t, r, b) {
+  placedBoxes.push({ l, t, r, b });
+}
+
+/** Queue a label for the post-pass. Same arguments as drawing one directly. */
+function queueLabel(ctx, kind, text, x, y, color, angle) {
+  labelQueue.push({ text, x, y, color, angle: angle || 0, font: ctx.font, prio: LABEL_PRIORITY[kind] });
+}
+
+/**
+ * Place every queued label, dropping any that would collide.
+ *
+ * Boxes are axis-aligned and padded a little: two labels that merely touch are
+ * still hard to read, and a rotated label's true footprint is wider than its
+ * unrotated box, which the padding absorbs rather than modelling exactly.
+ */
+function flushLabels(ctx) {
+  labelQueue.sort((a, b) => a.prio - b.prio);
+  for (const q of labelQueue) {
+    ctx.font = q.font;
+    const w = ctx.measureText(q.text).width;
+    const h = Math.max(9, parseInt(q.font, 10) || 11);
+    const padX = 3, padY = 2;
+    const box = {
+      l: q.x - w / 2 - padX, r: q.x + w / 2 + padX,
+      t: q.y - h / 2 - padY, b: q.y + h / 2 + padY,
+    };
+    let hit = false;
+    for (const o of placedBoxes) {
+      if (box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t) { hit = true; break; }
+    }
+    if (hit) continue;
+    placedBoxes.push(box);
+    haloText(ctx, q.text, q.x, q.y, q.color, q.angle);
+  }
+  labelQueue = [];
+}
+
 // Draw a label with a halo (outline) so it stays legible over grid lines,
 // other curves, or shaded envelopes — regardless of what's underneath.
 function haloText(ctx, text, x, y, color, angle) {
@@ -205,6 +270,12 @@ function staticLayerKey(W, H, dpr, p) {
  */
 function drawStaticLayer(ctx, geom) {
   const { W, H, p, plotL, plotR, plotT, plotB, xy, fs } = geom;
+  labelQueue = [];
+  placedBoxes = [];
+  // The site stamp and the zoom hint are painted over this layer later, at the
+  // top-left of the plot. Reserve their strip up front so a curve label does
+  // not get placed underneath and then be printed through.
+  reserveBox(plotL, plotT, plotR, plotT + 34);
   ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H);
   ctx.save();
   ctx.beginPath(); ctx.rect(plotL, plotT, plotR - plotL, plotB - plotT); ctx.clip();
@@ -293,7 +364,7 @@ function drawStaticLayer(ctx, geom) {
     if (spot) {
       ctx.font = `bold ${fs(0.0115)}px sans-serif`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      haloText(ctx, rh+'%', spot.x, spot.y - 9, rhLabelColor, 0);
+      queueLabel(ctx, 'rh', rh+'%', spot.x, spot.y - 9, rhLabelColor, 0);
     }
   });
 
@@ -331,7 +402,7 @@ function drawStaticLayer(ctx, geom) {
       if (spot) {
         ctx.font = `${fs(0.0098)}px sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        haloText(ctx, `${wb.toFixed(wbDec)}°wb`, spot.x, spot.y, 'rgba(150,210,150,0.85)', spot.angle);
+        queueLabel(ctx, 'wetbulb', `${wb.toFixed(wbDec)}°wb`, spot.x, spot.y, 'rgba(150,210,150,0.85)', spot.angle);
       }
     }
   }
@@ -357,7 +428,7 @@ function drawStaticLayer(ctx, geom) {
       if (s) {
         const spot = labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB);
         if (spot) { ctx.font = `${fs(0.0092)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          haloText(ctx, `${v.toFixed(2)} m³/kg`, spot.x, spot.y, 'rgba(216,192,136,0.9)', spot.angle); }
+          queueLabel(ctx, 'specvol', `${v.toFixed(2)} m³/kg`, spot.x, spot.y, 'rgba(216,192,136,0.9)', spot.angle); }
       }
     }
   }
@@ -386,7 +457,7 @@ function drawStaticLayer(ctx, geom) {
       if (s) {
         const spot = labelSpotOnCurve(pxPts, plotL, plotR, plotT, plotB);
         if (spot) { ctx.font = `${fs(0.0092)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          haloText(ctx, `${hh} kJ/kg`, spot.x, spot.y, 'rgba(184,166,232,0.9)', spot.angle); }
+          queueLabel(ctx, 'enthalpy', `${hh} kJ/kg`, spot.x, spot.y, 'rgba(184,166,232,0.9)', spot.angle); }
       }
     }
   }
@@ -410,7 +481,7 @@ function drawStaticLayer(ctx, geom) {
       if (spot) {
         ctx.font = `bold ${fs(0.013)}px sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        haloText(ctx, label, spot.x, spot.y, color, 0);
+        queueLabel(ctx, 'envelope', label, spot.x, spot.y, color, 0);
       }
     }
   }
@@ -444,10 +515,12 @@ function drawStaticLayer(ctx, geom) {
   if (slaSpot) {
     ctx.font = `bold ${fs(0.012)}px sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    haloText(ctx, 'SLA', slaSpot.x, slaSpot.y, 'rgba(255,255,255,0.9)', 0);
+    queueLabel(ctx, 'sla', 'SLA', slaSpot.x, slaSpot.y, 'rgba(255,255,255,0.9)', 0);
   }
   } // end SLA visibility
 
+  // Every family has had its say; now resolve them against each other.
+  flushLabels(ctx);
   ctx.restore();
 }
 
@@ -635,8 +708,33 @@ export function drawChart() {
   // Pressure stamp + zoom indicator (top-left)
   ctx.fillStyle='rgba(240,165,0,0.7)'; ctx.font=`bold ${fs(0.012)}px monospace`; ctx.textAlign='left';
   const trunc = (s, n) => { s = s || ''; return s.length > n ? s.slice(0, n - 1) + '…' : s; };
-  const stampCtx = [trunc(state.hall.name, 22), trunc(state.slaProfiles[state.activeSla].name, 22)].filter(Boolean).join(' · ');
-  ctx.fillText(`${stampCtx}${stampCtx ? ' · ' : ''}${(state.hall.elevFt ?? 0).toLocaleString()} ft · ${p.toFixed(2)} kPa`, pad.l+6, pad.t+14);
+  // The stamp has to fit the plot, not the desktop it was written on. On a
+  // phone the full "hall · SLA · elevation · pressure" line ran past the right
+  // edge and printed through the saturation curve, so drop the least
+  // load-bearing part first and keep the pressure, which is the one an
+  // operator cannot infer from anywhere else on the chart.
+  const stampRoom = (W - pad.r) - (pad.l + 6);
+  const hallName = trunc(state.hall.name, 22);
+  const slaName = trunc(state.slaProfiles[state.activeSla].name, 22);
+  const elev = `${(state.hall.elevFt ?? 0).toLocaleString()} ft`;
+  const kpa = `${p.toFixed(2)} kPa`;
+  const candidates = [
+    [hallName, slaName, elev, kpa],
+    [hallName, elev, kpa],
+    [hallName, kpa],
+    [kpa],
+  ];
+  let stamp = candidates[candidates.length - 1].join(' · ');
+  for (const parts of candidates) {
+    const line = parts.filter(Boolean).join(' · ');
+    if (ctx.measureText(line).width <= stampRoom) { stamp = line; break; }
+  }
+  // Haloed like every other label: it sits over the saturation curve and the
+  // SLA boundary at narrow widths, and plain orange-on-curve is hard to read.
+  ctx.textBaseline = 'alphabetic';
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(13,17,23,0.9)'; ctx.lineJoin = 'round';
+  ctx.strokeText(stamp, pad.l+6, pad.t+14);
+  ctx.fillText(stamp, pad.l+6, pad.t+14);
   const zoomed = !(view.tMin===PC.tMin && view.tMax===PC.tMax && view.hrMin===PC.hrMin && view.hrMax===PC.hrMax);
   if (zoomed) {
     const zx = (PC.tMax-PC.tMin)/(view.tMax-view.tMin);

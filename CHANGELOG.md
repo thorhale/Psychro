@@ -11,6 +11,27 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — the chart is legible on a phone
+
+At a 430 px viewport the plot is about 300x180 px, and every label family drew
+its own labels the moment it drew its curve. They landed on top of each other:
+"SLA" printed through "100%", the specific-volume family stacked three deep in
+one corner, and the site stamp ran across the saturation curve.
+
+Curves now REQUEST a label instead of drawing one. Requests are resolved after
+every curve is drawn, highest priority first — the SLA boundary and the ASHRAE
+class names first, then humidity, then the iso-property families that are
+context rather than compliance — and a label whose box would overlap one
+already placed is dropped rather than printed over. At phone width 14 of 31
+requests are placed and none collide; at desktop width 28 of 33, and the
+committed goldens are unchanged, because there was always room there.
+
+The site stamp now measures itself against the plot and sheds its least
+load-bearing parts until it fits, keeping the pressure — the one figure on that
+line that cannot be read off the chart anywhere else. It is haloed like every
+other label.
+
+
 ### Fixed — the dew point the app displayed was 60x looser than documented
 
 `docs/provenance.md` has quoted 3.8e-4 °C for dew point since the accurate

@@ -100,6 +100,17 @@ test.describe('chart appearance', () => {
  * move. A missing key entry fails here as "the chart didn't change", which is
  * exactly the bug.
  */
+  test('at a phone width, labels compete instead of overprinting', async ({ page }) => {
+    // The width this tool is actually used at. Before deferred placement, the
+    // envelope names, the RH curves, the iso-property families and the site
+    // stamp all printed through each other here — legible on a desktop, a mess
+    // on the device someone is holding in a hall.
+    await page.setViewportSize({ width: 430, height: 900 });
+    await page.goto('./planner.html');
+    await settle(page);
+    await expect(page.locator(CHART)).toHaveScreenshot('chart-phone.png');
+  });
+
 test.describe('chart static-layer cache invalidation', () => {
   /** A cheap content hash of the canvas bitmap. */
   const shot = (page) =>
