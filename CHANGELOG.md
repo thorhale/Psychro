@@ -11,6 +11,36 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — the app is usable with a screen reader
+
+191 interactive controls shared six accessible names between them. Every
+setpoint slider announced as a bare "slider": the visible "Temp" is a plain
+`<span>`, which no assistive technology associates with the input, and even if
+it did there are two temperatures on that screen and nothing said which was
+which. All twelve setpoint controls and fifteen hall-card inputs are now named
+in full — "Target dew point", "Humidify capacity available today, percent".
+
+The SLA verdict — the entire point of the tool — changed silently. There is now
+a polite live region that announces it, and only when it MOVES. Nudging a
+setpoint inside the envelope stays quiet; crossing the contract speaks the
+reason. The estimated duration is deliberately left out of the announcement:
+it ticks over by a minute on almost every nudge, and a screen reader that talks
+through a whole slider drag buries the one thing that matters.
+
+An axe audit found and fixed four real violations: both tab strips declared
+`role="tablist"` over plain buttons, so the groups announced as empty; the
+duration-unit select had no name at all; and four colours missed WCAG AA
+against the background they actually composite onto — the active hall row and
+the pass badge each tint their own background, so the page-level ratio was
+never the one that mattered. `--muted` and `--ok` are lifted 8 %, the label
+hint's opacity .8 → .85 (it landed at exactly 4.50:1), and the legend's
+off-state .4 → .55. Legend items also gained a strikethrough, so "hidden" is
+not carried by dimness alone.
+
+`test/e2e/a11y.spec.js` runs axe over the planner and the launcher on every
+push and fails on any serious or critical violation.
+
+
 ### Fixed — two tabs no longer overwrite each other
 
 Two tabs open on the same site is ordinary: one on the hall you are planning,

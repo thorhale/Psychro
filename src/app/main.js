@@ -762,6 +762,41 @@ function updateControlReadout() {
 
   const tog = inp('results-toggle');
   if (tog) tog.addEventListener('click', ()=>{ resultsExpanded = !resultsExpanded; updateControlReadout(); });
+
+  // planMove() is memo-free but cheap, and `plan` above is scoped to the
+  // "is there a move at all" branch. Recomputing here keeps that scope intact.
+  announceVerdict(chkA, chkB, (absDT >= 0.05 || absDRH >= 0.05) ? planMove() : null);
+}
+
+/**
+ * Speak the compliance verdict — but only when it moves.
+ *
+ * The readout above rewrites itself on every keystroke. Mirroring it into a
+ * live region would make a screen reader talk continuously while someone drags
+ * a slider, which is worse than silence: the one thing that must not be missed
+ * is a point crossing the contract, and it would be buried.
+ *
+ * So this composes a short sentence and writes it ONLY when it differs from
+ * what was last announced. Dragging within the envelope stays quiet; the
+ * moment Target leaves it, the reason is spoken.
+ */
+let lastAnnounced = '';
+function announceVerdict(chkA, chkB, plan) {
+  const el = inp('a11y-status');
+  if (!el) return;
+  const say = (label, chk) =>
+    chk.ok ? `${label} inside SLA` : `${label} outside SLA, ${fmtSlaReason(chk)}`;
+  const bits = [say('Current', chkA), say('Target', chkB)];
+  // The binding constraint, but NOT the estimated duration. The duration
+  // ticks over by a minute on almost every nudge, which would re-announce
+  // constantly and bury the only thing that matters — whether a point has
+  // crossed the contract. The number is on screen and in the properties
+  // table for anyone who wants it.
+  if (plan && plan.hours > 0 && plan.binding) bits.push(`limited by ${plan.binding}`);
+  const msg = bits.join('. ') + '.';
+  if (msg === lastAnnounced) return;
+  lastAnnounced = msg;
+  el.textContent = msg;
 }
 
 function refreshSlaSummary() {
@@ -881,6 +916,8 @@ function renderSlaTabs() {
   tabs.innerHTML = '';
   state.slaProfiles.forEach((sla, i) => {
     const btn = document.createElement('button');
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', i === state.activeSla ? 'true' : 'false');
     btn.className = 'sla-tab' + (i === state.activeSla ? ' active' : '') + (sla.locked ? ' locked' : '');
     btn.textContent = sla.name;
     btn.onclick = () => { state.activeSla = i; applyElevation(); renderSlaTabs(); renderSlaEditor(); update(); };
@@ -908,18 +945,18 @@ function renderHallEditor() {
       <input type="text" id="hall-building" value="${(state.hall.building||'').replace(/"/g,'&quot;')}" placeholder="e.g. DFW VII or Building A">
     </div>
     <div class="sla-field"><label for="hall-site">Site / location <span class="cap-hint">set by the Location picker above</span></label><input type="text" id="hall-site" value="${(state.hall.siteName||'').replace(/"/g,'&quot;')}" placeholder="e.g. Goodyear, AZ" ></div>
-    <div class="sla-field"><label for="hall-elev">Elevation ft <span class="cap-hint">preset from location; fine-tune here</span></label><input type="number" id="hall-elev" value="${state.hall.elevFt ?? 0}" step="any" min="-15000" max="20000" ></div>
-    <div class="sla-field"><label for="hall-baro">Measured pressure <span class="u">kPa</span> <span class="cap-hint">optional — a barometer beats the elevation estimate</span></label><input type="number" inputmode="decimal" id="hall-baro" value="${state.hall.baroKpa ?? ''}" step="0.1" min="55" max="110" placeholder="blank = from elevation"></div>
+    <div class="sla-field"><label for="hall-elev">Elevation ft <span class="cap-hint">preset from location; fine-tune here</span></label><input type="number" id="hall-elev" aria-label="Site elevation, feet" value="${state.hall.elevFt ?? 0}" step="any" min="-15000" max="20000" ></div>
+    <div class="sla-field"><label for="hall-baro">Measured pressure <span class="u">kPa</span> <span class="cap-hint">optional — a barometer beats the elevation estimate</span></label><input type="number" inputmode="decimal" id="hall-baro" aria-label="Measured barometric pressure, kilopascals" value="${state.hall.baroKpa ?? ''}" step="0.1" min="55" max="110" placeholder="blank = from elevation"></div>
     <div class="sla-caps">
       <div class="sla-caps-label">Plant capability &amp; rates — what this hall can actually do</div>
       <div class="cap-explain">Temperature rates: use commissioning-observed ${deltaLabel()}/hr, or derive a physics estimate below (IT load, excess sensible capacity, thermal mass). Moisture is first-principles: hall air mass × ΔW ÷ equipment lb/hr. Enter NET capacity (nameplate minus steady makeup-air latent load). Blank = not plant-limited; the SLA ramp limit still governs.</div>
       <div id="equip-panel"></div>
-      <div class="cap-line"><span class="cap-name">Hall air volume <span class="cap-hint">for the moisture mass balance</span></span><input type="number" id="hall-vol" class="cap-rate" value="${state.hall.hallVolFt3 ?? ''}" placeholder="—" step="any" min="0"><span class="cap-u">ft³</span></div>
-      <div class="cap-line"><span class="cap-name">Supply airflow <span class="cap-hint">for the cooling-load estimate</span></span><input type="number" id="hall-cfm" class="cap-rate" value="${state.hall.airflowCfm ?? ''}" placeholder="—" step="any" min="0"><span class="cap-u">CFM</span></div>
-      <div class="cap-line"><span class="cap-name">Cooling</span><input type="number" id="rate-cool" class="cap-rate" value="${showRate(state.hall.rateCoolF)}" placeholder="—" step="0.1" min="0"><span class="cap-u">${deltaLabel()}/hr</span></div>
-      <div class="cap-line"><span class="cap-name">Warming <span class="cap-hint">reheat or IT load</span></span><input type="number" id="rate-warm" class="cap-rate" value="${showRate(state.hall.rateWarmF)}" placeholder="—" step="0.1" min="0"><span class="cap-u">${deltaLabel()}/hr</span></div>
-      <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-dehum" ${state.hall.canDehumidify?'checked':''}> Dehumidify</label><input type="number" id="rate-dehum" class="cap-rate" value="${state.hall.rateDehumLb ?? ''}" placeholder="—" step="0.1" min="0" ${state.hall.canDehumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
-      <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-hum" ${state.hall.canHumidify?'checked':''}> Humidify</label><input type="number" id="rate-hum" class="cap-rate" value="${state.hall.rateHumLb ?? ''}" placeholder="—" step="0.1" min="0" ${state.hall.canHumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
+      <div class="cap-line"><span class="cap-name">Hall air volume <span class="cap-hint">for the moisture mass balance</span></span><input type="number" id="hall-vol" aria-label="Hall air volume, cubic feet" class="cap-rate" value="${state.hall.hallVolFt3 ?? ''}" placeholder="—" step="any" min="0"><span class="cap-u">ft³</span></div>
+      <div class="cap-line"><span class="cap-name">Supply airflow <span class="cap-hint">for the cooling-load estimate</span></span><input type="number" id="hall-cfm" aria-label="Supply airflow, CFM" class="cap-rate" value="${state.hall.airflowCfm ?? ''}" placeholder="—" step="any" min="0"><span class="cap-u">CFM</span></div>
+      <div class="cap-line"><span class="cap-name">Cooling</span><input type="number" id="rate-cool" aria-label="Cooling rate, degrees per hour" class="cap-rate" value="${showRate(state.hall.rateCoolF)}" placeholder="—" step="0.1" min="0"><span class="cap-u">${deltaLabel()}/hr</span></div>
+      <div class="cap-line"><span class="cap-name">Warming <span class="cap-hint">reheat or IT load</span></span><input type="number" id="rate-warm" aria-label="Warming rate, degrees per hour" class="cap-rate" value="${showRate(state.hall.rateWarmF)}" placeholder="—" step="0.1" min="0"><span class="cap-u">${deltaLabel()}/hr</span></div>
+      <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-dehum" ${state.hall.canDehumidify?'checked':''}> Dehumidify</label><input type="number" id="rate-dehum" aria-label="Dehumidify rate, pounds per hour" class="cap-rate" value="${state.hall.rateDehumLb ?? ''}" placeholder="—" step="0.1" min="0" ${state.hall.canDehumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
+      <div class="cap-line"><label class="cap-ck"><input type="checkbox" id="cap-hum" ${state.hall.canHumidify?'checked':''}> Humidify</label><input type="number" id="rate-hum" aria-label="Humidify rate, pounds per hour" class="cap-rate" value="${state.hall.rateHumLb ?? ''}" placeholder="—" step="0.1" min="0" ${state.hall.canHumidify?'':'disabled'}><span class="cap-u">lb/hr</span></div>
       <details class="calc">
         <summary>Derive your rates from equipment specs <span class="sect-chev">▸</span></summary>
         <div class="calc-body">
@@ -1028,32 +1065,32 @@ function renderHallEditor() {
     <div class="sla-caps">
       <div class="sla-caps-label">Ventilation moisture load — steady-state humidifier duty</div>
       <div class="cap-explain">Once the hall is holding its Target, the humidifiers only replace what the outside-air ventilation carries out: DOAS dry-air mass × (room moisture − outdoor moisture). Leave the dew point blank to assume bone-dry outdoor air — the worst case no weather record can beat.</div>
-      <div class="cap-line"><span class="cap-name">DOAS outside air <span class="cap-hint">fresh-air makeup, not the recirculating supply</span></span><input type="number" id="hall-doas" class="cap-rate" value="${state.hall.doasCfm ?? ''}" placeholder="—" step="any" min="0"><span class="cap-u">CFM</span></div>
-      <div class="cap-line"><span class="cap-name">Design outdoor dew point <span class="cap-hint">blank = bone dry, the worst case</span></span><input type="number" id="hall-ddp" class="cap-rate" value="${state.hall.designDpF != null ? dispT1(state.hall.designDpF) : ''}" placeholder="—" step="0.1"><span class="cap-u">${tLabel()}</span></div>
-      <div class="calc-res" id="vent-res">—</div>
+      <div class="cap-line"><span class="cap-name">DOAS outside air <span class="cap-hint">fresh-air makeup, not the recirculating supply</span></span><input type="number" id="hall-doas" aria-label="DOAS outside air, CFM" class="cap-rate" value="${state.hall.doasCfm ?? ''}" placeholder="—" step="any" min="0"><span class="cap-u">CFM</span></div>
+      <div class="cap-line"><span class="cap-name">Design outdoor dew point <span class="cap-hint">blank = bone dry, the worst case</span></span><input type="number" id="hall-ddp" aria-label="Design outdoor dew point" class="cap-rate" value="${state.hall.designDpF != null ? dispT1(state.hall.designDpF) : ''}" placeholder="—" step="0.1"><span class="cap-u">${tLabel()}</span></div>
+      <div class="calc-res" id="vent-res" role="status" aria-live="polite">—</div>
     </div>
     <div class="sla-caps">
       <div class="sla-caps-label">Real-world factors — efficiency &amp; current capacity</div>
       <div class="cap-explain"><strong>Efficiency factor</strong>: the fraction of nameplate performance this hall actually delivers once mixing losses, stratification, control deadbands, and sensor lag are paid — <strong>85% is the planning default</strong>; calibrate it with logged results below. <strong>Capacity derates</strong>: today's temporary reductions — chillers offline, crusty evaporative media on the humidifiers, fouled coils. Every plant rate is scaled by efficiency × derate before timing a move.</div>
-      <div class="cap-line"><span class="cap-name">Efficiency factor <span class="cap-hint">predicted real-world vs. nameplate</span></span><input type="number" id="hall-eff" class="cap-rate" value="${state.hall.effPct ?? 85}" step="0.1" min="1" max="150"><span class="cap-u">%</span></div>
-      <div class="cap-line"><span class="cap-name">Cooling capacity today <span class="cap-hint">e.g. chillers down for service</span></span><input type="number" id="der-cool" class="cap-rate" value="${state.hall.derateCoolPct ?? 100}" step="0.1" min="1" max="100"><span class="cap-u">%</span></div>
-      <div class="cap-line"><span class="cap-name">Warming capacity today</span><input type="number" id="der-warm" class="cap-rate" value="${state.hall.derateWarmPct ?? 100}" step="0.1" min="1" max="100"><span class="cap-u">%</span></div>
-      <div class="cap-line"><span class="cap-name">Dehumidify capacity today</span><input type="number" id="der-dehum" class="cap-rate" value="${state.hall.derateDehumPct ?? 100}" step="0.1" min="1" max="100"><span class="cap-u">%</span></div>
-      <div class="cap-line"><span class="cap-name">Humidify capacity today <span class="cap-hint">e.g. crusty evap media</span></span><input type="number" id="der-hum" class="cap-rate" value="${state.hall.derateHumPct ?? 100}" step="0.1" min="1" max="100"><span class="cap-u">%</span></div>
+      <div class="cap-line"><span class="cap-name">Efficiency factor <span class="cap-hint">predicted real-world vs. nameplate</span></span><input type="number" id="hall-eff" aria-label="Plant efficiency factor, percent" class="cap-rate" value="${state.hall.effPct ?? 85}" step="0.1" min="1" max="150"><span class="cap-u">%</span></div>
+      <div class="cap-line"><span class="cap-name">Cooling capacity today <span class="cap-hint">e.g. chillers down for service</span></span><input type="number" id="der-cool" aria-label="Cooling capacity available today, percent" class="cap-rate" value="${state.hall.derateCoolPct ?? 100}" step="0.1" min="1" max="100"><span class="cap-u">%</span></div>
+      <div class="cap-line"><span class="cap-name">Warming capacity today</span><input type="number" id="der-warm" aria-label="Warming capacity available today, percent" class="cap-rate" value="${state.hall.derateWarmPct ?? 100}" step="0.1" min="1" max="100"><span class="cap-u">%</span></div>
+      <div class="cap-line"><span class="cap-name">Dehumidify capacity today</span><input type="number" id="der-dehum" aria-label="Dehumidify capacity available today, percent" class="cap-rate" value="${state.hall.derateDehumPct ?? 100}" step="0.1" min="1" max="100"><span class="cap-u">%</span></div>
+      <div class="cap-line"><span class="cap-name">Humidify capacity today <span class="cap-hint">e.g. crusty evap media</span></span><input type="number" id="der-hum" aria-label="Humidify capacity available today, percent" class="cap-rate" value="${state.hall.derateHumPct ?? 100}" step="0.1" min="1" max="100"><span class="cap-u">%</span></div>
     </div>
     <div class="sla-caps">
       <div class="sla-caps-label">Predicted vs. actual — calibrate the efficiency factor</div>
       <div class="cap-explain">After a real move finishes, log how long it actually took. Implied efficiency = time predicted at nameplate (with today's capacity derates) ÷ actual time. Runs where the SLA ramp limit — not the plant — was the binding constraint are kept for the record but excluded from calibration, since they can't reveal plant efficiency.</div>
-      <div class="calc-res" id="pva-pred">—</div>
+      <div class="calc-res" id="pva-pred" role="status" aria-live="polite">—</div>
       <div class="calc-grid2">
         <input type="number" id="pva-actual" class="cap-rate" placeholder="actual duration" min="0" step="1">
-        <select id="pva-unit" class="sla-select calc-sel"><option value="min">minutes</option><option value="hr">hours</option></select>
+        <select id="pva-unit" class="sla-select calc-sel" aria-label="Unit for the actual duration"><option value="min">minutes</option><option value="hr">hours</option></select>
       </div>
       <div class="addcity-actions" style="margin-top:8px"><button type="button" class="scn-btn scn-btn-primary" id="pva-log">Log this move's result</button></div>
       <div id="pva-list" style="margin-top:10px"></div>
       <div class="cap-explain" style="margin-top:12px"><strong>Or import the trend export.</strong> Drop the BMS/BAS CSV of the move (time, temp, RH columns) — the actual trajectory overlays the chart next to the plan, and the measured duration feeds the same calibration with no stopwatch honesty required.</div>
       <div class="addcity-actions"><button type="button" class="scn-btn" id="trend-import">⤒ Import trend CSV</button><input type="file" id="trend-file" accept=".csv,text/csv" style="display:none"></div>
-      <div class="calc-res" id="trend-res" style="display:none"></div>
+      <div class="calc-res" id="trend-res" role="status" aria-live="polite" style="display:none"></div>
     </div>
   `;
   // Capability checkboxes are always active (a site characteristic, like elevation).
@@ -1680,6 +1717,10 @@ function renderHallTabs() {
   const manyBld = new Set(shown.map(x => (x.h.building || '').trim())).size > 1;
   shown.forEach(({ h, i }) => {
     const btn = document.createElement('button');
+    // The container is role="tablist", so each child has to be a tab or the
+    // role is a lie and assistive tech announces the group as empty.
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', i === state.activeHall ? 'true' : 'false');
     btn.className = 'sla-tab' + (i === state.activeHall ? ' active' : '');
     const bld = (h.building || '').trim(), loc = (h.siteName || '').trim();
     // A dot per tab: the strip you already use to move between halls also
