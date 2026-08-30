@@ -11,6 +11,48 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — transport properties are 25x more accurate
+
+Viscosity and thermal conductivity were the only two properties in the tool an
+order of magnitude looser than everything else: 0.32 % and 0.43 %, against
+0.0013–0.0114 % for the rest. They are now **0.0127 %** and **0.0190 %**, the
+same accuracy class as specific volume.
+
+The interesting part is where the error actually was. It was not the Wilke
+mixing rule, which is what the comment blamed. At 1 % RH — essentially pure
+air, where Wilke barely participates — the error still averaged 0.24 %: a
+Sutherland two-parameter form simply cannot track dry-air viscosity across the
+domain, while a degree-4 polynomial tracks it to 1.8e-4 %. What remained after
+fixing that was a symmetric spread that grew with water content and moved
+systematically with *pressure* at fixed temperature and RH, which a
+temperature-only component model has no term for. Adding a pressure and
+composition closure term closed it.
+
+Test tolerances follow the measurement down, from 5e-3/6e-3 to 2e-4/3e-4.
+`scripts/fit-secondary.mjs` regenerates every constant and reproduces the
+shipped figures exactly.
+
+### Added — an independent second source for the saturation line
+
+Every reference in this repository traced back to CoolProp, which meant a
+CoolProp error could not be caught by anything here. The saturation line is now
+also checked against Wolfram's `ThermodynamicData`, an IAPWS implementation
+with no CoolProp in the chain (`test/reference/wolfram-reference.json`,
+`test/secondsource.test.js`).
+
+It confirms what `docs/provenance.md` has claimed all along: ASHRAE Eq. 5 runs
+0.013–0.023 % low against IAPWS, which is the reason the enhancement factor is
+fitted rather than textbook. That justification no longer rests on the same
+source it was measured against. The check also corrected a long-standing
+imprecision — the bias was attributed to "Eq. 5/6", but Eq. 6 over ice is
+exact to 5e-4 % in the band the app uses it. It is a water-branch effect only.
+
+### Added — docs/bibliography.md
+
+Full citations with DOIs for every authority the tool rests on, each with a
+plain statement of what we use it for and whether it is load-bearing.
+
+
 ### Fixed — every number reads and writes to a tenth
 
 Typed precision used to be destroyed on the way back to the screen. You could

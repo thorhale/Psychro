@@ -88,7 +88,7 @@ invisible to its 26-case self-test:
 
 Two property families were added to narrow the CoolProp gap: **entropy** (ideal-
 gas mixture form on CoolProp's reference convention) and **transport properties**
-(viscosity, thermal conductivity — Sutherland correlations per component, Wilke
+(viscosity, thermal conductivity — fitted dilute-gas components, Wilke
 mixing rule, constants fitted to CoolProp because the textbook water-vapour
 constants left mixture viscosity 17 % low at high humidity). Plus mixture
 density, degree of saturation, and the inverse solves the UI needed.
@@ -104,15 +104,15 @@ property             unit          max abs     RMS abs    max rel              w
 humidity ratio W     g/kg         6.861e-4    5.647e-5    0.0013%         55°C 95% 79.5kPa
 enthalpy h           kJ/kg        3.005e-2    2.156e-3          —         55°C 100% 108kPa
 specific volume v    m³/kg        1.678e-4    1.973e-5    0.0114%          50°C 100% 65kPa
-density ρ            kg/m³        9.782e-5    1.470e-5    0.0114%         55°C 100% 95kPa
+density ρ            kg/m³        9.782e-5    1.470e-5    0.0114%          55°C 100% 95kPa
 dew point Tdp        °C           3.816e-4    4.084e-5          —           10°C 50% 65kPa
 wet bulb Twb         °C           1.588e-3    4.787e-4          —            55°C 1% 65kPa
                      over 3876 of 3898 points
   └ ice/water band   °C           8.483e-1    2.497e-1          —            15°C 1% 65kPa
                      over 22 of 3898 points — double-valued: both wick states are physical
 entropy s            kJ/kg·K      3.747e-4    1.188e-4          —         55°C 100% 108kPa
-viscosity μ          µPa·s        5.989e-2    3.299e-2    0.3185%         45°C 100% 108kPa
-conductivity k       mW/m·K       1.199e-1    5.716e-2    0.4301%       52.5°C 100% 108kPa
+viscosity μ          µPa·s        2.502e-3    1.030e-3    0.0127%            55°C 1% 65kPa
+conductivity k       mW/m·K       5.299e-3    2.184e-3    0.0190%          52.5°C 1% 65kPa
 ```
 
 Reading notes:
@@ -167,8 +167,13 @@ Reading notes:
   error drops from 0.1125 % to 0.0114 %, a factor of ten. **Density** is derived
   from v, so it improves identically — the two rows agreeing to the fourth digit
   is itself the check that ρ = (1 + W)/v still holds exactly.
-- Transport properties are engineering estimates by construction (ASHRAE Ch. 1
-  doesn't define them); 0.3–0.4 % is ample for pressure-drop and coil work.
+- **Transport properties** have no ASHRAE Ch. 1 definition at all, so the model
+  is ours: dilute-gas components combined by the Wilke rule, times a fitted
+  pressure/composition closure term. They were Sutherland two-parameter
+  components worth 0.32 % and 0.43 %, and the error turned out not to be the
+  mixing rule — at 1 % RH, where Wilke barely participates, it still averaged
+  0.24 %. Degree-4 components plus the closure term bring them to 0.0127 % and
+  0.0190 %, the same class as specific volume.
 - Relative error is only shown for strictly-positive properties; it is
   meaningless for quantities that cross zero.
 

@@ -62,8 +62,13 @@ const TOL = {
   //                   reports to 4e-4 °C — see twb_amb_bestof below.
   twb_amb_bestof: 1e-3, // closer of the two roots, vs CoolProp (measured 4e-4)
   s_abs: 5e-4, //      entropy kJ/(kg·K)         (measured max 3.7e-4)
-  mu_rel: 5e-3, //     viscosity, relative       (measured max 3.2e-3)
-  k_rel: 6e-3, //      conductivity, relative    (measured max 4.3e-3)
+  // Transport properties were 5e-3 / 6e-3 while the components were Sutherland
+  // two-parameter forms. Refitting them (degree-4 components plus a pressure
+  // and composition closure term) moved both into the same accuracy class as
+  // specific volume, so the tolerances follow the measurement down — a loose
+  // tolerance over an accurate fit hides the next regression.
+  mu_rel: 2e-4, //     viscosity, relative       (measured max 1.27e-4)
+  k_rel: 3e-4, //      conductivity, relative    (measured max 1.90e-4)
 };
 
 describe('CoolProp oracle grid', () => {
