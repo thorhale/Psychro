@@ -70,6 +70,7 @@ function tryParse(raw) {
  * @property {object[]} [slaProfiles]
  * @property {number} [activeSla]
  * @property {'F'|'C'|'K'} [tempUnit]
+ * @property {'IP'|'SI'} [measure]
  */
 
 /**
@@ -113,6 +114,9 @@ export function parseStoredState(raw, currentHall) {
       );
     }
     if (d4.tempUnit) patch.tempUnit = d4.tempUnit;
+    // Absent on every save that predates the measurement toggle: IP by default,
+    // which is what those files were written in.
+    if (d4.measure === 'SI' || d4.measure === 'IP') patch.measure = d4.measure;
     return { found: true, sourceVersion: 4, patch };
   }
 
@@ -169,5 +173,6 @@ export function buildStoredState(state) {
     slaProfiles: state.slaProfiles,
     activeSla: state.activeSla,
     tempUnit: state.tempUnit,
+    measure: state.measure,
   };
 }
