@@ -11,6 +11,28 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — the Data Hall card is its own module
+
+`renderHallEditor` had reached 698 lines inside a 3,011-line entry point, and
+it owned five separate concerns: hall identity, plant rates, the
+derive-from-specs calculators, the ventilation readout, and the
+plan-vs-actual / trend-import panel.
+
+It now lives in `src/app/hall-editor.js` (799 lines), taking the seven things
+only the entry point can do through the same `shell` injection
+`equipment-ui.js` uses. `main.js` drops to 2,284 lines.
+
+Nothing about the card changed in the move — markup, wiring and the nested
+helpers came across verbatim, which is what makes the 284 end-to-end tests a
+meaningful check on it rather than a formality.
+
+The one thing that could not simply be carried across was `actualTrail`, the
+imported BMS trend: a module-level `let` in `main.js` that the extracted code
+wrote to. Sharing a mutable binding across a module seam is the coupling the
+extraction exists to remove, so the trail moved to the module that produces it
+and `main.js` now reads it through accessors.
+
+
 ### Added — an IP/SI toggle for everything that is not a temperature
 
 Temperature has had a °F/°C/K toggle for a long time. Nothing else did, so the
