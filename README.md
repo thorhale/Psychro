@@ -46,7 +46,7 @@ blockworld/           independent bonus voxel game (untouched by the build)
 ```bash
 npm ci
 npm run dev            # live-reload dev server
-npm test               # 309 tests: oracle, invariants, consistency, assets, schema, platform
+npm test               # 365 tests: oracle, invariants, consistency, assets, schema, platform
 npm run lint
 npm run typecheck
 npm run analyze        # per-property accuracy table vs CoolProp
@@ -150,7 +150,7 @@ writes — export a save file when you see that warning.
 
 ## Validation
 
-- **CI on every push**: lint, typecheck, 309 tests (CoolProp oracle, physical
+- **CI on every push**: lint, typecheck, 365 tests (CoolProp oracle, physical
   invariants over seeded-random states, cross-surface consistency, asset layout,
   storage migration, platform adapters), the accuracy report, 46 bundle-integrity
   checks, and 184 Playwright tests covering all three artifacts — the raw-served

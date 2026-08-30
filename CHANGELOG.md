@@ -11,6 +11,27 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+## [3.0.0] — 2026-08-30
+
+**Major, by this project's own rule** (CONTRIBUTING: *"major — changed
+persisted-data format, or a physics change that moves displayed numbers"*).
+Three physics changes move numbers you can see:
+
+- **Dew point** is solved from its definition and is 60× more accurate. The
+  value shown moves by up to 0.023 °C. The app had been displaying the old,
+  looser figure while the docs quoted the new one — see below.
+- **Wet bulb** is solved as a real-gas adiabatic-saturation balance, 12× more
+  accurate than the Chapter 1 closed form it replaced.
+- **Viscosity and thermal conductivity** were refit and are 25× more accurate.
+
+Saved files are unaffected: every new field is additive with a
+backwards-compatible default, and older saves load unchanged.
+
+The app also became a **dashboard**: a launcher, a second tool (the CDU flow
+calculator), and a branding pipeline that recolours everything from an
+uploaded logo.
+
+
 ### Changed — the Data Hall card is its own module
 
 `renderHallEditor` had reached 698 lines inside a 3,011-line entry point, and
