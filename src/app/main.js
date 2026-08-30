@@ -58,6 +58,7 @@ import {
 } from '../state/schema.js';
 import { evapMediaOutput, effectivenessFromOutput } from '../core/evapmedia.js';
 import { ventilationWater } from '../core/ventilation.js';
+import { setpointScheduleCsv, fleetCsv } from '../core/bmsexport.js';
 import { parseTrendCsv, maxWindowedRate } from '../lib/trendcsv.js';
 import {
   LS_KEY_V1,
@@ -2525,6 +2526,55 @@ function briefingHourly(plan) {
   }
   return out;
 }
+
+// ── BMS hand-off ────────────────────────────────────────────────────────────
+// Trend data came IN as CSV and nothing went back out, so the last mile —
+// handing a BMS operator the set-points, or handing a manager the campus —
+// was retyping from a screen. Both files are built by pure functions in
+// src/core/bmsexport.js so their shape is testable, which matters more here
+// than usual: these get typed into a control system.
+inp('schedule-csv')?.addEventListener('click', () => {
+  const plan = planMove();
+  const rungs = briefingHourly(plan);
+  if (!rungs) {
+    toast('No ramp to schedule — Current and Target are the same, or the plant rates are not set.',
+      { kind: 'info', duration: 6000 });
+    return;
+  }
+  const csv = setpointScheduleCsv({
+    rungs,
+    hallName: state.hall.name,
+    slaName: state.slaProfiles[state.activeSla]?.name,
+    startAt: new Date(),
+    // The same solver every other surface uses, at this hall's pressure.
+    dewPointF: (tempF, rh) => {
+      const t = dewPointFrom(fToC(tempF), rh, state.pressure);
+      return t == null ? null : cToF(t);
+    },
+  });
+  platformSaveFile(exportName('setpoint-schedule', 'csv'), csv);
+});
+
+inp('fleet-csv')?.addEventListener('click', () => {
+  const sla = state.slaProfiles[state.activeSla];
+  const pressureOf = (h) => (h.baroKpa != null ? h.baroKpa : pressureFromAltitude(h.elevFt ?? 0));
+  const conditionOf = (h) => {
+    // The active hall's live point may not be stashed yet — same rule the
+    // all-halls list uses, so the two surfaces cannot disagree.
+    if (h === state.hall) return { tempF: state.aTemp, rh: state.aRH };
+    return h.cond ? { tempF: h.cond.aTemp, rh: h.cond.aRH } : null;
+  };
+  const verdictOf = (h) => {
+    const c = conditionOf(h);
+    return c ? checkSLACore(sla, c.tempF, c.rh, pressureOf(h)) : null;
+  };
+  platformSaveFile(
+    exportName('fleet', 'csv'),
+    fleetCsv({ halls: state.hallProfiles, sla, pressureOf, verdictOf, conditionOf }),
+  );
+  toast(`Exported ${state.hallProfiles.length} hall${state.hallProfiles.length === 1 ? '' : 's'}.`,
+    { kind: 'ok' });
+});
 
 inp('copy-briefing')?.addEventListener('click', () => {
   const p = state.pressure;

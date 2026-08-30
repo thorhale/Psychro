@@ -1995,3 +1995,41 @@ test.describe('tenth-place granularity', () => {
     await expect(page.locator('#rate-cool')).toHaveValue('2.5');
   });
 });
+
+test.describe('BMS hand-off', () => {
+  test('the set-point schedule downloads as a named CSV', async ({ page }) => {
+    await page.goto('./planner.html');
+    await expandAll(page);
+    // A ramp needs plant rates, or there is nothing to schedule.
+    await page.fill('#rate-cool', '2');
+    await page.dispatchEvent('#rate-cool', 'input');
+    await page.fill('#rate-warm', '2');
+    await page.dispatchEvent('#rate-warm', 'input');
+    const dl = page.waitForEvent('download');
+    await page.locator('#schedule-csv').click();
+    const file = await dl;
+    expect(file.suggestedFilename()).toMatch(/setpoint-schedule.*\.csv$/);
+  });
+
+  test('the fleet CSV downloads and reports how many halls it wrote', async ({ page }) => {
+    await page.goto('./planner.html');
+    await expandAll(page);
+    const dl = page.waitForEvent('download');
+    await page.locator('#fleet-csv').click();
+    const file = await dl;
+    expect(file.suggestedFilename()).toMatch(/fleet.*\.csv$/);
+    await expect(page.locator('.ntf-toast').filter({ hasText: /Exported 1 hall/ })).toBeVisible();
+  });
+
+  test('with no ramp, it explains instead of writing an empty file', async ({ page }) => {
+    await page.goto('./planner.html');
+    await expandAll(page);
+    // Target == Current: there is no move, so there is no schedule.
+    await page.fill('#b-temp', '68');
+    await page.dispatchEvent('#b-temp', 'input');
+    await page.fill('#b-rh', '45');
+    await page.dispatchEvent('#b-rh', 'input');
+    await page.locator('#schedule-csv').click();
+    await expect(page.locator('.ntf-toast').filter({ hasText: /No ramp to schedule/ })).toBeVisible();
+  });
+});
