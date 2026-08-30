@@ -52,22 +52,48 @@ export function registerServiceWorker() {
   navigator.serviceWorker
     .register('./sw.js')
     .then((reg) => {
-      // A new worker appearing while one is already controlling the page means
-      // an update was published. Offer the reload instead of waiting for the
-      // user's next cold start.
+      // Announce at most once per page life. Without this an operator who
+      // leaves the tab open all shift could collect a toast per update check.
+      let told = false;
+      const offerReload = () => {
+        if (told) return;
+        told = true;
+        toast('A new version is ready.', {
+          kind: 'ok',
+          duration: 0, // stays until acted on: this is the fix for a stale app
+          action: { label: 'Reload', onClick: () => location.reload() },
+        });
+      };
+
+      // A worker can already be sitting in `waiting` by the time this runs —
+      // the browser checks sw.js on navigation, and that check can finish
+      // before our listener is attached. Only `updatefound` was handled, so
+      // that race showed up as an app that stayed stale until a hard refresh.
+      if (reg.waiting && navigator.serviceWorker.controller) offerReload();
+
       reg.addEventListener('updatefound', () => {
         const next = reg.installing;
         if (!next) return;
         next.addEventListener('statechange', () => {
-          if (next.state === 'installed' && navigator.serviceWorker.controller) {
-            toast('A new version is ready.', {
-              kind: 'ok',
-              duration: 15000,
-              action: { label: 'Reload', onClick: () => location.reload() },
-            });
-          }
+          if (next.state === 'installed' && navigator.serviceWorker.controller) offerReload();
         });
       });
+
+      // Nothing ever asked whether a new version existed. Registration checks
+      // once, at load, and that was it: a tab open across a deploy — which is
+      // exactly how this app is used, left open on a hall — never found out.
+      const checkForUpdate = () => {
+        if (document.visibilityState !== 'visible') return;
+        reg.update().catch(() => {
+          /* offline, or the check failed; the next one will do */
+        });
+      };
+      // Coming back to the tab is the moment worth checking: it is when
+      // someone is about to act on what the app says.
+      document.addEventListener('visibilitychange', checkForUpdate);
+      window.addEventListener('focus', checkForUpdate);
+      // And a slow heartbeat for a tab that is simply left open.
+      setInterval(checkForUpdate, 30 * 60 * 1000);
     })
     .catch(() => {
       /* offline-first is a progressive enhancement — the app runs without it */

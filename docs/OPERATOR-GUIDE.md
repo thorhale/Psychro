@@ -4,6 +4,11 @@ For the person standing in the hall with a phone. No physics background
 assumed. Everything here is a planning aid: **verify against site
 instrumentation before acting.**
 
+**Where to start.** The home screen lists the tools. This guide covers the
+**Hall Environment Planner**; the **CDU Flow Calculator** is a separate tool
+with its own README. The `◀ All tools` link at the top left of the planner
+goes back to the home screen.
+
 ---
 
 ## The one question this tool answers
@@ -89,7 +94,38 @@ overlays the chart next to your plan, the app reports the fastest sustained
 ramp and checks it against the SLA limit, and one tap logs the measured
 duration so your efficiency figure gets better every time.
 
-## 6. Things worth printing
+## 6. How much water will the humidifiers actually drink?
+
+Once the hall is holding its Target, humidifier duty is not set by the room's
+volume — it is set by the **outside air** the DOAS brings in, because that is
+the only thing continuously carrying moisture out.
+
+In the Data Hall card, under **Ventilation moisture load**:
+
+| Field | What to enter |
+|---|---|
+| DOAS outside air | The fresh-air makeup CFM. **Not** the recirculating supply airflow — that air never leaves. |
+| Design outdoor dew point | Your design-day outdoor dew point. **Leave it blank** to assume bone-dry outside air, the worst case no weather record can beat. |
+
+You get pounds per hour and gallons per day, what share of today's humidify
+capacity that consumes, and where the room would settle if the humidifiers
+stopped. Running evaporative units on utility water, budget **1.5–3×** the
+figure shown for bleed-off.
+
+A design dew point can only ever *reduce* the blank-field answer — so if the
+number with it blank is affordable, you are done arguing about weather.
+
+---
+
+## 7. Make it look like your site (Branding card)
+
+Upload a company logo and the whole app re-colours itself from it — masthead,
+accents, chart, placard. It is derived and stored on that device only and
+never leaves it. **Reset** returns to the shipped palette.
+
+---
+
+## 8. Things worth printing
 
 - **Door placard** (Export → placard): one page, black on white, with the
   do-not-cross numbers, the envelope chart, and a QR code that opens the

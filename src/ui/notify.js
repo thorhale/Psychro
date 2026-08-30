@@ -49,7 +49,7 @@ function ensureHost() {
 /**
  * Show a toast.
  * @param {string} message
- * @param {{kind?: 'info'|'ok'|'warn'|'error', duration?: number,
+ * @param {{kind?: 'info'|'ok'|'warn'|'error', duration?: number, // 0 = sticky
  *          action?: {label: string, onClick: () => void}}} [opts]
  */
 export function toast(message, opts = {}) {
@@ -68,10 +68,14 @@ export function toast(message, opts = {}) {
   }
   h.appendChild(el);
   requestAnimationFrame(() => el.classList.add('show'));
+  // duration: 0 means STICKY — stay until acted on or clicked away. Used for
+  // the "a new version is ready" prompt, which is worthless if it vanishes
+  // while someone is looking at the chart. Without this branch a 0 would be
+  // passed straight to setTimeout and dismiss the toast on the next tick.
   const ttl = opts.duration ?? (opts.kind === 'error' ? 8000 : 4500);
-  const timer = setTimeout(dismiss, ttl);
+  const timer = ttl > 0 ? setTimeout(dismiss, ttl) : 0;
   function dismiss() {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     el.classList.remove('show');
     setTimeout(() => el.remove(), 200);
   }
