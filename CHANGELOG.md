@@ -11,6 +11,24 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — the door placard was printing off the edge of the paper
+
+The site-pressure line grows with the site — "1,066 ft · 97.5 kPa (standard
+atmosphere at elevation, ±2 kPa) — dew-point cap evaluated at this pressure" —
+and canvas has no text wrapping, so its last words were drawn past the right
+edge of the sheet. On the laminated page taped to a hall door, the sentence
+explaining that the dew-point cap is evaluated at site pressure simply ended
+mid-word.
+
+It wraps now, and the heading below it flows from where the wrap ends instead
+of a hard-coded position, so a one-line site and a two-line site both lay out.
+
+Every `fillText` on that sheet was an unchecked promise that the string fits.
+`test/e2e/artifacts.spec.js` now renders the placard and scans the pixels in
+the page margin: any ink there fails the build. Verified against the bug —
+with the wrap removed it reports ink at column 1239 of 1240.
+
+
 ### Added — the plan comes back out as CSV
 
 Trend data came IN and nothing ever went back out, so the last mile — handing a
