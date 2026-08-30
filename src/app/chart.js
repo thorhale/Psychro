@@ -524,10 +524,44 @@ function drawStaticLayer(ctx, geom) {
   ctx.restore();
 }
 
+/**
+ * The chart's display width, tracked instead of measured.
+ *
+ * `parentElement.clientWidth` is a layout read. Called from drawChart it
+ * flushes every DOM mutation the previous update queued, so its cost scales
+ * with the size of the whole page rather than the chart: at one hall an update
+ * was 3.8 ms, at sixty it was 17.7 ms — while the canvas did *identical* work
+ * both times, 22 strokes and 26 labels a frame. The frame budget was going on
+ * a forced reflow of a 7,000 px page, once per keystroke.
+ *
+ * A ResizeObserver pushes the width instead, so the hot path never measures.
+ * @type {number}
+ */
+let chartWidth = 0;
+/** @type {ResizeObserver|null} */
+let widthObserver = null;
+
+function observedWidth(canvas) {
+  const parent = canvas.parentElement;
+  if (!parent) return chartWidth || 800;
+  if (!widthObserver && typeof ResizeObserver !== 'undefined') {
+    widthObserver = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        const w = Math.round(e.contentRect.width);
+        if (w > 0 && w !== chartWidth) { chartWidth = w; drawChart(); }
+      }
+    });
+    widthObserver.observe(parent);
+  }
+  // First call, or no ResizeObserver: measure once to seed it.
+  if (!chartWidth) chartWidth = parent.clientWidth || 800;
+  return chartWidth;
+}
+
 export function drawChart() {
   const p = state.pressure;
   const canvas = canvasEl('psychCanvas');
-  const dispW = canvas.parentElement.clientWidth || 800;
+  const dispW = observedWidth(canvas);
   const dpr = Math.min(2, window.devicePixelRatio||1);
   const W = dispW, H = Math.round(W*0.62);
   // Assigning width/height reallocates the backing store, so only do it when

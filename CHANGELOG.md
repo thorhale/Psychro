@@ -11,6 +11,38 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Changed — a campus of halls is now as cheap as one
+
+The app was written around a handful of halls and degraded linearly: an update
+cost 3.8 ms at one hall and **15.6 ms at sixty**, which is the entire frame
+budget. Two things were responsible, and the big one was not the obvious one.
+
+The obvious one: every keystroke re-graded and re-rendered every hall's row,
+including an SLA check at its own pressure and a full inventory rollup — sixty
+of each to move one slider, when only the active hall had changed. Rows are now
+memoised on a signature of the hall serialised whole, so there is no field to
+forget, keyed in a WeakMap so a deleted hall's row cannot be handed to whatever
+takes its slot.
+
+That alone changed almost nothing, which is what sent us to a profiler. The
+real cost was that `drawChart` opened by reading `parentElement.clientWidth`.
+That is a layout read: it flushed every DOM mutation the previous update had
+queued, so its price scaled with the whole 7,000 px page rather than with the
+chart. The canvas was doing *identical* work at both sizes — 22 strokes and 26
+labels a frame, counted. A ResizeObserver now pushes the width in, and the hot
+path never measures.
+
+| halls | before | after |
+|---|---|---|
+| 1 | 3.8 ms | **1.3 ms** |
+| 30 | 9.7 ms | **1.9 ms** |
+| 60 | 15.6 ms | **3.2 ms** |
+| 120 | — | **5.3 ms** |
+
+120 halls now costs less than one hall did. `test/e2e/perf.spec.js` holds sixty
+halls to a frame and asserts the growth stays sub-linear.
+
+
 ### Fixed — a tab left open across a deploy now finds out
 
 The "a new version is ready" toast existed, but nothing ever re-checked.

@@ -127,3 +127,75 @@ test.describe('interactive performance', () => {
     expect(ms, `boot to interactive took ${ms} ms`).toBeLessThan(4000);
   });
 });
+
+/**
+ * A campus, not a single hall.
+ *
+ * The app was written around a handful of halls and degraded linearly: an
+ * update cost 3.8 ms at one hall and 15.6 ms at sixty, which is the whole
+ * frame budget. Two things were responsible, and only one of them was the
+ * obvious one.
+ *
+ *   1. Every keystroke re-graded and re-rendered every hall's row, including
+ *      an SLA check at its own pressure and a full inventory rollup — sixty
+ *      of each to move one slider, when only the active hall had changed.
+ *
+ *   2. The larger cost, and the surprising one: `drawChart` opened by reading
+ *      `parentElement.clientWidth`. That is a layout read, so it flushed every
+ *      DOM mutation the previous update had queued — and its cost scaled with
+ *      the whole 7,000 px page, not with the chart. The canvas was doing
+ *      IDENTICAL work at both sizes: 22 strokes and 26 labels a frame.
+ */
+test.describe('fleet scale', () => {
+  const seed = async (page, n) => {
+    await page.goto('./planner.html');
+    await page.locator('#selftest-badge').filter({ hasText: 'passed' }).waitFor();
+    // Saves are debounced 400 ms, so the key may not exist yet.
+    await page.waitForFunction(() => localStorage.getItem('sdc_hep_v4') !== null);
+    await page.evaluate((count) => {
+      const key = 'sdc_hep_v4'; // src/state/persistence.js
+      const raw = JSON.parse(localStorage.getItem(key));
+      const one = raw.hallProfiles[0];
+      raw.hallProfiles = Array.from({ length: count }, (_, i) => ({
+        ...JSON.parse(JSON.stringify(one)), name: `Hall ${i + 1}`,
+      }));
+      localStorage.setItem(key, JSON.stringify(raw));
+    }, n);
+    await page.reload();
+    await page.locator('#selftest-badge').filter({ hasText: 'passed' }).waitFor();
+  };
+
+  const frameMs = (page) =>
+    page.evaluate(() => {
+      const el = /** @type {HTMLInputElement} */ (document.getElementById('slider-a-temp'));
+      const fire = () => el.dispatchEvent(new Event('input', { bubbles: true }));
+      for (let i = 0; i < 5; i++) fire();
+      const t0 = performance.now();
+      const K = 40;
+      for (let i = 0; i < K; i++) { el.value = String(68 + (i % 10) * 0.1); fire(); }
+      return (performance.now() - t0) / K;
+    });
+
+  test('sixty halls still update inside a frame', async ({ page }) => {
+    await seed(page, 60);
+    await expect(page.locator('#hall-tabs button')).toHaveCount(60);
+    const ms = await frameMs(page);
+    // eslint-disable-next-line no-console
+    console.log(`  60 halls: ${ms.toFixed(2)} ms/update`);
+    expect(ms, `60 halls: ${ms.toFixed(2)} ms per update`).toBeLessThan(16.7);
+  });
+
+  test('cost grows far slower than the hall count', async ({ page }) => {
+    await seed(page, 1);
+    const one = await frameMs(page);
+    await seed(page, 60);
+    const sixty = await frameMs(page);
+    // eslint-disable-next-line no-console
+    console.log(`  1 hall: ${one.toFixed(2)} ms | 60 halls: ${sixty.toFixed(2)} ms`);
+    // Sixty times the halls must not mean anything like sixty times the work.
+    // Before the fixes this ratio was ~4x and the absolute number was at the
+    // frame budget; the point of the assertion is that it stays sub-linear.
+    expect(sixty, `1 hall ${one.toFixed(2)} ms -> 60 halls ${sixty.toFixed(2)} ms`)
+      .toBeLessThan(one * 6 + 4);
+  });
+});
