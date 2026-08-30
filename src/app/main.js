@@ -2049,6 +2049,40 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushProfiles();
 });
 
+// ── Another tab wrote our storage key ───────────────────────────────────────
+// Two tabs open on the same site is ordinary — one on the hall you are
+// planning, one on a hall you are checking. Both wrote this key on a 400 ms
+// debounce with no awareness of each other, so whichever typed last silently
+// overwrote the other's halls, SLAs and scenarios. Nothing warned anybody; the
+// work was simply gone on the next reload.
+//
+// `storage` fires only in the OTHER tabs, never the one that wrote, so this
+// cannot loop. The rule is deliberately conservative: adopt the other tab's
+// state when this tab has nothing in flight, and when it does, say so and let
+// the operator choose rather than picking a winner on their behalf.
+let externalWrite = null;
+window.addEventListener('storage', (e) => {
+  if (e.key !== LS_KEY_V4 || e.newValue == null) return;
+  // A pending save means this tab has unsaved edits of its own. Overwriting
+  // them to honour the other tab would be the same bug pointing the other way.
+  if (saveTimer) {
+    if (externalWrite) return; // already asked; do not stack toasts
+    externalWrite = e.newValue;
+    toast(
+      'This site was changed in another tab. Your unsaved edits here are kept — ' +
+      'reload to take the other tab\'s version instead.',
+      { kind: 'warn', duration: 12000 },
+    );
+    return;
+  }
+  // Nothing in flight here: the other tab is simply newer. Adopt it.
+  if (loadProfiles()) {
+    renderHallTabs(); renderHallEditor(); renderSlaTabs(); renderSlaEditor();
+    syncAllControls(); applyElevation(); update();
+    toast('Updated from a change made in another tab.', { kind: 'info', duration: 5000 });
+  }
+});
+
 /**
  * Restore persisted profiles. Parsing and cross-version migration live in
  * src/state/persistence.js (pure, fixture-tested); this only reads storage and

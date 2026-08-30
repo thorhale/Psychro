@@ -2,6 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Security hardening: this page is fully self-contained (no CDNs, fonts,
+     analytics, or API calls). The policy blocks any request to an external
+     host, so injected or tampered code can neither load resources nor
+     exfiltrate. 'unsafe-inline' is required because script and style are
+     inline by design — this is an offline-first app.
+     planner.html carries the same policy; verify-bundle.mjs checks all three. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; manifest-src 'self'; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="referrer" content="no-referrer">
 <title>Privacy Policy — Hall Environment Planner</title>

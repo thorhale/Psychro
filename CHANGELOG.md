@@ -11,6 +11,37 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Fixed — two tabs no longer overwrite each other
+
+Two tabs open on the same site is ordinary: one on the hall you are planning,
+one on a hall you are checking. Both wrote the same storage key on a 400 ms
+debounce with no awareness of each other, so whichever typed last silently
+overwrote the other's halls, SLAs and scenarios. Nothing warned anybody; the
+work was simply gone on the next reload.
+
+The other tab's write is now noticed. If this tab has nothing in flight, its
+state is adopted and the change is announced. If this tab has unsaved edits,
+they are kept and the operator is told to reload if they want the other
+version — picking a winner silently is the bug, in either direction.
+
+### Added — a Content-Security-Policy on every entry point
+
+Only `planner.html` had one. The launcher, the CDU tool and the privacy page —
+three of the four pages a user can land on — had none. All four now carry
+`default-src 'none'` with `connect-src 'self'`, which turns "this app is fully
+offline and sends nothing anywhere" from a claim about our own code into
+something the browser enforces. `verify-bundle.mjs` fails the build if any
+entry point loses it.
+
+An audit of all 44 `innerHTML` writes found **no injection vector** — the
+fields an operator types into are interpolated into quoted attributes with
+quotes escaped, which is sufficient, and the one template that writes a title
+into markup takes it from a hardcoded table. Five payloads across three fields,
+through re-renders and a reload, execute nothing. `test/e2e/security.spec.js`
+pins that, so the next person to reach for innerHTML with a hall name in it
+fails in CI rather than in production.
+
+
 ### Fixed — the chart is legible on a phone
 
 At a 430 px viewport the plot is about 300x180 px, and every label family drew
