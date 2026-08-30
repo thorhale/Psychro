@@ -11,6 +11,36 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+### Added — the plan comes back out as CSV
+
+Trend data came IN and nothing ever went back out, so the last mile — handing a
+BMS operator the set-points, or handing a manager the campus — was retyping
+from a screen.
+
+**Set-point schedule** (Scenarios & Export): the ramp ladder as one row per
+step, with elapsed hours, real clock times, temperature in both °F and °C, RH,
+and dew point solved at the hall's own pressure. It uses the same rungs the
+briefing narrates, passed in rather than re-derived, so the file cannot
+disagree with the chart it came from. With no ramp to schedule it says so
+instead of writing an empty file.
+
+**Fleet CSV** (Data Hall tabs): every hall on one row — site, elevation,
+pressure and whether that pressure was measured or modelled, current
+condition, SLA verdict with the reason, plant rates, efficiency, volume and
+both airflows.
+
+Two decisions worth stating because they are the ones that mislead if you get
+them wrong. A hall nobody has set up reads **"not set up"**, never "in SLA" —
+it is not compliant and it is not failing, and printing a pass is a lie a
+manager acts on. And a missing plant rate is left **blank**, not zero: 0 °F/hr
+means "this plant cannot warm", blank means "nobody has entered it yet".
+
+Both are pure string builders in `src/core/bmsexport.js` with RFC 4180 quoting,
+because "Hall 2, Building A" is an ordinary name and unquoted it shifts every
+later column. Ten unit tests cover the quoting, the clock arithmetic, and the
+two decisions above.
+
+
 ### Changed — a campus of halls is now as cheap as one
 
 The app was written around a handful of halls and degraded linearly: an update

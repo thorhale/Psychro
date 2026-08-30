@@ -180,7 +180,6 @@ test.describe('fleet scale', () => {
     await seed(page, 60);
     await expect(page.locator('#hall-tabs button')).toHaveCount(60);
     const ms = await frameMs(page);
-    // eslint-disable-next-line no-console
     console.log(`  60 halls: ${ms.toFixed(2)} ms/update`);
     expect(ms, `60 halls: ${ms.toFixed(2)} ms per update`).toBeLessThan(16.7);
   });
@@ -190,7 +189,6 @@ test.describe('fleet scale', () => {
     const one = await frameMs(page);
     await seed(page, 60);
     const sixty = await frameMs(page);
-    // eslint-disable-next-line no-console
     console.log(`  1 hall: ${one.toFixed(2)} ms | 60 halls: ${sixty.toFixed(2)} ms`);
     // Sixty times the halls must not mean anything like sixty times the work.
     // Before the fixes this ratio was ~4x and the absolute number was at the
