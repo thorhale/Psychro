@@ -10,14 +10,14 @@
 import {
   pressureFromAltitude,
   satPressure,
-  vaporPressure,
   humidityRatio,
   humidityRatioFromPw,
   humidityRatioG,
   saturationHumidityRatio,
   vaporPressureFromW,
   rhFromW,
-  dewPoint,
+  dewPointFrom,
+  rhFromDewPoint,
   specificVolume,
 } from '../core/psychro.js';
 import { applyBrand } from '../config/brand.js';
@@ -282,12 +282,18 @@ const clampRH = r => Math.max(1, Math.min(100, r));
 // move would take via planMove().
 const clampTargetF = clampF;
 // Dew point ↔ RH at a fixed dry-bulb (bijective; DP is the moisture truth-teller:
-// constant DP = constant water, rising DP = adding water). dewPoint() is an
-// exact Newton inversion of the saturation curve and rh_from_dpF is the same
-// curve as a ratio, so the pair are exact inverses — the invariant the
-// temperature slider depends on.
-const dpF_from   = (tempF, rh)  => { const pw = vaporPressure(fToC(tempF), rh); return pw > 0 ? cToF(dewPoint(pw)) : -100; };
-const rh_from_dpF = (tempF, dpF) => clampRH(satPressure(fToC(dpF)) / satPressure(fToC(tempF)) * 100);
+// constant DP = constant water, rising DP = adding water).
+//
+// Both directions now go through the pressure-aware pair, which are exact
+// inverses to 1e-6 (pinned in test/invariants.test.js) — the invariant the
+// temperature slider depends on. They were the cheap saturation-curve forms,
+// which are neither pressure-aware nor consistent with the dew point the table
+// beside them prints: a hall at altitude read one dew point on its slider and a
+// different one in its properties row.
+const dpF_from   = (tempF, rh)  =>
+  { const t = dewPointFrom(fToC(tempF), rh, state.pressure); return t != null ? cToF(t) : -100; };
+const rh_from_dpF = (tempF, dpF) =>
+  clampRH(rhFromDewPoint(fToC(tempF), fToC(dpF), state.pressure));
 // Dew point has its own slider bounds: it runs far below the 32°F dry-bulb
 // floor (68°F at 1% RH dews out near −26°F), so clampF would pin the thumb and
 // misreport dry air. Ceiling is the dry-bulb max — DP can never exceed it.

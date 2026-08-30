@@ -88,3 +88,70 @@ test.describe('chart appearance', () => {
     await expect(page.locator(CHART)).toHaveScreenshot('chart-zoom-sla.png');
   });
 });
+
+/**
+ * The static-layer cache keeps the grid, curves and envelopes on an offscreen
+ * canvas and blits them, because a profile put that work at 44 % of every
+ * frame during a slider drag. Its one failure mode is a stale key: an input
+ * the cache does not watch changes, the layer is reused, and the chart quietly
+ * stops updating.
+ *
+ * So these tests change each keyed input in turn and require the pixels to
+ * move. A missing key entry fails here as "the chart didn't change", which is
+ * exactly the bug.
+ */
+test.describe('chart static-layer cache invalidation', () => {
+  /** A cheap content hash of the canvas bitmap. */
+  const shot = (page) =>
+    page.evaluate(() => {
+      const c = /** @type {HTMLCanvasElement} */ (document.getElementById('psychCanvas'));
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let h = 2166136261;
+      for (let i = 0; i < d.length; i += 17) { h ^= d[i]; h = Math.imul(h, 16777619); }
+      return h >>> 0;
+    });
+
+  const expectRedraw = async (page, label, act) => {
+    const before = await shot(page);
+    await act();
+    await settle(page);
+    expect(await shot(page), `${label} must redraw the static layer`).not.toBe(before);
+  };
+
+  test('every keyed input actually forces a redraw', async ({ page }) => {
+    await page.goto('./planner.html');
+    await page.evaluate(() => document.querySelectorAll('details').forEach((d) => (d.open = true)));
+    await settle(page);
+
+    // Site pressure — the envelopes and every curve are drawn at it.
+    await expectRedraw(page, 'elevation', async () => {
+      await page.fill('#hall-elev', '9000');
+      await page.dispatchEvent('#hall-elev', 'input');
+    });
+
+    // The view: zoom is a pure static-layer change.
+    await expectRedraw(page, 'zoom', () => page.locator('#zoom-in').click());
+
+    // Legend visibility, one item.
+    await expectRedraw(page, 'legend toggle', () =>
+      page.locator('.leg-item', { hasText: 'A4' }).first().click());
+
+    // The active contract. The shipped profiles are locked (their inputs are
+    // disabled by design), so switch profiles rather than editing bounds —
+    // that moves both the index and the bounds the polygon is drawn from.
+    await expectRedraw(page, 'SLA profile switch', () =>
+      page.locator('#sla-tabs .sla-tab').nth(1).click());
+  });
+
+  test('moving Current still redraws with the layer reused', async ({ page }) => {
+    await page.goto('./planner.html');
+    await settle(page);
+    // The dynamic half must keep working on a cache HIT — this is the other
+    // side of the same coin, and the case a slider drag actually exercises.
+    const before = await shot(page);
+    await page.fill('#a-temp', '95');
+    await page.dispatchEvent('#a-temp', 'input');
+    await settle(page);
+    expect(await shot(page)).not.toBe(before);
+  });
+});
