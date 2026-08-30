@@ -118,6 +118,31 @@ function buildExportCanvas() {
  * do-not-cross numbers, site pressure basis, and a QR deep-link to the live
  * planner. Meant to be laminated and taped to the hall door.
  */
+/**
+ * Draw text broken to fit a width, returning the y after the last line.
+ *
+ * Canvas has no text wrapping, so every fillText on this sheet is a promise
+ * that the string fits — one that nothing checked. `test/e2e/artifacts.spec.js`
+ * now asserts nothing is printed past the page edge.
+ */
+function wrapText(x, text, left, top, maxWidth, lineHeight) {
+  const words = String(text).split(' ');
+  let line = '';
+  let y = top;
+  for (const w of words) {
+    const next = line ? `${line} ${w}` : w;
+    if (x.measureText(next).width > maxWidth && line) {
+      x.fillText(line, left, y);
+      y += lineHeight;
+      line = w;
+    } else {
+      line = next;
+    }
+  }
+  if (line) { x.fillText(line, left, y); y += lineHeight; }
+  return y;
+}
+
 function buildPlacardCanvas() {
   const scale = 2;
   const W = 620, H = 850;
@@ -144,9 +169,15 @@ function buildPlacardCanvas() {
   x.fillStyle = '#10151b'; x.font = 'bold 22px sans-serif';
   x.fillText([hall.name, hall.siteName].filter(Boolean).join(' — ') || 'Hall', 24, 100);
   x.fillStyle = '#41576b'; x.font = '13px monospace';
-  x.fillText(
+  // This line ran off the right edge of the sheet: the pressure-basis text
+  // grows with the site ("standard atmosphere at elevation, ±2 kPa") and
+  // nothing measured it, so the last words were simply printed past the paper.
+  // Wrap to the page rather than truncate — every clause here is load-bearing,
+  // and the dew-point caveat is the one an operator most needs to read.
+  const afterSubtitle = wrapText(
+    x,
     `${Math.round(hall.elevFt ?? 0).toLocaleString()} ft · ${shell.pressureBasisText()} — dew-point cap evaluated at this pressure`,
-    24, 122,
+    24, 122, W - 48, 16,
   );
 
   // Do-not-cross table from the active SLA
@@ -162,7 +193,10 @@ function buildPlacardCanvas() {
     ...(sla.maxDtHr != null ? [['Ramp: temperature', '—', `${Math.round(dispDeltaT(sla.maxDtHr) * 10) / 10}${deltaLabel()}/hr`]] : []),
     ...(sla.maxDrhHr != null ? [['Ramp: RH', '—', `${sla.maxDrhHr}%/hr`]] : []),
   ];
-  let ty = 156;
+  // Flow from the subtitle instead of a fixed 156: the subtitle can now be one
+  // line or two depending on the site, and a hard-coded heading position had
+  // the second line crowding into this one.
+  let ty = Math.max(156, afterSubtitle + 18);
   x.fillStyle = BRAND.accentDark; x.font = 'bold 13px sans-serif';
   x.fillText(`DO NOT CROSS — ${sla.name || 'SLA'}`, 24, ty);
   ty += 10;

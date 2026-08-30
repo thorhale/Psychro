@@ -233,3 +233,93 @@ test.describe('single-file build integrity', () => {
     expect(requests, 'zero network requests from the offline file').toEqual([]);
   });
 });
+
+/**
+ * The placard is the artifact that leaves the building — laminated, taped to a
+ * hall door, read by someone who will not have the app open.
+ *
+ * Canvas has no text wrapping, so every `fillText` on that sheet is an
+ * unchecked promise that the string fits. It did not: the site-pressure line
+ * grows with the site ("standard atmosphere at elevation, ±2 kPa") and its last
+ * words were printed past the edge of the paper. Nothing caught it because
+ * nothing looked at the pixels.
+ */
+test.describe('door placard fits the page', () => {
+  /** Render the placard and report the rightmost column containing any ink. */
+  const inkExtent = (page) =>
+    page.evaluate(() => new Promise((resolve) => {
+      const realCreate = document.createElement.bind(document);
+      /** @type {HTMLCanvasElement[]} */
+      const made = [];
+      // @ts-ignore - deliberately patched for the duration of one click
+      document.createElement = (tag, ...rest) => {
+        const el = realCreate(tag, ...rest);
+        if (tag === 'canvas') made.push(/** @type {any} */ (el));
+        return el;
+      };
+      document.getElementById('export-placard').click();
+      setTimeout(() => {
+        // @ts-ignore
+        document.createElement = realCreate;
+        const c = made.slice().sort((a, b) => b.width * b.height - a.width * a.height)[0];
+        if (!c) { resolve(null); return; }
+        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+        let rightmost = 0;
+        // Anything that is not the white page ground counts as ink.
+        for (let y = 0; y < c.height; y += 2) {
+          for (let px = c.width - 1; px > rightmost; px--) {
+            const i = (y * c.width + px) * 4;
+            if (d[i] < 245 || d[i + 1] < 245 || d[i + 2] < 245) { rightmost = px; break; }
+          }
+        }
+        resolve({ rightmost, width: c.width });
+      }, 900);
+    }));
+
+  test('nothing is printed past the right edge', async ({ page }) => {
+    await page.goto('./planner.html');
+    await page.evaluate(() => document.querySelectorAll('details').forEach((d) => (d.open = true)));
+    // A long site name is what pushed the line over in the first place.
+    await page.fill('#hall-site', 'Goodyear, AZ');
+    await page.dispatchEvent('#hall-site', 'input');
+    await page.fill('#hall-name', 'Hall 1');
+    await page.dispatchEvent('#hall-name', 'input');
+
+    const r = await inkExtent(page);
+    expect(r, 'placard canvas was not produced').not.toBeNull();
+    // The header band is full-bleed by design, so ink reaching the very edge is
+    // expected — what must not happen is ink in the last few columns on the
+    // TEXT rows. Sample below the band only.
+    expect(r.rightmost).toBeLessThanOrEqual(r.width);
+
+    const textOverflow = await page.evaluate(() => new Promise((resolve) => {
+      const realCreate = document.createElement.bind(document);
+      const made = [];
+      // @ts-ignore
+      document.createElement = (tag, ...rest) => {
+        const el = realCreate(tag, ...rest);
+        if (tag === 'canvas') made.push(el);
+        return el;
+      };
+      document.getElementById('export-placard').click();
+      setTimeout(() => {
+        // @ts-ignore
+        document.createElement = realCreate;
+        const c = made.slice().sort((a, b) => b.width * b.height - a.width * a.height)[0];
+        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+        // Rows below the header band (band is 67 CSS px, canvas is 2x).
+        const top = 140, bottom = Math.round(c.height * 0.35);
+        const margin = Math.round(c.width * 0.02); // the 24px page margin at 2x
+        let worst = 0;
+        for (let y = top; y < bottom; y++) {
+          for (let px = c.width - 1; px >= c.width - margin; px--) {
+            const i = (y * c.width + px) * 4;
+            if (d[i] < 245 || d[i + 1] < 245 || d[i + 2] < 245) worst = Math.max(worst, px);
+          }
+        }
+        resolve(worst);
+      }, 900);
+    }));
+    expect(textOverflow, 'text reached the page margin — it is being clipped').toBe(0);
+  });
+});
