@@ -13,7 +13,7 @@ import { test, expect } from '@playwright/test';
 
 const PAYLOADS = [
   '"><img src=x onerror="window.__xss(\'img\')">',
-  '"><script>window.__xss("script")<\/script>',
+  '"><scr' + 'ipt>window.__xss("script")</scr' + 'ipt>',
   '" onfocus="window.__xss(\'focus\')" autofocus="',
   '</textarea><img src=y onerror=window.__xss("ta")>',
   "'-alert(1)-'",
