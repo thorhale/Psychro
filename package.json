@@ -2,7 +2,7 @@
   "name": "psychro",
   "version": "2.2.0",
   "private": true,
-  "description": "Stream Hall Environment Planner \u2014 ASHRAE TC 9.9 psychrometric planning tool for data center halls",
+  "description": "Stream Hall Environment Planner — ASHRAE TC 9.9 psychrometric planning tool for data center halls",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -27,6 +27,7 @@
     "validate:cdu": "node cdu/tools/validate.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@capacitor/android": "^8.4.2",
     "@capacitor/app": "^8.1.1",
     "@capacitor/assets": "^3.0.5",
@@ -42,6 +43,7 @@
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.0",
     "@types/node": "^26.1.1",
+    "axe-core": "^4.13.0",
     "eslint": "^10.8.0",
     "globals": "^17.8.0",
     "http-server": "^14.1.1",

@@ -30,7 +30,12 @@
        editing hex codes here. */
     --bg:#0d1b2a; --surface:#13263a; --border:#1f3a52;
     --accent:#10a8c6; --accent2:#10a8c6; --danger:#f85149;
-    --ok:#3fb950; --warn:#f0a500; --text:#e6edf3; --muted:#7d96ad;
+    /* These three were each a few hundredths short of WCAG AA against the
+       background they actually composite onto — the active hall row and the
+       pass badge both tint their own background, so the page-level ratio was
+       never the one that mattered. Lifted 8-9% toward white, which is the
+       least that clears 4.5:1 everywhere they appear. */
+    --ok:#4ebf5e; --warn:#f0a500; --text:#e6edf3; --muted:#879eb4;
     --stream-navy:#193c76; --stream-teal:#10a8c6;
     --brand-primary:#193c76; --brand-primary-dark:#11284e; --brand-primary-light:#4c6794;
     --brand-accent:#10a8c6; --brand-accent-dark:#0b758b;
@@ -227,7 +232,9 @@
   /* A hint inside a field label is a sentence, not a heading: uppercasing it
      with the label turned "optional — a barometer beats the elevation
      estimate" into three lines of shouting above a single input. */
-  .sla-field label .cap-hint { font-size:.66rem; opacity:.8; }
+  /* .85, not .8: at .8 this composites to #6f8498 on the card, which is
+     4.50:1 — right on the WCAG AA line and reported as failing. */
+  .sla-field label .cap-hint { font-size:.66rem; opacity:.85; }
   /* Unit symbols are case-significant: kPa is not KPA, and an engineer reads
      the difference as sloppiness. Exempt them from the label's uppercasing. */
   .sla-field input { background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-family:var(--mono); font-size:.85rem; padding:5px 8px; outline:none; -moz-appearance:textfield; }
@@ -355,6 +362,16 @@
   .badge-info { background:var(--tint-accent); border:1px solid var(--tint-accent-line); color:var(--accent2); }
 
   .psych-wrap { width:100%; }
+  /* Visible to assistive technology, not on screen. The clip-path/1px idiom
+     rather than display:none, which removes it from the accessibility tree. */
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+             overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+  /* Operators who have asked their OS for less motion get a static ramp
+     playback: the scrubber still works, it just does not animate itself. */
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+  }
   #psychCanvas { width:100%; height:auto; display:block; border-radius:4px; cursor:grab; touch-action:none; }
   #psychCanvas.grabbing { cursor:grabbing; }
   .chart-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; flex-wrap:wrap; }
@@ -365,7 +382,11 @@
   .legend { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
   .leg-item { display:flex; align-items:center; gap:6px; font-size:.7rem; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:4px 9px; cursor:pointer; font-family:var(--sans); transition:all .12s; }
   .leg-item:hover { border-color:var(--accent2); }
-  .leg-item.leg-off { opacity:.4; }
+  /* .55, not .4. These are toggles, not disabled controls — they stay
+     clickable, so they owe the same 4.5:1 as any other label, and .4
+     composited to 3.39:1. The strikethrough carries the off-state meaning
+     without leaning on dimness alone, which colour-blind users cannot read. */
+  .leg-item.leg-off { opacity:.55; text-decoration:line-through; }
   .leg-item.leg-off .leg-line, .leg-item.leg-off .leg-dot { filter:grayscale(1); }
   .legend-hint { font-size:.62rem; color:var(--muted); margin-top:6px; }
   .leg-line { width:20px; height:2px; border-radius:1px; display:inline-block; }
@@ -824,41 +845,45 @@
     <div class="ctl-head"><span class="ctl-dot" style="background:#d4d400"></span><span class="ctl-name">Current</span><span class="ctl-sub">room now · temp &amp; dew pt drive RH</span></div>
     <div class="ctl-row">
       <span class="ctl-k">Temp</span>
-      <input type="range" id="slider-a-temp" min="32" max="130" step="0.1" value="68">
-      <input type="number" id="a-temp" class="ctl-num" value="68" step="any"><span class="ctl-unit tunit">°F</span>
+      <input type="range" id="slider-a-temp" aria-label="Current dry-bulb temperature, slider" min="32" max="130" step="0.1" value="68">
+      <input type="number" id="a-temp" aria-label="Current dry-bulb temperature" class="ctl-num" value="68" step="any"><span class="ctl-unit tunit">°F</span>
     </div>
     <div class="ctl-row">
       <span class="ctl-k">Dew pt</span>
-      <input type="range" id="slider-a-dp" min="-40" max="100" step="0.1" value="46">
-      <input type="number" id="a-dp" class="ctl-num" value="46" step="any"><span class="ctl-unit tunit">°F</span>
+      <input type="range" id="slider-a-dp" aria-label="Current dew point, slider" min="-40" max="100" step="0.1" value="46">
+      <input type="number" id="a-dp" aria-label="Current dew point" class="ctl-num" value="46" step="any"><span class="ctl-unit tunit">°F</span>
     </div>
     <div class="ctl-row">
       <span class="ctl-k">RH</span>
-      <input type="range" id="slider-a-rh" min="1" max="100" step="0.1" value="45">
-      <input type="number" inputmode="decimal" id="a-rh" class="ctl-num" value="45" step="any"><span class="ctl-unit">%</span>
+      <input type="range" id="slider-a-rh" aria-label="Current relative humidity, slider" min="1" max="100" step="0.1" value="45">
+      <input type="number" inputmode="decimal" id="a-rh" aria-label="Current relative humidity" class="ctl-num" value="45" step="any"><span class="ctl-unit">%</span>
     </div>
   </div>
   <div class="ctl-group ctl-b">
     <div class="ctl-head"><span class="ctl-dot" style="background:var(--accent)"></span><span class="ctl-name">Target</span><span class="ctl-sub" id="couple-sub">—</span><span class="ctl-flag" id="wflag"></span></div>
     <div class="ctl-row">
       <span class="ctl-k">Temp</span>
-      <input type="range" id="slider-b-temp" min="32" max="130" step="0.1" value="87">
-      <input type="number" id="b-temp" class="ctl-num" value="87" step="any"><span class="ctl-unit tunit">°F</span>
+      <input type="range" id="slider-b-temp" aria-label="Target dry-bulb temperature, slider" min="32" max="130" step="0.1" value="87">
+      <input type="number" id="b-temp" aria-label="Target dry-bulb temperature" class="ctl-num" value="87" step="any"><span class="ctl-unit tunit">°F</span>
     </div>
     <div class="ctl-row">
       <span class="ctl-k">Dew pt</span>
-      <input type="range" id="slider-b-dp" min="-40" max="100" step="0.1" value="52">
-      <input type="number" id="b-dp" class="ctl-num" value="52" step="any"><span class="ctl-unit tunit">°F</span>
+      <input type="range" id="slider-b-dp" aria-label="Target dew point, slider" min="-40" max="100" step="0.1" value="52">
+      <input type="number" id="b-dp" aria-label="Target dew point" class="ctl-num" value="52" step="any"><span class="ctl-unit tunit">°F</span>
     </div>
     <div class="ctl-row">
       <span class="ctl-k">RH</span>
-      <input type="range" id="slider-b-rh" min="1" max="100" step="0.1" value="28">
-      <input type="number" inputmode="decimal" id="b-rh" class="ctl-num" value="28" step="any"><span class="ctl-unit">%</span>
+      <input type="range" id="slider-b-rh" aria-label="Target relative humidity, slider" min="1" max="100" step="0.1" value="28">
+      <input type="number" inputmode="decimal" id="b-rh" aria-label="Target relative humidity" class="ctl-num" value="28" step="any"><span class="ctl-unit">%</span>
     </div>
   </div>
 
   <!-- Headline + computed details (merged readout) -->
   <div class="control-readout" id="control-readout"></div>
+  <!-- Announced to screen readers only, and only when the SLA verdict or the
+       binding constraint actually CHANGES. Mirroring the whole readout here
+       would fire on every keystroke and be worse than saying nothing. -->
+  <div id="a11y-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 </div>
 
 <!-- SCENARIOS + EXPORT CARD -->
