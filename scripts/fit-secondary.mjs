@@ -72,82 +72,178 @@ const R_V = 0.4615;
 }
 
 // ── 2. Transport properties ─────────────────────────────────────────────────
-// Fit Sutherland constants for each pure component by minimising the mixture
-// error through the Wilke rule. Two parameters per component per property, found
-// by a coarse-to-fine grid search — cheap, and the surface is smooth and convex
-// enough that this lands on the optimum.
+// Per-component dilute-gas polynomials combined by the Wilke rule, times an
+// empirical closure term carrying the pressure and composition dependence the
+// component model cannot express.
+//
+// This replaced Sutherland two-parameter components, which were worth 0.32 %
+// and 0.43 %. Decomposing that error showed where it actually lived:
+//
+//   * At 1 % RH — essentially pure air, Wilke barely participating — the error
+//     still averaged 0.24 %. The mixing rule was not the problem; a
+//     two-parameter Sutherland cannot track CoolProp's dry-air viscosity over
+//     the domain. A degree-4 polynomial tracks it to 1.8e-4 %.
+//   * What remained was a symmetric spread growing with water content and
+//     moving systematically with PRESSURE at fixed temperature and RH — which
+//     a temperature-only component model has no term for.
+//
+// Fitting is two stages: Levenberg–Marquardt on the component polynomials
+// (a monomial basis over this narrow range is badly conditioned, hence the
+// centred `u` and the damping), then a linear least-squares closure term
+// refined by IRLS toward a minimax solution — least squares alone leaves the
+// peak error almost untouched, which is the number the tolerance is set from.
+//
+// As with the Sutherland fit before it, the φ terms and the mixture value must
+// come from the SAME constants, or the fitted numbers will not reproduce once
+// shipped.
 const M_AIR = 28.9645;
 const M_H2O = 18.01528;
+const trU = (T) => (T - 300) / 50;
+const trPi = (pk) => (pk - 101.325) / 101.325;
+const trPoly = (c, u) => { let v = 0; for (let j = c.length - 1; j >= 0; j--) v = v * u + c[j]; return v; };
+const phiOf = (mi, mj, Mi, Mj) =>
+  Math.pow(1 + Math.sqrt(mi / mj) * Math.pow(Mj / Mi, 0.25), 2) / Math.sqrt(8 * (1 + Mi / Mj));
 
-function wilke(xa, xv, va, vv, pa, pv, Ma, Mv) {
-  const phi_av = Math.pow(1 + Math.sqrt(pa / pv) * Math.pow(Mv / Ma, 0.25), 2) / Math.sqrt(8 * (1 + Ma / Mv));
-  const phi_va = Math.pow(1 + Math.sqrt(pv / pa) * Math.pow(Ma / Mv, 0.25), 2) / Math.sqrt(8 * (1 + Mv / Ma));
-  return (xa * va) / (xa + xv * phi_av) + (xv * vv) / (xv + xa * phi_va);
-}
+const pts = rows
+  .filter((r) => r[col.mu_pas] != null && r[col.k_wmk] != null)
+  .map((r) => {
+    const t = r[col.t_c], rh = r[col.rh_pct], pk = r[col.p_kpa];
+    const xv = Math.min(Math.max(vaporPressure(t, rh) / pk, 0), 1);
+    return { u: trU(t + 273.15), pi: trPi(pk), xa: 1 - xv, xv, mu: r[col.mu_pas], k: r[col.k_wmk] };
+  });
 
-const pts = rows.map((r) => {
-  const t = r[col.t_c], rh = r[col.rh_pct], p = r[col.p_kpa];
-  const pw = vaporPressure(t, rh);
-  const xv = Math.min(Math.max(pw / p, 0), 1);
-  return { T: t + 273.15, xa: 1 - xv, xv, mu: r[col.mu_pas], k: r[col.k_wmk] };
-});
-
-function sutherland(T, C, S) {
-  return (C * Math.pow(T, 1.5)) / (T + S);
-}
-
-/**
- * Grid-search four Sutherland constants (air C,S and vapour C,S) for one property.
- *
- * `muParams` supplies the viscosities that drive the Wilke φ terms. For the
- * viscosity fit that is the candidate parameter set itself (φ and the mixture
- * value must come from the same constants, or the fitted numbers will not
- * reproduce in the module — which is exactly the trap that made a "0.68 %" fit
- * measure 5.9 % once shipped). For conductivity it is the already-fitted
- * viscosity constants.
- */
-function fitTransport(target, seed, label, muParams) {
-  let best = { err: Infinity, params: seed };
-  let ranges = seed.map((v) => [v * 0.3, v * 3]);
-
-  for (let pass = 0; pass < 7; pass++) {
-    const N = 9;
-    const grids = ranges.map(([lo, hi]) =>
-      Array.from({ length: N }, (_, i) => lo + ((hi - lo) * i) / (N - 1)),
-    );
-    for (const Ca of grids[0])
-      for (const Sa of grids[1])
-        for (const Cv of grids[2])
-          for (const Sv of grids[3]) {
-            const mp = muParams ?? [Ca, Sa, Cv, Sv];
-            let max = 0;
-            for (const q of pts) {
-              const muA = sutherland(q.T, mp[0], mp[1]);
-              const muV = sutherland(q.T, mp[2], mp[3]);
-              const va = sutherland(q.T, Ca, Sa);
-              const vv = sutherland(q.T, Cv, Sv);
-              const m = wilke(q.xa, q.xv, va, vv, muA, muV, M_AIR, M_H2O);
-              const d = Math.abs(m - q[target]) / q[target];
-              if (d > max) max = d;
-              if (max > best.err) break;
-            }
-            if (max < best.err) best = { err: max, params: [Ca, Sa, Cv, Sv] };
-          }
-    ranges = best.params.map((v, i) => {
-      const span = (ranges[i][1] - ranges[i][0]) / 4;
-      return [v - span, v + span];
-    });
+/** Solve a symmetric normal-equation system by Gaussian elimination. */
+function solve(A, b) {
+  const n = b.length;
+  const M = A.map((r) => Array.from(r)), y = Array.from(b);
+  for (let i = 0; i < n; i++) {
+    let pi = i;
+    for (let r = i + 1; r < n; r++) if (Math.abs(M[r][i]) > Math.abs(M[pi][i])) pi = r;
+    [M[i], M[pi]] = [M[pi], M[i]]; [y[i], y[pi]] = [y[pi], y[i]];
+    if (Math.abs(M[i][i]) < 1e-300) continue;
+    for (let r = i + 1; r < n; r++) {
+      const f = M[r][i] / M[i][i];
+      for (let c = i; c < n; c++) M[r][c] -= f * M[i][c];
+      y[r] -= f * y[i];
+    }
   }
+  const x = new Array(n).fill(0);
+  for (let i = n - 1; i >= 0; i--) {
+    let sm = y[i];
+    for (let c = i + 1; c < n; c++) sm -= M[i][c] * x[c];
+    x[i] = Math.abs(M[i][i]) < 1e-300 ? 0 : sm / M[i][i];
+  }
+  return x;
+}
+/** Weighted linear least squares over an explicit design matrix. */
+function lsq(G, ys, w) {
+  const n = G[0].length;
+  const A = Array.from({ length: n }, () => new Array(n).fill(0));
+  const b = new Array(n).fill(0);
+  for (let i = 0; i < G.length; i++) {
+    const g = G[i], wi = w ? w[i] : 1;
+    for (let j = 0; j < n; j++) {
+      for (let k = 0; k < n; k++) A[j][k] += wi * wi * g[j] * g[k];
+      b[j] += wi * wi * g[j] * ys[i];
+    }
+  }
+  for (let i = 0; i < n; i++) A[i][i] *= 1 + 1e-12;
+  return solve(A, b);
+}
+/** Least-squares polynomial of the given degree in u. */
+const polyLS = (us, ys, deg) =>
+  lsq(us.map((u) => Array.from({ length: deg + 1 }, (_, j) => Math.pow(u, j))), ys, null);
 
-  const [Ca, Sa, Cv, Sv] = best.params;
-  console.log(`\n── ${label} ──`);
-  console.log(`  dry air:  C = ${Ca.toExponential(6)}, S = ${Sa.toFixed(3)}`);
-  console.log(`  vapour:   C = ${Cv.toExponential(6)}, S = ${Sv.toFixed(3)}`);
-  console.log(`  max relative error over the core grid: ${(best.err * 100).toFixed(3)} %`);
-  return best.params;
+/** Levenberg–Marquardt on a residual vector. */
+function lm(p0, resid, iters = 200) {
+  let p = p0.slice(); const n = p.length; let lam = 1e-3;
+  const cost = (q) => resid(q).reduce((a, v) => a + v * v, 0);
+  let c0 = cost(p);
+  for (let it = 0; it < iters; it++) {
+    const r0 = resid(p), m = r0.length;
+    const J = Array.from({ length: n }, () => new Float64Array(m));
+    for (let j = 0; j < n; j++) {
+      const h = Math.abs(p[j]) * 1e-7 + 1e-14, q = p.slice(); q[j] += h;
+      const r1 = resid(q);
+      for (let i = 0; i < m; i++) J[j][i] = (r1[i] - r0[i]) / h;
+    }
+    const A = Array.from({ length: n }, () => new Array(n).fill(0)), b = new Array(n).fill(0);
+    for (let j = 0; j < n; j++) {
+      for (let k = 0; k < n; k++) { let sm = 0; for (let i = 0; i < m; i++) sm += J[j][i] * J[k][i]; A[j][k] = sm; }
+      let sm = 0; for (let i = 0; i < m; i++) sm -= J[j][i] * r0[i]; b[j] = sm;
+    }
+    let improved = false;
+    for (let tries = 0; tries < 30; tries++) {
+      const damped = A.map((r, i) => r.map((v, k) => (i === k ? v * (1 + lam) : v)));
+      const dx = solve(damped, b);
+      const q = p.map((v, i) => v + dx[i]), c1 = cost(q);
+      if (isFinite(c1) && c1 < c0) { p = q; c0 = c1; lam = Math.max(lam * 0.3, 1e-12); improved = true; break; }
+      lam *= 10; if (lam > 1e12) break;
+    }
+    if (!improved) break;
+  }
+  return p;
 }
 
-// Viscosity first (self-consistent φ), then conductivity using those viscosities.
-const muFit = fitTransport('mu', [1.458e-6, 110.4, 1.12e-6, 1064], 'dynamic viscosity', null);
-fitTransport('k', [2.334e-3, 164.54, 1.5e-3, 300], 'thermal conductivity', muFit);
+const basis = (d) => [
+  1, d.u, d.u * d.u, d.pi, d.pi * d.pi, d.xv, d.xv * d.xv,
+  d.u * d.pi, d.u * d.xv, d.pi * d.xv, d.u * d.u * d.pi, d.xv * d.pi * d.pi, d.u * d.xv * d.pi,
+];
+
+// Stage 1 — component polynomials, seeded from the old Sutherland forms so the
+// optimiser starts somewhere physical.
+const sutA = (T) => (1.483059e-6 * Math.pow(T, 1.5)) / (T + 114.626);
+const sutV = (T) => (1.954312e-6 * Math.pow(T, 1.5)) / (T + 650.245);
+const seedGrid = [];
+for (let t = -25; t <= 60; t += 0.5) seedGrid.push(t + 273.15);
+const mixWith = (ca, cv, d, va, vv) => {
+  const ma = trPoly(ca, d.u), mv = trPoly(cv, d.u);
+  const A = va ?? ma, V = vv ?? mv;
+  return (d.xa * A) / (d.xa + d.xv * phiOf(ma, mv, M_AIR, M_H2O))
+       + (d.xv * V) / (d.xv + d.xa * phiOf(mv, ma, M_H2O, M_AIR));
+};
+const muResid = (q) => pts.map((d) => (mixWith(q.slice(0, 5), q.slice(5, 10), d) - d.mu) / d.mu);
+const muFit = lm([
+  ...polyLS(seedGrid.map(trU), seedGrid.map(sutA), 4),
+  ...polyLS(seedGrid.map(trU), seedGrid.map(sutV), 4),
+], muResid);
+const MU_AIR = muFit.slice(0, 5), MU_VAP = muFit.slice(5, 10);
+
+const dryish = pts.filter((d) => d.xv < 0.004);
+const kSeedA = polyLS(dryish.map((d) => d.u), dryish.map((d) => d.k), 4);
+const kResid = (q) =>
+  pts.map((d) => (mixWith(MU_AIR, MU_VAP, d, trPoly(q.slice(0, 5), d.u), trPoly(q.slice(5, 10), d.u)) - d.k) / d.k);
+const kFit = lm([...kSeedA, ...kSeedA.map((v) => v * 0.7)], kResid);
+const K_AIR = kFit.slice(0, 5), K_VAP = kFit.slice(5, 10);
+
+// Stage 2 — closure term, IRLS toward minimax.
+function fitClosure(base, target, label) {
+  const G = pts.map(basis);
+  let w = pts.map(() => 1), best = null;
+  for (let it = 0; it < 40; it++) {
+    const c = lsq(G, pts.map((d) => target(d) / base(d) - 1), w);
+    const res = pts.map((d, i) => (base(d) * (1 + G[i].reduce((a, v, j) => a + v * c[j], 0)) - target(d)) / target(d));
+    const mx = Math.max(...res.map(Math.abs));
+    if (!best || mx < best.mx) best = { mx, c: c.slice() };
+    w = res.map((r, i) => w[i] * (1 + 3 * Math.abs(r) / mx));
+    const mean = w.reduce((a, b) => a + b, 0) / w.length;
+    w = w.map((v) => v / mean);
+  }
+  const res = pts.map((d, i) => (base(d) * (1 + G[i].reduce((a, v, j) => a + v * best.c[j], 0)) - target(d)) / target(d));
+  const rms = Math.sqrt(res.reduce((a, v) => a + v * v, 0) / res.length);
+  console.log(`\n── ${label} ──`);
+  console.log(`  max relative error over the core grid: ${(best.mx * 100).toExponential(3)} %`);
+  console.log(`  RMS:                                   ${(rms * 100).toExponential(3)} %`);
+  return best.c;
+}
+const MU_CORR = fitClosure((d) => mixWith(MU_AIR, MU_VAP, d), (d) => d.mu, 'dynamic viscosity');
+const K_CORR = fitClosure(
+  (d) => mixWith(MU_AIR, MU_VAP, d, trPoly(K_AIR, d.u), trPoly(K_VAP, d.u)), (d) => d.k, 'thermal conductivity');
+
+const emit = (name, a) =>
+  console.log(`const ${name} = [\n  ${a.map((v) => v.toExponential(12)).join(',\n  ')},\n];`);
+console.log('\n── paste into src/core/psychro.js ──');
+emit('MU_AIR', MU_AIR); emit('MU_VAP', MU_VAP);
+emit('K_AIR', K_AIR); emit('K_VAP', K_VAP);
+emit('MU_CORR', MU_CORR); emit('K_CORR', K_CORR);
 console.log('');

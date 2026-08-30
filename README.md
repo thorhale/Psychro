@@ -11,6 +11,11 @@ comparison and measured accuracy table, regenerated in CI on every push, and
 [`docs/provenance.md`](docs/provenance.md) for which standard every single
 number rests on — including the three places this deliberately leaves ASHRAE
 Chapter 1's hand-calculation shortcuts, and what each is worth.
+[`docs/bibliography.md`](docs/bibliography.md) carries the full citations.
+
+The saturation line is additionally checked against Wolfram's IAPWS data — the
+one reference in this repository that does not come from CoolProp, so a
+CoolProp error could not hide behind it.
 
 ## Layout
 

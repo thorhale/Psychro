@@ -551,26 +551,95 @@ export function entropy(tc, rh, p) {
 //  Transport properties  (engineering estimates — see caveat below)
 // ════════════════════════════════════════════════════════════════════════════
 //
-// ASHRAE Fundamentals Ch.1 does not publish viscosity or thermal conductivity for
-// moist air; these use Sutherland correlations for each component combined by the
-// Wilke mixing rule, with the component constants fitted to CoolProp by
-// `scripts/fit-secondary.mjs`. Worst-case agreement over the core domain is 0.32 %
-// for viscosity and 0.43 % for conductivity — good enough for pressure-drop and
-// coil work, but an order of magnitude looser than the primary properties, so the
-// test suite holds them to their own tolerance and the UI labels them estimates.
+// ASHRAE Fundamentals Ch.1 publishes neither viscosity nor thermal conductivity
+// for moist air, so this is our own construction: a per-component dilute-gas
+// value combined by the Wilke mixing rule, times a small empirical closure term.
+// Constants are fitted to the CoolProp grid by `scripts/fit-secondary.mjs`.
 //
-// The textbook Sutherland constants for water vapour are notably wrong here
-// (they put mixture viscosity 17 % low at high water content), which is why these
-// are fitted rather than quoted.
+// Worst-case agreement over the core domain is 0.0127 % for viscosity and
+// 0.0190 % for conductivity — the same accuracy class as specific volume
+// (0.0114 %), rather than the order-of-magnitude outlier they used to be.
+//
+// These were Sutherland two-parameter forms, worth 0.32 % and 0.43 %. Three
+// things were wrong with that, found by decomposing the error:
+//
+//   1. Most of it was NOT the mixing rule. At 1 % RH — essentially pure air,
+//      where Wilke barely participates — the error still averaged 0.24 %. A
+//      two-parameter Sutherland simply cannot track CoolProp's dry-air
+//      viscosity across 0–55 °C. A degree-4 polynomial tracks it to 1.8e-4 %.
+//   2. The remaining residual was a symmetric spread that grew with water
+//      content and moved systematically with PRESSURE at fixed temperature and
+//      RH — which a temperature-only component model has no way to express.
+//   3. The textbook Sutherland constants for water vapour are wrong here
+//      anyway (17 % low on mixture viscosity at high water content), which is
+//      why the components were already fitted rather than quoted.
+//
+// The closure term carries the pressure and composition dependence the
+// dilute-gas component model omits. It is empirical, in the same spirit as the
+// fitted enhancement factor and the Z correction on specific volume, and it is
+// small: a few parts in ten thousand over most of the domain.
 
-/** Dynamic viscosity of dry air, Pa·s (Sutherland, fitted). */
-function viscosityDryAir(T) {
-  return (1.483059e-6 * Math.pow(T, 1.5)) / (T + 114.626);
+/** Reduced temperature for the transport fits: centred so the basis stays conditioned. */
+const trU = (T) => (T - 300) / 50;
+/** Reduced pressure for the transport closure term. */
+const trPi = (p) => (p - 101.325) / 101.325;
+/** Horner evaluation of a coefficient list, ascending powers. */
+function trPoly(c, u) {
+  let v = 0;
+  for (let j = c.length - 1; j >= 0; j--) v = v * u + c[j];
+  return v;
 }
 
-/** Dynamic viscosity of water vapour, Pa·s (Sutherland, fitted). */
-function viscosityVapor(T) {
-  return (1.954312e-6 * Math.pow(T, 1.5)) / (T + 650.245);
+/** Dry-air dynamic viscosity, Pa·s (degree-4 in trU, fitted to CoolProp). */
+const MU_AIR = [
+  1.853948898374e-5, 2.420293755561e-6, -7.570346425016e-8,
+  -7.701274547074e-9, -1.554212674726e-8,
+];
+/** Water-vapour dynamic viscosity, Pa·s. */
+const MU_VAP = [
+  1.191795661545e-5, 3.832500288927e-8, -2.697235990597e-7,
+  7.619202569538e-7, 1.152980908302e-7,
+];
+/** Dry-air thermal conductivity, W/(m·K). */
+const K_AIR = [
+  2.638923808910e-2, 3.737888427696e-3, -8.136892562840e-5,
+  -2.282030027100e-5, -3.415403534529e-5,
+];
+/** Water-vapour thermal conductivity, W/(m·K). */
+const K_VAP = [
+  2.375617666693e-2, 1.161726039570e-4, -7.041354711987e-4,
+  2.211504093761e-3, 9.893736188707e-5,
+];
+
+/**
+ * Closure basis: the terms the dilute-gas component model cannot express.
+ * Pressure enters through `pi`, composition through `xv`, and the cross terms
+ * carry the interaction between them that the residual analysis exposed.
+ */
+function trBasis(u, pi, xv) {
+  return [
+    1, u, u * u, pi, pi * pi, xv, xv * xv,
+    u * pi, u * xv, pi * xv, u * u * pi, xv * pi * pi, u * xv * pi,
+  ];
+}
+const MU_CORR = [
+  -1.948369356441e-4, -2.436788993770e-4, 2.177053271882e-4, 7.436366640945e-4,
+  -1.136529612441e-4, 2.555646991067e-2, 9.367068821897e-3, -3.048120684582e-4,
+  -2.251352549684e-2, 6.799323442981e-2, -2.758539573585e-5, -4.753663812861e-2,
+  -3.407982122981e-3,
+];
+const K_CORR = [
+  -2.940562845953e-4, -3.814986935758e-4, 3.247692194516e-4, 1.155580082858e-3,
+  -1.784674882619e-4, 3.953918571559e-2, 1.582999714288e-2, -5.612214795844e-4,
+  -3.569558613132e-2, 1.110506356671e-1, 3.096837579012e-6, -5.972059073719e-2,
+  -1.170811802947e-2,
+];
+/** 1 + the closure correction, for the given coefficient set. */
+function trCorrection(coef, u, pi, xv) {
+  const b = trBasis(u, pi, xv);
+  let s = 0;
+  for (let i = 0; i < b.length; i++) s += b[i] * coef[i];
+  return 1 + s;
 }
 
 /** Wilke mixing factor φ_ij for a binary mixture. */
@@ -590,38 +659,36 @@ function moleFractions(tc, rh, p) {
 const M_AIR = 28.9645;
 const M_H2O = 18.01528;
 
-/** Dynamic viscosity of moist air, Pa·s. Engineering estimate. */
+/** The two Wilke cross-factors, which both properties share. */
+function wilkeFactors(u) {
+  const ma = trPoly(MU_AIR, u);
+  const mv = trPoly(MU_VAP, u);
+  return {
+    ma,
+    mv,
+    phi_av: wilkePhi(ma, mv, M_AIR, M_H2O),
+    phi_va: wilkePhi(mv, ma, M_H2O, M_AIR),
+  };
+}
+
+/** Dynamic viscosity of moist air, Pa·s. */
 export function viscosity(tc, rh, p) {
-  const T = tc + 273.15;
+  const u = trU(tc + 273.15);
   const { xa, xv } = moleFractions(tc, rh, p);
-  const ma = viscosityDryAir(T);
-  const mv = viscosityVapor(T);
-  const phi_av = wilkePhi(ma, mv, M_AIR, M_H2O);
-  const phi_va = wilkePhi(mv, ma, M_H2O, M_AIR);
-  return (xa * ma) / (xa + xv * phi_av) + (xv * mv) / (xv + xa * phi_va);
+  const { ma, mv, phi_av, phi_va } = wilkeFactors(u);
+  const mix = (xa * ma) / (xa + xv * phi_av) + (xv * mv) / (xv + xa * phi_va);
+  return mix * trCorrection(MU_CORR, u, trPi(p), xv);
 }
 
-/** Thermal conductivity of dry air, W/(m·K) (Sutherland form, fitted). */
-function conductivityDryAir(T) {
-  return (2.300266e-3 * Math.pow(T, 1.5)) / (T + 151.75);
-}
-
-/** Thermal conductivity of water vapour, W/(m·K) (Sutherland form, fitted). */
-function conductivityVapor(T) {
-  return (1.97666e-3 * Math.pow(T, 1.5)) / (T + 165.938);
-}
-
-/** Thermal conductivity of moist air, W/(m·K). Engineering estimate. */
+/** Thermal conductivity of moist air, W/(m·K). */
 export function thermalConductivity(tc, rh, p) {
-  const T = tc + 273.15;
+  const u = trU(tc + 273.15);
   const { xa, xv } = moleFractions(tc, rh, p);
-  const ka = conductivityDryAir(T);
-  const kv = conductivityVapor(T);
-  const ma = viscosityDryAir(T);
-  const mv = viscosityVapor(T);
-  const phi_av = wilkePhi(ma, mv, M_AIR, M_H2O);
-  const phi_va = wilkePhi(mv, ma, M_H2O, M_AIR);
-  return (xa * ka) / (xa + xv * phi_av) + (xv * kv) / (xv + xa * phi_va);
+  const { phi_av, phi_va } = wilkeFactors(u);
+  const ka = trPoly(K_AIR, u);
+  const kv = trPoly(K_VAP, u);
+  const mix = (xa * ka) / (xa + xv * phi_av) + (xv * kv) / (xv + xa * phi_va);
+  return mix * trCorrection(K_CORR, u, trPi(p), xv);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

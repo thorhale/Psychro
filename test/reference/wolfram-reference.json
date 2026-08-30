@@ -1,0 +1,27 @@
+{
+  "_comment": "An INDEPENDENT second source for the saturation line, with no CoolProp anywhere in it. Every other reference in this repo traces back to CoolProp; if CoolProp were wrong, nothing else would catch it. These points come from Wolfram's ThermodynamicData, which implements the IAPWS formulations directly.",
+  "source": "Wolfram ThermodynamicData[\"Water\", ...] via the Wolfram MCP connector",
+  "functions": {
+    "water": "LiquidVaporPhaseBoundary — saturation pressure over liquid water",
+    "ice": "SolidVaporPhaseBoundary — saturation pressure over ice"
+  },
+  "captured": "2026-08-30",
+  "units": "temperature °C, pressure Pa",
+  "precision_note": "Water values are as Wolfram printed them at its default 6 significant figures (relative precision ~1e-6, which is ~20x finer than the 2e-4 bias they are used to measure). Ice values came back at full double precision.",
+  "water": [
+    { "tC": 10, "pPa": 1228.20 },
+    { "tC": 20, "pPa": 2339.32 },
+    { "tC": 25, "pPa": 3169.93 },
+    { "tC": 30, "pPa": 4246.97 },
+    { "tC": 40, "pPa": 7384.94 },
+    { "tC": 50, "pPa": 12351.9 },
+    { "tC": 60, "pPa": 19946.4 }
+  ],
+  "ice": [
+    { "tC": -40, "pPa": 12.841285062428593 },
+    { "tC": -30, "pPa": 38.01239292151045 },
+    { "tC": -20, "pPa": 103.26012895304483 },
+    { "tC": -10, "pPa": 259.9039163292899 },
+    { "tC": -5, "pPa": 401.7637500700661 }
+  ]
+}
