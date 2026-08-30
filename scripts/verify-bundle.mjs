@@ -291,6 +291,31 @@ check(
   `${gzipKb.toFixed(1)} kB`,
 );
 
+// ── Content-Security-Policy on every entry point ────────────────────────────
+// The app's core promise is that it is fully offline and sends nothing
+// anywhere. A CSP is what makes that a browser-enforced guarantee rather than
+// a claim about our own code: `default-src 'none'` with `connect-src 'self'`
+// means injected or tampered script cannot reach an external host at all.
+//
+// planner.html had one; the launcher, the CDU tool and the privacy page did
+// not, so three of the four pages a user can land on were unprotected.
+for (const [label, rel] of [
+  ['launcher', 'index.html'],
+  ['planner', 'planner.html'],
+  ['CDU tool', join('cdu', 'index.html')],
+  ['privacy page', 'privacy.html'],
+]) {
+  const file = join(dist, rel);
+  if (!existsSync(file)) { check(`${label} exists to carry a CSP`, false, rel); continue; }
+  const html = readFileSync(file, 'utf8');
+  const has = html.includes('http-equiv="Content-Security-Policy"');
+  check(`${label} carries a CSP`, has, rel);
+  if (has) {
+    check(`${label} CSP forbids external hosts`,
+      html.includes("default-src 'none'") && html.includes("connect-src 'self'"), rel);
+  }
+}
+
 // ── Report ──────────────────────────────────────────────────────────────────
 const width = Math.max(...checks.map((c) => c.name.length));
 for (const c of checks) {
