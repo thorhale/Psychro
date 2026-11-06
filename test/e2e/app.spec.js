@@ -39,6 +39,27 @@ async function expandAll(page) {
   await page.evaluate(() => document.querySelectorAll('details').forEach((d) => (d.open = true)));
 }
 
+/**
+ * Put the active hall at a known elevation, the way an operator would.
+ *
+ * The app ships no site (a fresh install sits at sea level), so any test that
+ * pins a figure computed at a real site's pressure has to say which site.
+ */
+async function setElevation(page, ft) {
+  await page.fill('#hall-elev', String(ft));
+  await page.dispatchEvent('#hall-elev', 'input');
+}
+
+/** Add a site through the "+ Add a city / site" form, as an operator would. */
+async function addSite(page, { code, city, state, elevFt }) {
+  await page.locator('#addcity-toggle').click();
+  await page.fill('#ac-code', code);
+  await page.fill('#ac-city', city);
+  await page.fill('#ac-state', state);
+  await page.fill('#ac-elev', String(elevFt));
+  await page.locator('#ac-save').click();
+}
+
 test.describe('boot', () => {
   test('loads clean, self-test green, version stamped', async ({ page }, testInfo) => {
     const errors = watchForErrors(page);
@@ -176,7 +197,7 @@ test.describe('physics wiring', () => {
    * something no unit test can do.
    */
   for (const scenario of [
-    { name: 'default site (Goodyear, 1,066 ft)', elevFt: null },
+    { name: 'fresh install (no site, sea level)', elevFt: null },
     { name: 'Denver site (Westminster, 5,380 ft)', elevFt: 5380 },
   ]) {
     test(`the table agrees with the core — ${scenario.name}`, async ({ page }) => {
@@ -278,12 +299,13 @@ test.describe('sensor validation', () => {
   test('computes RH from a dry-bulb / wet-bulb pair', async ({ page }) => {
     await page.goto('./planner.html');
     await expandAll(page);
+    await setElevation(page, 1066); // the pressure the CoolProp cross-check ran at
     await page.fill('#sv-db', '75');
     await page.dispatchEvent('#sv-db', 'input');
     await page.fill('#sv-wb', '62');
     await page.dispatchEvent('#sv-wb', 'input');
 
-    // 75/62 °F at the default site (1,066 ft → 97.4821 kPa) has TWO correct
+    // 75/62 °F at 1,066 ft (97.4821 kPa) has TWO correct
     // answers, and which one the card shows depends on what the instrument
     // measured. The default is the psychrometer formula, because that is what a
     // sling psychrometer actually reads:
@@ -424,9 +446,10 @@ test.describe('sensor validation suite', () => {
   test('boiling-point reference is altitude-corrected, not 212°F', async ({ page }) => {
     await page.goto('./planner.html');
     await expandAll(page);
+    await setElevation(page, 1066);
     await page.locator('#sv-tab-boil').click();
-    // Default site (1,066 ft → 97.48 kPa): pure water boils near 210.9 °F,
-    // visibly below 212 — the whole point of the correction.
+    // At 1,066 ft (97.48 kPa) pure water boils near 210.9 °F, visibly below
+    // 212 — the whole point of the correction.
     const res = await page.locator('#sv-res').textContent();
     const m = res.match(/Boiling point at this site:\s*([\d.]+)/);
     expect(m, `res shows a boiling temp (got: ${res})`).not.toBeNull();
@@ -490,7 +513,7 @@ test.describe('operator companion', () => {
     await expect(page.locator('#trend-res')).toContainText('12 points');
     await expect(page.locator('#trend-res')).toContainText('°F from the header');
     await expect(page.locator('#trend-res')).toContainText('Achieved');
-    // The gentle 0.6 °F/hr move sits inside the Base SLA's 18 °F/hr limit —
+    // The gentle 0.6 °F/hr move sits inside the A1 reference's 9 °F/hr limit —
     // and the readout says so now that the limit is actually checked. Hourly
     // sampling widens the rolling window to the sample interval and says so.
     await expect(page.locator('#trend-res')).toContainText('Fastest sustained ramp (60-min window)');
@@ -528,7 +551,7 @@ test.describe('operator companion', () => {
   test('a ramp faster than the SLA limit is called out', async ({ page }) => {
     await page.goto('./planner.html');
     await expandAll(page);
-    // 0.4 °F/min = 24 °F/hr sustained over 30 minutes — past the Base SLA's 18.
+    // 0.4 °F/min = 24 °F/hr sustained over 30 minutes — past the A1 reference's 9.
     const rows = Array.from({ length: 31 }, (_, i) => {
       const t = new Date(Date.UTC(2026, 6, 1, 0, i)).toISOString();
       return `${t},${(68 + i * 0.4).toFixed(1)},45`;
@@ -852,7 +875,7 @@ test.describe('multiple halls', () => {
     await page.dispatchEvent('#a-temp', 'input');
     await page.locator('#a-temp').blur();
     await page.locator('#hall-add').click();
-    // Drive Hall 2 outside the Base SLA (ceiling 95 °F).
+    // Drive Hall 2 outside the ASHRAE A1 envelope (ceiling 89.6 °F).
     await page.fill('#a-temp', '99');
     await page.dispatchEvent('#a-temp', 'input');
     await page.locator('#a-temp').blur();
@@ -895,6 +918,7 @@ test.describe('multiple halls', () => {
   test('facts every hall shares are stated once, not once per row', async ({ page }) => {
     await page.goto('./planner.html');
     await expandAll(page);
+    await setElevation(page, 1066);
     await page.locator('#hall-add').click();
     await expandAll(page);
     await page.locator('#hall-add').click();
@@ -976,8 +1000,17 @@ test.describe('multiple halls', () => {
   test('a new hall lands at the site you added it from, not at sea level', async ({ page }) => {
     await page.goto('./planner.html');
     await expandAll(page);
-    // The default hall is Goodyear, AZ at 1,066 ft — 97.5 kPa, not 101.3.
+    // A fresh install has no site: sea level, and the card says so.
+    await expect(page.locator('#pressure-readout')).toContainText('101.3 kPa');
+    await expect(page.locator('#site-nudge')).toContainText('No site set');
+    // Adding the first site puts THIS hall there, rather than conjuring a
+    // second hall beside a blank one.
+    await addSite(page, { code: 'GYR-1', city: 'Goodyear', state: 'Arizona', elevFt: 1066 });
+    await expect(page.locator('#hall-tabs button')).toHaveCount(1);
+    await expect(page.locator('#site-nudge')).toHaveCount(0);
     await expect(page.locator('#pressure-readout')).toContainText('97.5 kPa');
+    await expect(page.locator('#chip-label')).toHaveText('Goodyear, AZ · 1,066 ft');
+    await expandAll(page);
     await page.fill('#hall-building', 'A2');
     await page.dispatchEvent('#hall-building', 'input');
 
@@ -1053,7 +1086,7 @@ test.describe('multiple halls', () => {
     await page.fill('#hall-building', 'A7');
     await page.dispatchEvent('#hall-building', 'input');
     // Now the building is what separates them, so it earns its place. The site
-    // still does not: both halls are at Goodyear.
+    // still does not: both halls share one site.
     await expect(tabs).toHaveText(['A2 · Hall 1', 'A7 · Hall 2']);
   });
 
@@ -1094,21 +1127,40 @@ test.describe('multiple halls', () => {
     await expect(page.locator('#allhalls-body .hall-row')).toHaveCount(2);
   });
 
-  test('a campus code in the building list is labelled as one', async ({ page }) => {
+  test('a site code in the building list is labelled as one', async ({ page }) => {
     await page.goto('./planner.html');
+    await expandAll(page);
+    await addSite(page, { code: 'GYR-1', city: 'Goodyear', state: 'Arizona', elevFt: 1066 });
     await expandAll(page);
     await page.fill('#hall-building', 'A2');
     await page.dispatchEvent('#hall-building', 'input');
     await page.selectOption('#hall-loc-filter', 'Goodyear, AZ');
 
-    // "PHX" is the site code out of the catalog, not a building anyone named.
+    // "GYR-1" is the code typed with the site, not a building anyone named.
     // Bare in the same list as "A2" it reads as a mystery building, which is
     // exactly how it was reported.
     const groups = page.locator('#hall-bld-filter optgroup');
     await expect(groups.filter({ has: page.locator('option[value="A2"]') }))
       .toHaveAttribute('label', 'Buildings you have named');
-    await expect(groups.filter({ has: page.locator('option[value="PHX"]') }))
-      .toHaveAttribute('label', 'Campus codes from the site list');
+    await expect(groups.filter({ has: page.locator('option[value="GYR-1"]') }))
+      .toHaveAttribute('label', 'Site codes from your site list');
+  });
+
+  test('a fresh install lists no locations but its own', async ({ page }) => {
+    // The app was shared and opened to somebody else's whole campus list.
+    await page.goto('./planner.html');
+    await expandAll(page);
+    await expect(page.locator('#hall-loc-filter option')).toHaveCount(1); // "All locations"
+    await expect(page.locator('#hall-loc-filter optgroup')).toHaveCount(0);
+    await expect(page.locator('#chip-label')).toHaveText('No site set · 0 ft');
+    await expect(page.locator('#sla-tabs .sla-tab')).toHaveText([/ASHRAE A1 allowable/, /ASHRAE Recommended/]);
+
+    await addSite(page, { code: 'DEN-1', city: 'Denver', state: 'Colorado', elevFt: 5280 });
+    await expect(page.locator('#hall-loc-filter optgroup')).toHaveAttribute('label', 'Colorado');
+    await expect(page.locator('#hall-loc-filter')).toContainText('Denver, CO · 5,280 ft');
+    // Saved on this device, and only there.
+    const sites = await page.evaluate(() => JSON.parse(localStorage.getItem('sdc_psychro_custom_sites_v1')));
+    expect(sites).toEqual([expect.objectContaining({ city: 'Denver', state: 'Colorado', code: 'DEN-1', elevFt: 5280 })]);
   });
 });
 
@@ -1496,7 +1548,7 @@ test.describe('field usability', () => {
   test('deleting an SLA profile asks first, and cancel keeps it', async ({ page }) => {
     await page.goto('./planner.html');
     await expandAll(page);
-    await page.locator('#sla-add').click(); // Base SLA is locked; make a deletable one
+    await page.locator('#sla-add').click(); // the A1 reference is locked; make a deletable one
     const tabs = () => page.locator('.sla-tab').count();
     const before = await tabs();
     await page.locator('#sla-del').click();
@@ -1700,24 +1752,24 @@ test.describe('units', () => {
   });
 
   test('an out-of-SLA verdict speaks the display unit, not stored °F', async ({ page }) => {
-    // The deep link parks Current at 40 °F — below the Base SLA's 50 °F floor.
-    // In °C mode the chip must name the bound as 10 °C; the °F string leaking
+    // The deep link parks Current at 40 °F — below ASHRAE A1's 59 °F floor.
+    // In °C mode the chip must name the bound as 15 °C; the °F string leaking
     // through here is the exact bug this pins.
     await page.goto('./#v=1&a=40,45&b=68,45');
-    await expect(page.locator('.cr-slachip .badge-bad').first()).toContainText('below 50 °F');
+    await expect(page.locator('.cr-slachip .badge-bad').first()).toContainText('below 59 °F');
     await page.locator('#unit-toggle .unit-btn[data-unit="C"]').click();
-    await expect(page.locator('.cr-slachip .badge-bad').first()).toContainText('below 10 °C');
+    await expect(page.locator('.cr-slachip .badge-bad').first()).toContainText('below 15 °C');
     await expect(page.locator('.cr-slachip .badge-bad').first()).not.toContainText('°F');
   });
 
   test('the SLA editor edits the contract in the active display unit', async ({ page }) => {
     await page.goto('./planner.html');
     await expandAll(page);
-    // Create an editable profile (Base SLA is locked), then flip to °C.
+    // Create an editable profile (the A1 reference is locked), then flip to °C.
     await page.locator('#sla-add').click();
-    await expect(page.locator('#sla-tmin')).toHaveValue('50');
+    await expect(page.locator('#sla-tmin')).toHaveValue('59');
     await page.locator('#unit-toggle .unit-btn[data-unit="C"]').click();
-    await expect(page.locator('#sla-tmin')).toHaveValue('10'); // 50 °F = 10 °C
+    await expect(page.locator('#sla-tmin')).toHaveValue('15'); // 59 °F = 15 °C
     // Typing 12 °C must store 53.6 °F canonically — visible back in °F mode.
     await page.fill('#sla-tmin', '12');
     await page.dispatchEvent('#sla-tmin', 'input');

@@ -109,7 +109,9 @@ function buildExportCanvas() {
   x.fillStyle = '#9db8d0'; x.font = '11px -apple-system,Segoe UI,sans-serif';
   x.fillText('ASHRAE TC 9.9 psychrometrics · barometric pressure corrected for site elevation · generated ' + new Date().toLocaleString(), 28, H - footH + 22);
   x.fillStyle = '#6f8aa3'; x.font = '10px -apple-system,Segoe UI,sans-serif';
-  x.fillText('Stream Data Centers — Critical Engineering Tool', 28, H - footH + 42);
+  // From BRAND, like every other word on the page. This was a hard-coded
+  // company name, so a rebranded install still stamped somebody else's.
+  x.fillText(`${BRAND.product} — planning aid, verify against site instrumentation`, 28, H - footH + 42);
 
   return c;
 }

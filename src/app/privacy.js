@@ -19,7 +19,7 @@ export const PRIVACY_TITLE = 'Privacy';
 /** Each entry is one plain-language statement, rendered as a line. */
 export const PRIVACY_STATEMENTS = [
   'This app does not collect, transmit, sell, or share any data.',
-  'Everything you enter — halls, SLA profiles, scenarios — stays on your device.',
+  'Everything you enter — sites, halls, SLA profiles, scenarios, and any logo you upload — stays on your device. The app ships with none of it.',
   'The app makes no network requests after it loads; it works fully offline.',
   'There are no accounts, no analytics, no advertising, and no tracking of any kind.',
   'Deleting the app deletes everything it stored.',

@@ -225,6 +225,25 @@ check('no external resource references', externalRefs.length === 0, externalRefs
   check('launcher links the CDU tool', home.includes('href="cdu/index.html"'));
   check('launcher forwards deep links to the planner', home.includes("location.replace('planner.html'"));
 }
+
+// ── 7b. The logo button, and nobody else's data ─────────────────────────────
+// The launcher's upload button is a module now, and it must arrive INLINE:
+// a separate file would be the launcher's first extra request.
+{
+  const home = readFileSync(join(dist, 'index.html'), 'utf8');
+  check('launcher carries the logo upload', home.includes('id="logo-file"') && home.includes('id="logo-pick"'));
+  check('launcher logo module is inlined', /<script type="module"[^>]*>[^<]{200,}/.test(home));
+}
+// The app was shared and opened to one company's campus list, a hall at its
+// site and SLAs named after its customers. A handful of the old catalog's
+// unmistakable strings must never come back into what ships.
+for (const [label, rel] of [['planner', 'planner.html'], ['single-file download', 'StreamHallPlanner.html'], ['launcher', 'index.html']]) {
+  const file = join(dist, rel);
+  if (!existsSync(file)) continue;
+  const text = readFileSync(file, 'utf8');
+  const leaked = ['DFWD', 'ORDA', 'Santa Clara', 'Customer 1', 'Customer 2', 'Goodyear'].filter((w) => text.includes(w));
+  check(`${label} ships no built-in sites or customer SLAs`, leaked.length === 0, leaked.join(', '));
+}
 check('blockworld/ copied through', existsSync(join(dist, 'blockworld', 'index.html')));
 check('cdu/ copied through', existsSync(join(dist, 'cdu', 'index.html')));
 // The CDU tool's entire promise is that it is one file with no network. If a

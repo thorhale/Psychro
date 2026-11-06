@@ -7,7 +7,7 @@
      host, so injected or tampered code can't load resources or exfiltrate.
      'unsafe-inline' is required because all script/style is inline by design
      (single-file offline app). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; manifest-src 'self'; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; manifest-src 'self' blob:; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <!-- Keep the tool out of search engines — public URL, but unlisted. -->
 <meta name="robots" content="noindex, nofollow">
@@ -316,6 +316,7 @@
   .sla-addcity { grid-column:1 / -1; margin-top:-4px; margin-bottom:4px; }
   .addcity-toggle { background:none; border:none; color:var(--stream-teal); font-size:.78rem; font-weight:600; font-family:var(--sans); cursor:pointer; padding:4px 0; }
   .addcity-toggle:hover { text-decoration:underline; }
+  .site-nudge { grid-column:1 / -1; font-size:.74rem; line-height:1.5; color:var(--text); background:color-mix(in srgb, var(--warn, #e3a008) 12%, transparent); border:1px solid color-mix(in srgb, var(--warn, #e3a008) 45%, transparent); border-radius:7px; padding:8px 10px; margin-bottom:10px; }
   .addcity-form { margin-top:8px; padding:12px; background:var(--surface); border:1px solid var(--border); border-radius:7px; }
   .addcity-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
   .ac-input { background:var(--bg); border:1px solid var(--border); border-radius:5px; color:var(--text); font-family:var(--sans); font-size:.82rem; padding:7px 9px; outline:none; }
@@ -426,6 +427,12 @@
   .mh-company { font-weight:800; font-size:.95rem; letter-spacing:.16em; color:#fff; }
   .mh-sub { font-size:.55rem; font-weight:600; letter-spacing:.2em; color:var(--brand-accent);
     border-left:1px solid rgba(255,255,255,.28); padding-left:9px; }
+  /* An uploaded logo (src/app/logo-kit.js) REPLACES the wordmark. */
+  .mh-logo { align-self:center; height:30px; width:auto; max-width:min(200px, 50vw); object-fit:contain;
+    border-radius:6px; padding:3px 7px; }
+  .ft-logo { height:34px; width:auto; max-width:220px; object-fit:contain; border-radius:6px; padding:4px 8px; }
+  .mh-logo[hidden], .ft-logo[hidden] { display:none; }
+  .has-logo [data-brand="company"], .has-logo [data-brand="companySub"] { display:none; }
   .mh-product { font-size:.8rem; font-weight:700; color:#fff; letter-spacing:.06em;
     text-transform:uppercase; margin:0 0 0 auto; }
   .mh-tagline { flex-basis:100%; color:#9db8d0; font-size:.68rem; margin:0; }
@@ -662,7 +669,20 @@
 </head>
 <body>
 
+<script>
+// An uploaded logo replaces the wordmark: hide the wordmark before first
+// paint, so it does not flash up while the app boots and puts the logo in.
+(function () {
+  try {
+    var k = JSON.parse(localStorage.getItem('sdc_psychro_logo_v1') || 'null');
+    if (k && typeof k.logo === 'string' && k.logo.indexOf('data:image/png;base64,') === 0) {
+      document.documentElement.classList.add('has-logo');
+    }
+  } catch (e) { /* no logo: the wordmark stays */ }
+})();
+</script>
 <div class="masthead">
+  <img class="mh-logo" data-brand-logo alt="Logo" hidden>
   <span class="mh-company" data-brand="company">STREAM</span>
   <span class="mh-sub" data-brand="companySub">DATA CENTERS</span>
   <h1 class="mh-product" data-brand="product">Hall Environment Planner</h1>
@@ -778,16 +798,16 @@
       <button type="button" class="addcity-toggle" id="addcity-toggle">+ Add a city / site</button>
       <div class="addcity-form" id="addcity-form" style="display:none">
         <div class="addcity-grid">
-          <input type="text" id="ac-code"  class="ac-input" placeholder="Site code (e.g. DFW VII)">
-          <input type="text" id="ac-city"  class="ac-input" placeholder="City (e.g. Plano)">
-          <input type="text" id="ac-state" class="ac-input" placeholder="State (e.g. Texas)">
+          <input type="text" id="ac-code"  class="ac-input" placeholder="Site code (e.g. DEN-1)">
+          <input type="text" id="ac-city"  class="ac-input" placeholder="City (e.g. Denver)">
+          <input type="text" id="ac-state" class="ac-input" placeholder="State (e.g. Colorado)">
           <input type="number" id="ac-elev" class="ac-input" placeholder="Elevation ft" step="any">
         </div>
         <div class="addcity-actions">
           <button type="button" class="scn-btn scn-btn-primary" id="ac-save">Add site</button>
           <button type="button" class="scn-btn" id="ac-cancel">Cancel</button>
         </div>
-        <div class="addcity-hint">Added sites are saved on this device and appear in the Location list, sorted by state.</div>
+        <div class="addcity-hint">Sites are saved on this device only and appear in the Location list, sorted by state. Nothing is uploaded. To move them to another device, use Save file.</div>
       </div>
     </div>
     <div class="sla-tabs-row">
@@ -845,11 +865,11 @@
       </div>
       <div class="site-chip">
         <button class="chip-btn" id="chip-toggle" title="Active site (set in SLA profile)">
-          <span id="chip-label">Goodyear, AZ · 1,066 ft</span><span style="opacity:.6">▾</span>
+          <span id="chip-label">No site set · 0 ft</span><span style="opacity:.6">▾</span>
         </button>
         <div class="chip-panel" id="chip-panel">
           <div class="chip-elev-row">
-            <label for="chip-elev-input">Elevation</label><input type="text" inputmode="text" id="chip-elev-input" placeholder="e.g. 1066 or -200">
+            <label for="chip-elev-input">Elevation</label><input type="text" inputmode="text" id="chip-elev-input" placeholder="e.g. 5280 or -200">
             <span class="chip-unit">ft</span>
           </div>
           <div class="pressure-readout" id="pressure-readout">— kPa</div>
@@ -1118,7 +1138,7 @@
 <details class="card sect">
   <summary><span class="sect-title">Training — Envelope Escape Room</span><span class="sect-sub" id="tr-summary">drill the recovery instinct</span><span class="sect-chev">▸</span></summary>
   <div class="sect-body">
-    <div class="calc-intro">A plant fault hits a standard training hall (200,000 ft³ · cool 6 / warm 4 °F/hr · dehum 100 / hum 80 lb/hr · the Base SLA). Commit a recovery target; the physics referee plays out four hours minute-by-minute and scores the SLA time you kept, plus a bonus for finishing genuinely settled. Two things are always true in this hall: the servers never stop heating it — an uncommanded hall drifts warm on its own — and the plant takes minutes to spin up, so committing early beats committing perfectly. Deterministic per seed: share a challenge code and compete on identical faults.</div>
+    <div class="calc-intro">A plant fault hits a standard training hall (200,000 ft³ · cool 6 / warm 4 °F/hr · dehum 100 / hum 80 lb/hr · the ASHRAE A1 envelope). Commit a recovery target; the physics referee plays out four hours minute-by-minute and scores the SLA time you kept, plus a bonus for finishing genuinely settled. Two things are always true in this hall: the servers never stop heating it — an uncommanded hall drifts warm on its own — and the plant takes minutes to spin up, so committing early beats committing perfectly. Deterministic per seed: share a challenge code and compete on identical faults.</div>
     <div class="sv-grid">
       <div class="sla-field"><label for="tr-scenario">Scenario</label><select id="tr-scenario" class="sla-select"></select></div>
       <div class="sla-field"><label for="tr-seed">Seed <span class="cap-hint">same seed = same fault</span></label><input type="number" inputmode="numeric" id="tr-seed" step="1" min="0" value="42"></div>
@@ -1141,25 +1161,26 @@
 </details>
 
 <details class="card sect">
-  <summary><span class="sect-title">Branding</span><span class="sect-sub" id="brand-sub">upload a logo · palette follows</span><span class="sect-chev">▸</span></summary>
+  <summary><span class="sect-title">Branding</span><span class="sect-sub" id="brand-sub">upload a logo · colours and app icon follow</span><span class="sect-chev">▸</span></summary>
   <div class="sect-body">
     <div class="calc-intro">Drop in a company logo and every tool restyles itself
       around it: the dominant colour becomes the primary, and the interactive
       accent is derived from its hue at a fixed brightness so any mark stays
-      legible on the dark interface. Applies to the launcher, the planner and
-      the CDU tool, and survives reloads on this device. Colours only — names
-      and wording stay put.</div>
+      legible on the dark interface. The logo replaces the wordmark in the
+      header, and the tab and home-screen icons become the logo. Applies to
+      the launcher, the planner and the CDU tool, on this device only. The
+      same button is on the home screen.</div>
     <div class="brand-row">
       <label class="scn-btn brand-pick" for="brand-file">Choose logo…</label>
       <input type="file" id="brand-file" accept="image/*" style="display:none">
-      <button type="button" class="scn-btn scn-btn-primary" id="brand-apply" disabled>Apply palette</button>
+      <button type="button" class="scn-btn scn-btn-primary" id="brand-apply" disabled>Apply</button>
       <button type="button" class="scn-btn" id="brand-reset">Reset to built-in</button>
     </div>
     <div class="brand-preview" id="brand-preview" style="display:none">
       <span class="bp-swatch" id="bp-primary"></span><span class="bp-swatch" id="bp-primary-dark"></span><span class="bp-swatch" id="bp-primary-light"></span><span class="bp-swatch" id="bp-accent"></span><span class="bp-swatch" id="bp-accent-dark"></span>
       <span class="bp-hexes" id="brand-hexes"></span>
     </div>
-    <div class="formula-note">The same sampling the repo's build script uses — one implementation, two doors. The logo itself is read once and never stored or uploaded anywhere.</div>
+    <div class="formula-note">The same sampling the repo's build script uses — one implementation, two doors. The logo and its icons are saved in this device's storage and nowhere else; nothing is uploaded. An icon already on a home screen keeps its old picture until it is removed and added again: the phone copied it at install time.</div>
   </div>
 </details>
 
@@ -1175,6 +1196,7 @@
 <script type="module" src="./src/app/main.js"></script>
 <footer style="margin:40px -16px -20px; padding:24px 16px calc(24px + env(safe-area-inset-bottom, 0px)); text-align:center; background:linear-gradient(135deg,#1a3a5c 0%,#13263a 100%); border-top:3px solid var(--stream-teal); line-height:1.6;">
   <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:8px;">
+    <img class="ft-logo" data-brand-logo alt="Logo" hidden>
     <span style="font-weight:800; font-size:1rem; letter-spacing:.18em; color:#fff;" data-brand="company">STREAM</span>
     <span style="font-size:.55rem; font-weight:600; letter-spacing:.2em; color:var(--stream-teal); border-left:1px solid rgba(255,255,255,.3); padding-left:10px;" data-brand="companySub">DATA CENTERS</span>
   </div>

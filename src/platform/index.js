@@ -56,6 +56,7 @@ export const OWNED_KEYS = [
   'sdc_psychro_install_dismissed_v1',
   'sdc_psychro_onboard_dismissed_v1',
   'sdc_psychro_brand_v1',
+  'sdc_psychro_logo_v1',
 ];
 
 /** Lazily-loaded Preferences plugin; null on web. */
