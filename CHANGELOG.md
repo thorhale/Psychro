@@ -11,6 +11,55 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+## [3.1.0] — 2026-11-06
+
+### Changed — the app ships no one's data
+
+The app was shared, and it opened on the other person's phone already full:
+one company's whole list of 35 campuses with their site codes, a hall at that
+company's site at 1,066 ft, and SLAs named "Base SLA", "Customer 1" and
+"Customer 2". None of it was theirs.
+
+- **No built-in sites.** The Location list holds only sites added on this
+  device, with **+ Add a city / site** or from a loaded save file. The
+  catalog is gone from the code, not just hidden.
+- **A blank first hall.** "Hall 1" has no location and sits at sea level
+  until told otherwise. The Data Hall card says so in a note, and the chip
+  reads "No site set". The first site you add becomes that hall's location
+  instead of creating a second hall beside the blank one.
+- **Public reference envelopes instead of contracts.** A fresh install ships
+  ASHRAE A1 allowable (locked) and ASHRAE Recommended. Your own SLAs are
+  added with **+ Add**.
+- **Existing installs keep everything.** Saved halls, SLAs, sites and the
+  locked SLA you already had are untouched; only what a brand-new device
+  starts with changed. Locations that exist only on your halls still appear
+  in the Location list, now with their elevation, and a new building at one
+  of them inherits its elevation instead of starting at 0 ft.
+- Placeholders and examples no longer name real campuses, and the exported
+  chart's footer uses the product name rather than a hard-coded company.
+
+### Added — a logo button on the home screen
+
+**Upload logo** on the home screen themes every tool from one image: the
+colours (the same derivation as the planner's Branding card), the header,
+where the logo replaces the wordmark, and the icons: tab icon, the
+Add-to-Home-Screen icon, and the install manifest's icons, including a
+maskable one that keeps the whole logo inside Android's safe circle. **Remove**
+puts the shipped look back. The Branding card now does the same.
+
+- Stored on the device only (`sdc_psychro_logo_v1`, mirrored to native
+  storage in the app-store builds). Nothing is uploaded; every page's CSP
+  still forbids talking to a server. `manifest-src` now also allows `blob:`,
+  which is how the page hands the browser a manifest with the logo's icons.
+- A logo with transparency gets a backdrop chosen for it: white for a dark
+  mark, the app's dark for a light one. An opaque logo keeps its own paper.
+- A stored kit is only used if every field is a PNG data URL this app wrote,
+  so a tampered store cannot put a foreign URL on the page.
+- An icon already on a home screen cannot be changed by a web page; the
+  button says so and how to refresh it.
+- The launcher now has a small inlined module, built by a second Vite pass
+  into the same `dist/index.html`; it still loads with no request but itself.
+
 ## [3.0.0] — 2026-08-30
 
 **Major, by this project's own rule** (CONTRIBUTING: *"major — changed

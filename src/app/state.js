@@ -15,7 +15,10 @@
 import { pressureFromAltitude } from '../core/psychro.js';
 
 export const state = {
-  pressure: pressureFromAltitude(1066),
+  // Sea level until the operator says where the hall is. The app ships no
+  // site, so there is no honest elevation to start from; the Data Hall card
+  // asks for one (see hall-editor.js) rather than quietly assuming somebody's.
+  pressure: pressureFromAltitude(0),
   aTemp: 68, aRH: 45,
   bTemp: 87, bRH: 28,
   showEnvelopes: true,
@@ -44,8 +47,12 @@ export const state = {
     // field where they would then also see PHX offered as a building. It read
     // as a mystery hall in somebody else's building. The site lives in
     // siteName, where the tab strip and the overview can label it themselves.
+    //
+    // Blank on purpose. This shipped as one company's campus at 1,066 ft, so
+    // anyone the app was shared with opened it to a stranger's hall. Every
+    // site, hall and contract is the operator's own and lives on this device.
     name: 'Hall 1',
-    siteName: 'Goodyear, AZ', building: '', elevFt: 1066, hallVolFt3: null, airflowCfm: null,
+    siteName: '', building: '', elevFt: 0, hallVolFt3: null, airflowCfm: null,
     canHeat: false, canDehumidify: false, canHumidify: false,
     rateCoolF: null, rateWarmF: null, rateDehumLb: null, rateHumLb: null,
     // Efficiency factor (%): predicted fraction of nameplate performance the
@@ -65,21 +72,26 @@ export const state = {
   // to. Empty string = "All". Filters only narrow the visible tabs — the
   // active hall still drives every calculation.
   hallView: { loc: '', bld: '' },
-  // SLA profiles now carry site identity (name + elevation) AND envelope +
-  // ramp limits. The active profile's elevFt drives barometric pressure.
-  // Preloaded with real Stream Data Centers campus elevations (ft).
-  // dpMaxF null = no dew-point cap. maxDtHr/maxDrhHr = ASHRAE ramp limits.
-  // Customer SLAs are pure contracts: envelope + ramp limits only. The Data
-  // Hall above owns site, elevation, volume, and plant. dpMaxF null = no cap.
   /**
-   * Customer contracts. Typed so an artifact that prints a bound — the door
-   * placard, the briefing — is checked against the field actually existing.
+   * Customer contracts: envelope + ramp limits only. The Data Hall above owns
+   * site, elevation, volume and plant. dpMaxF null = no dew-point cap.
+   *
+   * What ships is two PUBLIC reference envelopes, ASHRAE TC 9.9 A1 allowable
+   * and Recommended, so a fresh install has something to grade against. They
+   * used to ship as "Base SLA", "Customer 1" and "Customer 2": names that
+   * read as somebody's real contracts on a device that had never seen one.
+   * Your own SLAs are added with "+ New" and live only on this device.
+   *
+   * The ramp limits are the conservative 5 °C (9 °F) per hour that ASHRAE
+   * sets for tape media, and a 20 %RH per hour planning default.
+   *
+   * Typed so an artifact that prints a bound (the door placard, the briefing)
+   * is checked against the field actually existing.
    * @type {SlaProfile[]}
    */
   slaProfiles: [
-    { name:'Base SLA', tMinF:50, tMaxF:95, rhMin:5, rhMax:80, dpMaxF:null,  maxDtHr:18, maxDrhHr:20, locked:true },
-    { name:'Customer 1 (ASHRAE A1)', tMinF:59, tMaxF:89.6, rhMin:8, rhMax:80, dpMaxF:62.6, maxDtHr:9, maxDrhHr:20 },
-    { name:'Customer 2 (Recommended)', tMinF:64.4, tMaxF:80.6, rhMin:8, rhMax:60, dpMaxF:59, maxDtHr:9, maxDrhHr:20 },
+    { name:'ASHRAE A1 allowable', tMinF:59, tMaxF:89.6, rhMin:8, rhMax:80, dpMaxF:62.6, maxDtHr:9, maxDrhHr:20, locked:true },
+    { name:'ASHRAE Recommended', tMinF:64.4, tMaxF:80.6, rhMin:8, rhMax:60, dpMaxF:59, maxDtHr:9, maxDrhHr:20 },
   ],
   activeSla: 0,
 };

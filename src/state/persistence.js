@@ -26,23 +26,30 @@ export const LS_KEY_V1 = 'sdc_psychro_slaProfiles_v1';
 export const LS_KEY_V3 = 'sdc_hep_v3';
 export const LS_KEY_V4 = 'sdc_hep_v4';
 
-/** The Base SLA that must always occupy index 0. */
+/**
+ * The locked reference SLA that must always occupy index 0.
+ *
+ * A public envelope (ASHRAE A1 allowable), not anyone's contract. Saves that
+ * already carry a locked entry keep their own: this is only what gets put in
+ * front of a list that has none. It must stay identical to the first entry
+ * of the defaults in src/app/state.js; test/persistence.test.js checks that.
+ */
 export function baseSla() {
   return {
-    name: 'Base SLA',
-    tMinF: 50,
-    tMaxF: 95,
-    rhMin: 5,
+    name: 'ASHRAE A1 allowable',
+    tMinF: 59,
+    tMaxF: 89.6,
+    rhMin: 8,
     rhMax: 80,
-    dpMaxF: null,
-    maxDtHr: 18,
+    dpMaxF: 62.6,
+    maxDtHr: 9,
     maxDrhHr: 20,
     locked: true,
   };
 }
 
 /**
- * Ensure a locked Base SLA leads the list, and normalize every entry.
+ * Ensure a locked reference SLA leads the list, and normalize every entry.
  * Older saves predate several fields; `normalizeSla` backfills them.
  */
 function withBaseSla(list) {

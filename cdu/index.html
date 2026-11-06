@@ -12,6 +12,7 @@
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>500 kW Data Center CDU — Thermal Bench</title>
+<link rel="icon" type="image/png" href="../icon-192.png">
 <meta name="description" content="Interactive 500 kW direct-to-chip CDU model: counterflow plate heat exchanger, PG25 glycol secondary loop to chilled-water primary. Fluid properties from CoolProp.">
 </head>
 <body>
@@ -154,6 +155,17 @@
     var ok = function(v){ return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v); };
     var r = document.documentElement.style;
     if(ok(p.accent)) r.setProperty('--brand-accent', p.accent);
+  }catch(e){}
+})();
+/* The uploaded logo is the tab icon here too (see src/app/logo-kit.js). Only
+   a PNG data URL this app wrote is ever put in the link. */
+(function(){
+  try{
+    var k = JSON.parse(localStorage.getItem('sdc_psychro_logo_v1') || 'null');
+    var i = k && k.icons && k.icons.i192;
+    if(typeof i !== 'string' || i.indexOf('data:image/png;base64,') !== 0) return;
+    var l = document.querySelector('link[rel="icon"]');
+    if(l) l.setAttribute('href', i);
   }catch(e){}
 })();
 </script>

@@ -35,7 +35,7 @@
  * through untouched.
  */
 
-import { defineConfig } from 'vite';
+import { defineConfig, build as viteBuild } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync, readdirSync } from 'node:fs';
@@ -78,13 +78,48 @@ const UNREFERENCED_ASSETS = [
   'screenshot-narrow.png',
   'robots.txt',
   'privacy.html',
-  'index.html', // the launcher — static, and deliberately not a Vite entry
 ];
+
+/**
+ * The launcher (index.html) gets a build of its own.
+ *
+ * It used to be copied through untouched, because it had no script worth
+ * bundling. It now carries the "Upload logo" button, which must use the SAME
+ * palette derivation as the planner (src/config/palette.js) rather than a
+ * hand-copied second one that could drift. vite-plugin-singlefile cannot
+ * inline two entries in one build, so the launcher is a second, tiny build
+ * into the same dist/: its module ends up inline in dist/index.html and the
+ * page still loads with no request but itself.
+ *
+ * Asset names stay unhashed for the same reason as the planner's: the
+ * launcher links the same manifest and icon, which sw.js precaches by path.
+ */
+async function buildLauncher() {
+  await viteBuild({
+    configFile: false,
+    root: __dirname,
+    publicDir: false,
+    logLevel: 'warn',
+    plugins: [viteSingleFile()],
+    build: {
+      target: 'es2020',
+      outDir: resolve(__dirname, 'dist'),
+      emptyOutDir: false,
+      rollupOptions: {
+        input: resolve(__dirname, 'index.html'),
+        output: { assetFileNames: '[name][extname]' },
+      },
+    },
+  });
+}
 
 function staticCompanions() {
   return {
     name: 'psychro-static-companions',
-    closeBundle() {
+    // Build only. The dev server also calls closeBundle when it shuts down,
+    // and quitting `npm run dev` must not quietly rebuild dist/.
+    apply: 'build',
+    async closeBundle() {
       const out = resolve(__dirname, 'dist');
       mkdirSync(out, { recursive: true });
       const sw = readFileSync(resolve(__dirname, 'sw.js'), 'utf8').replace(
@@ -116,6 +151,7 @@ function staticCompanions() {
           cpSync(resolve(__dirname, dir), resolve(out, dir), { recursive: true });
         }
       }
+      await buildLauncher();
     },
   };
 }
@@ -133,8 +169,8 @@ export default defineConfig({
     target: 'es2020',
     rollupOptions: {
       // The PLANNER is the bundled app, and it now lives at planner.html. The
-      // root index.html is the launcher: hand-written, no modules, copied
-      // through like privacy.html. Naming it here rather than letting Vite
+      // root index.html is the launcher, built separately and much smaller
+      // (see buildLauncher). Naming the planner here rather than letting Vite
       // assume index.html is what keeps those two roles apart.
       input: resolve(__dirname, 'planner.html'),
       output: {

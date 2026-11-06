@@ -19,7 +19,8 @@ import {
   specificVolume,
 } from '../core/psychro.js';
 import { applyBrand } from '../config/brand.js';
-import { wireBrandUi, storedPalette } from './brand-ui.js';
+import { wireBrandUi, storedPalette, storedKit } from './brand-ui.js';
+import { applyKit } from './logo-kit.js';
 import { state, hallVisible } from './state.js';
 import { currentW } from './hallphysics.js';
 import {
@@ -61,6 +62,7 @@ import {
   LS_KEY_V3,
   LS_KEY_V4,
   parseStoredState,
+  baseSla,
   buildStoredState,
 } from '../state/persistence.js';
 import { toast, confirmDialog, copyText, imageDialog } from '../ui/notify.js';
@@ -118,7 +120,9 @@ function persistJSON(key, value) {
   return r.ok;
 }
 
-// User-added sites persist separately; merged with built-ins for the picker.
+// Sites the operator added on THIS device. The app ships none: this list is
+// the whole catalog, and it never leaves local storage except in a save file
+// the operator exports themselves.
 const SITES_KEY = 'sdc_psychro_custom_sites_v1';
 let customSites = [];
 function loadCustomSites() {
@@ -128,7 +132,7 @@ function loadCustomSites() {
 function persistCustomSites() {
   persistJSON(SITES_KEY, customSites);
 }
-// Full list (built-in + custom) for the picker — see src/config/sites.js.
+// The picker's list, decorated and sorted — see src/config/sites.js.
 function allSites() {
   return allSitesFor(customSites);
 }
@@ -202,7 +206,9 @@ function applyElevation() {
   if (fp) fp.textContent = `${state.pressure.toFixed(1)} kPa`;
   const chipLabel = inp('chip-label');
   if (chipLabel) {
-    const site = state.hall.siteName ? `${state.hall.siteName} · ` : '';
+    // The app ships no site, so a fresh hall has none. Say so on the chip
+    // rather than printing a bare "0 ft" that reads like a choice someone made.
+    const site = state.hall.siteName ? `${state.hall.siteName} · ` : 'No site set · ';
     chipLabel.textContent = `${site}${ft.toLocaleString()} ft`;
   }
   // keep the chip's editable field in sync (unless it's the one being typed in)
@@ -941,9 +947,15 @@ function ensureHallAt(loc, bld) {
   const sites = allSites();
   const site = (bld && sites.find(s => s.siteName === loc && String(s.code) === bld))
     || sites.find(s => s.siteName === loc);
+  // A location that only exists on a hall (typed in, or from an older version
+  // that shipped a site list) has no catalog entry. Its elevation is still
+  // known: it is on the hall that is already there. Starting a new building
+  // at 0 ft would grade it at the wrong pressure.
+  const sib = state.hallProfiles.find(h => (h.siteName || '').trim() === loc);
   state.hallProfiles.push(normalizeHall({
     name: 'Hall 1', siteName: loc, building: bld || '',
-    elevFt: site ? site.elevFt : 0,
+    elevFt: site && site.elevFt != null ? site.elevFt : (sib ? sib.elevFt : 0),
+    baroKpa: sib ? sib.baroKpa : null,
   }));
   state.activeHall = state.hallProfiles.length - 1;
   applyElevation();
@@ -959,7 +971,8 @@ function renderHallTabs() {
   const nHalls = pred => state.hallProfiles.filter(pred).length;
   const cnt = n => n ? ` · ${n} hall${n === 1 ? '' : 's'}` : '';
 
-  // ── Location: full site catalog grouped by state, one option per city.
+  // ── Location: the sites saved on this device, grouped by state, one option
+  //    per city, then any location that only exists on a hall.
   const sites = allSites();
   const locSel = inp('hall-loc-filter');
   if (locSel) {
@@ -975,14 +988,21 @@ function renderHallTabs() {
         curState = s.state;
       }
       const n = nHalls(h => (h.siteName || '').trim() === s.siteName);
-      html += `<option value="${esc(s.siteName)}"${s.siteName === v.loc ? ' selected' : ''}>${esc(s.siteName)} · ${s.elevFt.toLocaleString()} ft${cnt(n)}</option>`;
+      const ft = Number.isFinite(s.elevFt) ? ` · ${s.elevFt.toLocaleString()} ft` : '';
+      html += `<option value="${esc(s.siteName)}"${s.siteName === v.loc ? ' selected' : ''}>${esc(s.siteName)}${ft}${cnt(n)}</option>`;
     });
     if (curState !== null) html += '</optgroup>';
-    // Locations hand-typed on hall profiles that aren't in the catalog.
+    // Locations that exist only on hall profiles: typed in by hand, or kept
+    // from a version that shipped its own site list. They are as real as any
+    // added site, so they carry the elevation their halls already know.
     const extra = [...new Set(state.hallProfiles.map(h => (h.siteName || '').trim()).filter(Boolean))]
       .filter(l => !seen.has(l)).sort();
-    if (extra.length) html += '<optgroup label="Other">' + extra.map(l =>
-      `<option value="${esc(l)}"${l === v.loc ? ' selected' : ''}>${esc(l)}${cnt(nHalls(h => (h.siteName || '').trim() === l))}</option>`).join('') + '</optgroup>';
+    const elevAt = l => {
+      const h = state.hallProfiles.find(x => (x.siteName || '').trim() === l);
+      return h && Number.isFinite(h.elevFt) ? ` · ${h.elevFt.toLocaleString()} ft` : '';
+    };
+    if (extra.length) html += '<optgroup label="On your halls">' + extra.map(l =>
+      `<option value="${esc(l)}"${l === v.loc ? ' selected' : ''}>${esc(l)}${elevAt(l)}${cnt(nHalls(h => (h.siteName || '').trim() === l))}</option>`).join('') + '</optgroup>';
     locSel.innerHTML = html;
     if (v.loc && locSel.value !== v.loc) v.loc = '';   // stale filter
   }
@@ -992,9 +1012,9 @@ function renderHallTabs() {
   const inLoc = state.hallProfiles.filter(h => !v.loc || (h.siteName || '').trim() === v.loc);
   const bldSel = inp('hall-bld-filter');
   if (bldSel) {
-    // Two kinds of entry, and they must not look alike. "PHX" is a CAMPUS CODE
-    // out of the site catalog, not a building anybody named; showing it bare
-    // next to "A2" reads as a mystery building. Group and label them.
+    // Two kinds of entry, and they must not look alike. A site code from the
+    // site list is not a building anybody named; showing it bare next to "A2"
+    // reads as a mystery building. Group and label them.
     const mine = new Set();
     inLoc.forEach(h => { const b = (h.building || '').trim(); if (b) mine.add(b); });
     const codes = v.loc
@@ -1008,7 +1028,7 @@ function renderHallTabs() {
       list.length ? `<optgroup label="${esc(label)}">${list.map(opt).join('')}</optgroup>` : '';
     bldSel.innerHTML = `<option value="">All buildings (${inLoc.length} hall${inLoc.length === 1 ? '' : 's'})</option>`
       + group('Buildings you have named', [...mine].sort())
-      + group('Campus codes from the site list', codes)
+      + group('Site codes from your site list', codes)
       + `<option value="${BLD_ADD}">＋ Add a building…</option>`;
   }
 
@@ -1110,7 +1130,7 @@ inp('hall-bld-filter').addEventListener('change', function() {
       renderHallTabs();                       // reset the select display
       return;
     }
-    const name = (prompt('Name the new building (e.g. Building B, DFW VIII):') || '').trim();
+    const name = (prompt('Name the new building (e.g. Building B):') || '').trim();
     if (!name) { renderHallTabs(); return; }
     state.hallView.loc = loc;
     state.hallView.bld = name;
@@ -1143,7 +1163,15 @@ inp('ac-save').addEventListener('click', () => {
   const stName = stRaw.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
   customSites.push({ state: stName, city, code, elevFt: Math.round(elev), custom: true });
   persistCustomSites();
-  state.hallView.loc = `${city}, ${stAbbr(stName)}`;
+  const loc = `${city}, ${stAbbr(stName)}`;
+  // A fresh install's hall has no site. Adding the first one is the operator
+  // saying where THIS hall is, not asking for a second hall beside a blank
+  // one, so the hall they are standing in takes the site.
+  if (!(state.hall.siteName || '').trim()) {
+    state.hall.siteName = loc;
+    state.hall.elevFt = Math.round(elev);
+  }
+  state.hallView.loc = loc;
   state.hallView.bld = '';
   ensureHallAt(state.hallView.loc, '');
   inp('addcity-form').style.display = 'none';
@@ -1503,7 +1531,7 @@ inp('sla-file').addEventListener('change', function() {
       }
       const hasLocked = data.slaProfiles.some(s => s.locked);
       state.slaProfiles = hasLocked ? data.slaProfiles
-        : [{ name:'Base SLA', tMinF:50, tMaxF:95, rhMin:5, rhMax:80, dpMaxF:null, maxDtHr:18, maxDrhHr:20, locked:true }, ...data.slaProfiles];
+        : [baseSla(), ...data.slaProfiles];
       state.slaProfiles.forEach(s => {
         if (s.maxDtHr === undefined) s.maxDtHr = 18;
         if (s.maxDrhHr === undefined) s.maxDrhHr = 20;
@@ -2110,6 +2138,7 @@ wireEquipmentUi({
 // The committed brand, unless this device carries an operator override from
 // the Branding card — sampled from an uploaded logo, persisted locally.
 applyBrand(document, storedPalette());
+applyKit(document, storedKit(), storedPalette());
 wireBrandUi();
 
 async function boot() {

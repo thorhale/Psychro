@@ -7,61 +7,34 @@
  * same module, `src/config/palette.js` — fed by a canvas instead of a PNG
  * decoder, with a button instead of a terminal.
  *
- * What it changes is COLOUR only. Wording (company, product) stays with the
- * committed BRAND: the card restyles the tools, it does not rename them.
+ * It is the same kit the home screen's "Upload logo" button builds, from the
+ * same module (src/app/logo-kit.js): the palette themes every tool, the logo
+ * replaces the wordmark in the header, and the tab and home-screen icons
+ * become the logo. Product wording stays with the committed BRAND.
  *
- * The applied palette persists in `sdc_psychro_brand_v1` and is read at boot
- * by all three pages — the planner through `applyBrand`, the launcher and the
- * CDU tool through small inline scripts, since those two are deliberately
- * static and cannot import modules.
+ * Everything is stored on this device only: the palette in
+ * `sdc_psychro_brand_v1` (read at boot by all three pages) and the logo and
+ * its icons in `sdc_psychro_logo_v1`.
  */
 
-import { dominantColors, derivePalette, isValidPalette } from '../config/palette.js';
 import { applyBrand } from '../config/brand.js';
 import { storage } from '../platform/index.js';
 import { toast } from '../ui/notify.js';
 import { inp } from '../ui/dom.js';
+import {
+  BRAND_KEY, applyKit, buildKit, clearKit, decodeImage, loadKit, loadPalette, saveKit,
+} from './logo-kit.js';
 
-export const BRAND_KEY = 'sdc_psychro_brand_v1';
+export { BRAND_KEY };
 
 /** The stored override, or null if none / unreadable / invalid. */
 export function storedPalette() {
-  try {
-    const raw = storage.get(BRAND_KEY);
-    if (!raw) return null;
-    const p = JSON.parse(raw);
-    return isValidPalette(p) ? p : null;
-  } catch {
-    return null;
-  }
+  return loadPalette(storage);
 }
 
-/**
- * Decode an image file to RGBA bytes via a canvas.
- *
- * Downscaled to fit 256×256: dominant-colour bucketing needs proportions, not
- * pixels, and a 4000×4000 logo is 64 MB of ImageData for the same answer.
- */
-async function pixelsFrom(file) {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = new Image();
-    await new Promise((res, rej) => {
-      img.onload = res;
-      img.onerror = () => rej(new Error('not a readable image'));
-      img.src = url;
-    });
-    const scale = Math.min(1, 256 / Math.max(img.naturalWidth, img.naturalHeight, 1));
-    const w = Math.max(1, Math.round(img.naturalWidth * scale));
-    const h = Math.max(1, Math.round(img.naturalHeight * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(img, 0, 0, w, h);
-    return ctx.getImageData(0, 0, w, h).data;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+/** The stored logo kit, or null. */
+export function storedKit() {
+  return loadKit(storage);
 }
 
 /** Paint the five swatches and the sampled hexes into the preview row. */
@@ -89,43 +62,45 @@ export function wireBrandUi() {
   const file = /** @type {HTMLInputElement|null} */ (inp('brand-file'));
   if (!file) return;
 
-  /** The palette sampled from the last upload, awaiting Apply. */
+  /** The kit built from the last upload, awaiting Apply. */
   let pending = null;
 
   file.addEventListener('change', async () => {
     const f = file.files && file.files[0];
+    file.value = ''; // choosing the same file again must fire again
     if (!f) return;
     try {
-      const px = await pixelsFrom(f);
-      pending = derivePalette(dominantColors(px));
-      if (!pending) {
-        toast('That image is all white and black — there is no colour in it to build a brand from.', { kind: 'warn' });
-        showPreview(null);
-        return;
+      pending = buildKit(await decodeImage(f));
+      if (!pending.palette) {
+        toast('That logo has no colour in it, so only the icon and header will change.', { kind: 'warn' });
       }
-      showPreview(pending);
+      showPreview(pending.palette);
       const apply = /** @type {any} */ (inp('brand-apply'));
       if (apply) apply.disabled = false;
-    } catch {
-      toast('Could not read that file as an image.', { kind: 'warn' });
+    } catch (err) {
+      pending = null;
+      toast(err instanceof Error ? err.message : 'Could not read that file as an image.', { kind: 'warn' });
     }
   });
 
   inp('brand-apply')?.addEventListener('click', () => {
     if (!pending) return;
-    const r = storage.set(BRAND_KEY, JSON.stringify(pending));
-    applyBrand(document, pending);
-    if (r.ok) toast('Brand applied — every tool now uses this palette.', { kind: 'ok' });
+    const r = saveKit(storage, pending.kit, pending.palette);
+    const inForce = pending.palette || storedPalette();
+    applyBrand(document, inForce);
+    applyKit(document, pending.kit, inForce);
+    if (r.ok) toast('Logo applied to every tool on this device. Already on your home screen? Remove it and add it again for the new icon.', { kind: 'ok', duration: 8000 });
     else toast('Applied for this session, but saving failed — it will not survive a reload.', { kind: 'warn', duration: 8000 });
   });
 
   inp('brand-reset')?.addEventListener('click', () => {
-    storage.remove(BRAND_KEY);
+    clearKit(storage);
     pending = null;
     showPreview(null);
     const apply = /** @type {any} */ (inp('brand-apply'));
     if (apply) apply.disabled = true;
     applyBrand(document);
+    applyKit(document, null, null);
     toast('Back to the built-in brand.', { kind: 'ok' });
   });
 

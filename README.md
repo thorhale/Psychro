@@ -28,7 +28,7 @@ icon-*.png            service-worker precache list both resolve them
 sw.js                 offline cache; its key is stamped per build
 StreamHallPlanner.html  committed single-file build — the app's own download
 src/core/             tested physics: psychro, derive, envelopes, planner, domain, units
-src/config/           site catalog + branding
+src/config/           site helpers (no sites ship) + branding
 src/state/            save-file schema + storage migration (v4/v3/v1)
 src/app/              UI wiring, chart, self-test, PWA plumbing
 src/ui/ src/lib/      toasts/dialogs, error log
@@ -46,7 +46,7 @@ blockworld/           independent bonus voxel game (untouched by the build)
 ```bash
 npm ci
 npm run dev            # live-reload dev server
-npm test               # 365 tests: oracle, invariants, consistency, assets, schema, platform
+npm test               # 384 tests: oracle, invariants, consistency, assets, schema, platform
 npm run lint
 npm run typecheck
 npm run analyze        # per-property accuracy table vs CoolProp
@@ -133,6 +133,12 @@ interactive accent from its hue. The accent's saturation and lightness are
 fixed rather than sampled, so a logo in any hue still yields something legible
 on the dark interface.
 
+That is the build-time path. Anyone using the app can do the same thing on
+their own device with the **Upload logo** button on the home screen (or the
+planner's Branding card): the palette, the header logo, the tab icon and the
+home-screen icon all come from the uploaded file, through the same
+`src/config/palette.js`, and are stored in that device's storage only.
+
 Text is swapped by editing `BRAND` in the same file; the markup carries
 readable defaults tagged `data-brand="…"` which `applyBrand()` replaces at
 boot. `test/brand.test.js` fails if any module starts hardcoding a palette hex
@@ -150,7 +156,7 @@ writes — export a save file when you see that warning.
 
 ## Validation
 
-- **CI on every push**: lint, typecheck, 365 tests (CoolProp oracle, physical
+- **CI on every push**: lint, typecheck, 384 tests (CoolProp oracle, physical
   invariants over seeded-random states, cross-surface consistency, asset layout,
   storage migration, platform adapters), the accuracy report, 46 bundle-integrity
   checks, and 184 Playwright tests covering all three artifacts — the raw-served

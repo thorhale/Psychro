@@ -134,16 +134,25 @@ export function renderHallEditor() {
   // 5 °C/hr — and never offsets.
   const showRate = (f) => (f == null ? '' : String(Math.round(dispDeltaT(f) * 10) / 10));
 
-  hed.innerHTML = `
+  // The app ships no site, so a fresh hall sits at sea level until somebody
+  // says otherwise. That is a real answer for a coastal hall and a wrong one
+  // for Denver, so it is stated, not left for the operator to notice.
+  const h0 = state.hall;
+  const unset = !(h0.siteName || '').trim() && !h0.elevFt && h0.baroKpa == null;
+  const nudge = unset
+    ? `<div class="site-nudge" role="note" id="site-nudge"><strong>No site set.</strong> This hall is graded at sea level (101.3 kPa). Add your city with “+ Add a city / site” above, or type the elevation below. Sites are saved on this device only.</div>`
+    : '';
+
+  hed.innerHTML = `${nudge}
     <div class="sla-field">
       <label for="hall-name">Hall name</label>
       <input type="text" id="hall-name" value="${(state.hall.name||'').replace(/"/g,'&quot;')}" placeholder="e.g. Hall 2">
     </div>
     <div class="sla-field">
       <label for="hall-building">Building</label>
-      <input type="text" id="hall-building" value="${(state.hall.building||'').replace(/"/g,'&quot;')}" placeholder="e.g. DFW VII or Building A">
+      <input type="text" id="hall-building" value="${(state.hall.building||'').replace(/"/g,'&quot;')}" placeholder="e.g. Building A">
     </div>
-    <div class="sla-field"><label for="hall-site">Site / location <span class="cap-hint">set by the Location picker above</span></label><input type="text" id="hall-site" value="${(state.hall.siteName||'').replace(/"/g,'&quot;')}" placeholder="e.g. Goodyear, AZ" ></div>
+    <div class="sla-field"><label for="hall-site">Site / location <span class="cap-hint">set by the Location picker above</span></label><input type="text" id="hall-site" value="${(state.hall.siteName||'').replace(/"/g,'&quot;')}" placeholder="e.g. Denver, CO" ></div>
     <div class="sla-field"><label for="hall-elev">Elevation ft <span class="cap-hint">preset from location; fine-tune here</span></label><input type="number" id="hall-elev" aria-label="Site elevation, feet" value="${state.hall.elevFt ?? 0}" step="any" min="-15000" max="20000" ></div>
     <div class="sla-field"><label for="hall-baro">Measured pressure <span class="u">kPa</span> <span class="cap-hint">optional — a barometer beats the elevation estimate</span></label><input type="number" inputmode="decimal" id="hall-baro" aria-label="Measured barometric pressure, kilopascals" value="${state.hall.baroKpa ?? ''}" step="0.1" min="55" max="110" placeholder="blank = from elevation"></div>
     <div class="sla-caps">

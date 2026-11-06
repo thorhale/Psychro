@@ -138,10 +138,10 @@ describe('v3 (single hall)', () => {
     expect(patch.hall.name).toBe('Ashburn, VA · Hall');
   });
 
-  it('prepends a locked Base SLA when the save lacks one', () => {
+  it('prepends the locked reference SLA when the save lacks one', () => {
     const { patch } = parseStoredState({ ...none, v3: V3 });
     expect(patch.slaProfiles[0].locked).toBe(true);
-    expect(patch.slaProfiles[0].name).toBe('Base SLA');
+    expect(patch.slaProfiles[0].name).toBe(baseSla().name);
     expect(patch.slaProfiles[1].name).toBe('Customer A');
   });
 });
@@ -225,7 +225,7 @@ describe('corrupt and empty input', () => {
     });
     const { patch } = parseStoredState({ ...none, v4: raw });
     expect(patch.hallProfiles.map((h) => h.name)).toEqual(['Real Hall']);
-    expect(patch.slaProfiles.map((s) => s.name)).toEqual(['Base SLA', 'Real SLA']);
+    expect(patch.slaProfiles.map((s) => s.name)).toEqual([baseSla().name, 'Real SLA']);
   });
 
   it('a corrupt v4 payload still lets an older save be recovered', () => {

@@ -22,6 +22,11 @@ Everything else in the app supports that question.
 
 ## 1. Describe your hall (Data Hall card)
 
+The app opens empty: no sites, no halls of anyone else's, no contracts. Press
+**+ Add a city / site** and type your site's code, city, state and elevation.
+Your first site becomes the hall's location. Sites, halls and SLAs are saved
+on that device only; use **Save file** to move them to another device.
+
 | Field | Why it matters |
 |---|---|
 | Site / elevation | Air pressure changes with altitude, and pressure changes how much water the air holds. A plan computed for sea level is wrong in Denver. |
@@ -39,8 +44,9 @@ duration — which is the honest answer, not a limitation.
 
 Type the customer's limits: temperature range, humidity range, the dew-point
 cap, and how fast you're allowed to change things (°F per hour). The chart
-draws this as a box you must stay inside. The Base SLA is locked as a
-reference; press **+ Add** to make your own copy and edit that.
+draws this as a box you must stay inside. The app ships with two public
+reference envelopes, ASHRAE A1 allowable (locked) and ASHRAE Recommended, and
+no customer contracts; press **+ Add** to make your own copy and edit that.
 
 Everything here is entered in whatever unit you've selected at the top — °F,
 °C or K — and stored consistently underneath.
@@ -117,11 +123,17 @@ number with it blank is affordable, you are done arguing about weather.
 
 ---
 
-## 7. Make it look like your site (Branding card)
+## 7. Make it look like your site (Your logo)
 
-Upload a company logo and the whole app re-colours itself from it — masthead,
-accents, chart, placard. It is derived and stored on that device only and
-never leaves it. **Reset** returns to the shipped palette.
+On the home screen, press **Upload logo** (the planner's Branding card has
+the same button). The tools take the logo's colours, the logo replaces the
+name in the header, and the tab icon and the home-screen icon become the
+logo. It is stored on that device only and never leaves it. **Remove**
+returns to the shipped look.
+
+An icon that is already on a phone's home screen keeps its old picture: the
+phone copied it when the app was added. Remove the app from the home screen
+and add it again to get the new icon.
 
 ---
 

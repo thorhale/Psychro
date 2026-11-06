@@ -8,7 +8,7 @@
      exfiltrate. 'unsafe-inline' is required because script and style are
      inline by design — this is an offline-first app.
      planner.html carries the same policy; verify-bundle.mjs checks all three. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; manifest-src 'self'; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; manifest-src 'self' blob:; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#193c76">
@@ -20,10 +20,13 @@
 <!--
   THE LAUNCHER.
 
-  Hand-written, no modules, no build step — copied through by Vite exactly like
-  privacy.html. That is deliberate: this page's whole job is to load instantly
-  on a phone with one bar and hand you a tool, so it carries nothing but its own
-  markup. It is also the PWA start_url, so the installed app opens here.
+  Hand-written markup with one small module, src/app/launcher.js, which Vite
+  inlines into this file at build time (vite.config.js). That keeps the point
+  of the page intact: its whole job is to load instantly on a phone with one
+  bar and hand you a tool, so it still fetches nothing but itself. It is also
+  the PWA start_url, so the installed app opens here. The module adds one
+  thing: the "Upload logo" button, which themes every tool and the app icon
+  on this device only.
 
   The palette below is DUPLICATED from planner.html on purpose. Both files
   declare the same literals so each renders correctly with no scripting, and
@@ -54,6 +57,11 @@
   .mh-company { font-weight:800; font-size:.95rem; letter-spacing:.16em; color:#fff; }
   .mh-sub { font-size:.55rem; font-weight:600; letter-spacing:.2em; color:var(--brand-accent);
     border-left:1px solid rgba(255,255,255,.28); padding-left:9px; }
+  /* An uploaded logo REPLACES the wordmark; it does not sit beside it. */
+  .mh-logo { align-self:center; height:34px; width:auto; max-width:min(220px, 60vw); object-fit:contain;
+    border-radius:6px; padding:4px 8px; }
+  .mh-logo[hidden] { display:none; }
+  .has-logo .mh-company, .has-logo .mh-sub { display:none; }
 
   main { flex:1; width:100%; max-width:880px; margin:0 auto; padding:26px 16px 40px; }
   h1 { font-size:1.05rem; font-weight:700; letter-spacing:.04em; margin:0 0 4px; }
@@ -76,6 +84,24 @@
     border-radius:4px; padding:3px 7px; }
   @media (pointer:coarse) { .tool { padding:18px; } }
 
+  .logo-kit { margin-top:18px; display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px;
+    background:var(--surface); border:1px dashed var(--border); border-radius:12px; padding:14px 18px; }
+  .logo-kit[hidden] { display:none; }
+  .lk-text { flex:1 1 240px; }
+  .lk-title { font-size:.85rem; font-weight:700; margin:0 0 3px; }
+  .lk-what { font-size:.74rem; color:var(--muted); line-height:1.5; margin:0; }
+  .lk-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .lk-btn { font:inherit; font-size:.78rem; font-weight:700; cursor:pointer; min-height:40px;
+    padding:8px 14px; border-radius:8px; color:#fff; background:var(--brand-primary);
+    border:1px solid var(--brand-accent); }
+  .lk-btn:hover { filter:brightness(1.12); }
+  .lk-btn:focus-visible { outline:2px solid var(--brand-accent); outline-offset:2px; }
+  .lk-quiet { background:transparent; color:var(--text); border-color:var(--border); }
+  .lk-btn[hidden] { display:none; }
+  .lk-note { flex-basis:100%; margin:0; font-size:.72rem; line-height:1.5; color:var(--muted); }
+  .lk-note:empty { display:none; }
+  .lk-note[data-kind="warn"] { color:#f0a500; }
+
   footer { color:var(--muted); font-size:.68rem; padding:0 16px 26px; text-align:center; line-height:1.6; }
   footer a { color:var(--brand-accent); }
 </style>
@@ -97,13 +123,24 @@
     r.setProperty('--brand-accent', p.accent);
   } catch (e) { /* stored garbage must never break the front door */ }
 })();
+// An uploaded logo replaces the wordmark. Hide the wordmark NOW, before the
+// module puts the logo in, so the old name never flashes up first.
+(function () {
+  try {
+    var k = JSON.parse(localStorage.getItem('sdc_psychro_logo_v1') || 'null');
+    if (k && typeof k.logo === 'string' && k.logo.indexOf('data:image/png;base64,') === 0) {
+      document.documentElement.classList.add('has-logo');
+    }
+  } catch (e) { /* no logo: the wordmark stays */ }
+})();
 </script>
 </head>
 <body>
 
 <div class="masthead">
-  <span class="mh-company">STREAM</span>
-  <span class="mh-sub">DATA CENTERS</span>
+  <img class="mh-logo" data-brand-logo alt="Logo" hidden>
+  <span class="mh-company" data-brand="company">STREAM</span>
+  <span class="mh-sub" data-brand="companySub">DATA CENTERS</span>
 </div>
 
 <main>
@@ -127,6 +164,21 @@
       <div class="t-tags"><span class="t-tag">Liquid</span><span class="t-tag">ε–NTU</span><span class="t-tag">Direct-to-chip</span></div>
     </a>
   </div>
+
+  <!-- Hidden until the module runs: without it the button could do nothing. -->
+  <section class="logo-kit" id="logo-kit" aria-labelledby="lk-title" hidden>
+    <div class="lk-text">
+      <p class="lk-title" id="lk-title">Your logo</p>
+      <p class="lk-what">Upload your logo. The tools take its colours, and the app icon becomes
+        your logo. Saved on this device only; nothing is uploaded.</p>
+    </div>
+    <div class="lk-actions">
+      <button type="button" class="lk-btn" id="logo-pick">Upload logo</button>
+      <button type="button" class="lk-btn lk-quiet" id="logo-reset" hidden>Remove</button>
+      <input type="file" id="logo-file" accept="image/*" hidden>
+    </div>
+    <p class="lk-note" id="logo-note" role="status" aria-live="polite"></p>
+  </section>
 </main>
 
 <footer>
@@ -145,6 +197,7 @@
   if (h && h.length > 1) location.replace('planner.html' + h + location.search);
 })();
 </script>
+<script type="module" src="./src/app/launcher.js"></script>
 
 </body>
 </html>
