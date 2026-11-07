@@ -313,7 +313,8 @@ async function swapManifest(doc, kit, palette) {
  * - `<html class="has-logo">` hides the text wordmark (`[data-brand="company"]`
  *   and `[data-brand="companySub"]`) so the logo replaces it, not joins it.
  * - every `img[data-brand-logo]` shows the logo on its backdrop.
- * - the tab icon, the Add-to-Home-Screen icon and the install manifest follow.
+ * - the tab icon, the Add-to-Home-Screen icon, the install banner's icon and
+ *   the install manifest follow.
  * - `<meta name="theme-color">` follows the palette's primary.
  */
 export function applyKit(doc, kit, palette = null, { manifest = true } = {}) {
@@ -331,6 +332,12 @@ export function applyKit(doc, kit, palette = null, { manifest = true } = {}) {
   });
   setLink(doc, 'icon', kit && kit.icons.i192);
   setLink(doc, 'apple-touch-icon', kit && kit.icons.a180);
+  // The install banner shows the icon you are about to install; it has to be
+  // the one the kit will actually give you.
+  doc.querySelectorAll('img[data-brand-icon]').forEach((/** @type {HTMLImageElement} */ img) => {
+    if (img.dataset.shippedSrc == null) img.dataset.shippedSrc = img.getAttribute('src') || '';
+    img.setAttribute('src', kit ? kit.icons.i192 : img.dataset.shippedSrc);
+  });
   const meta = /** @type {HTMLMetaElement|null} */ (doc.querySelector('meta[name="theme-color"]'));
   if (meta) {
     if (meta.dataset.shipped == null) meta.dataset.shipped = meta.content;

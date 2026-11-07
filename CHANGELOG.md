@@ -11,6 +11,38 @@ what rolls an update out to installed apps.
 
 ## [Unreleased]
 
+## [3.2.0] — 2026-11-07
+
+### Added — the shared link offers to install
+
+The link people are sent opens the home page, and the home page offered
+nothing: the install banner lived only in the planner, and the home page did
+not even register the offline worker. An app installed from there was not
+offline-ready until the planner had been opened once.
+
+- The home page now shows the same install banner as the planner: our own
+  **Install** button on Chrome, Edge and Android; Share → Add to Home Screen
+  steps on iPhone and iPad; browser-menu steps plus the one-file download
+  everywhere else. Dismissing it on either page dismisses both for 30 days,
+  and it never appears inside the installed app.
+- The home page registers the offline worker, so an install from the link is
+  offline-ready at once, and it says when a new version is ready.
+- iPads now get the Add to Home Screen steps. iPadOS reports a Mac user
+  agent, so every iPad used to be told to download a file instead.
+- The banner's icon follows an uploaded logo, like every other icon.
+- The install and update logic moved from `pwa.js` into a dependency-free
+  `install-offer.js` shared by both pages; the planner behaves as before.
+
+### Added — About on the home page
+
+A short About card: who built it, with links to the author's LinkedIn and the
+source on GitHub, and six lines on the method (ASHRAE Fundamentals Ch. 1
+psychrometrics, site pressure, the CoolProp/RP-1485 and IAPWS-95 validation,
+TC 9.9 envelopes, how a move is timed, and the CDU's ε–NTU model), linking the
+bibliography and the validation report that ship with the app. The bundle
+check that forbade any outside link on the home page now forbids outside
+*resources* and allows links only to those two hosts.
+
 ## [3.1.0] — 2026-11-06
 
 ### Changed — the app ships no one's data

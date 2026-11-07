@@ -1,5 +1,6 @@
 /**
- * The home screen's own script: the "Upload logo" button.
+ * The home screen's own script: the install offer, the offline worker, and
+ * the "Upload logo" button.
  *
  * Small on purpose. The launcher exists to load instantly and hand you a
  * tool, so this imports only the pure palette and brand modules and the logo
@@ -14,9 +15,25 @@ import { applyBrand } from '../config/brand.js';
 import {
   applyKit, buildKit, clearKit, decodeImage, deviceStore, loadKit, loadPalette, saveKit,
 } from './logo-kit.js';
+import { offerInstall, registerWorker } from './install-offer.js';
 
 const store = deviceStore();
 const $ = (id) => document.getElementById(id);
+
+// ── Install, and stay current ───────────────────────────────────────────────
+// This is the page the shared link opens and the installed app starts on, so
+// it is where the offer to install has to be, and where the offline worker
+// has to be registered: an app installed from here used to have no worker
+// until the planner was opened once.
+registerWorker({
+  onUpdateReady: () => {
+    $('update-note')?.classList.add('show');
+  },
+});
+$('update-reload')?.addEventListener('click', () => location.reload());
+offerInstall({ byId: $, store });
+
+// ── Your logo ───────────────────────────────────────────────────────────────
 
 /** One line of feedback under the button. There is no toast system here. */
 function say(text, kind = '') {
