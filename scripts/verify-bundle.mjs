@@ -217,8 +217,15 @@ check('no external resource references', externalRefs.length === 0, externalRefs
 // assert and expensive to notice by hand.
 {
   const home = readFileSync(join(dist, 'index.html'), 'utf8');
-  check('launcher has no external references',
-    !/(src|href)\s*=\s*["'](https?:)?\/\//i.test(home));
+  // No external RESOURCE: nothing the page loads may come from another host.
+  // A plain <a href> fetches nothing until someone taps it, so the About
+  // section's two links are allowed, and only those two hosts.
+  const extSrc = /\ssrc\s*=\s*["'](https?:)?\/\//i.test(home);
+  const extLinkTag = [...home.matchAll(/<link\b[^>]*>/gi)].some((m) => /href\s*=\s*["'](https?:)?\/\//i.test(m[0]));
+  check('launcher loads no external resources', !extSrc && !extLinkTag);
+  const outside = [...home.matchAll(/<a\b[^>]*href\s*=\s*["']((?:https?:)?\/\/[^"']+)["']/gi)].map((m) => new URL(m[1], 'https://x/').hostname);
+  const ALLOWED = ['www.linkedin.com', 'github.com'];
+  check('launcher links out only to the About credits', outside.every((h) => ALLOWED.includes(h)), outside.join(', '));
   check('launcher loads no scripts or styles from files',
     !/<script[^>]+\ssrc=/.test(home) && !/<link[^>]+rel=["']stylesheet/.test(home));
   check('launcher links the planner', home.includes('href="planner.html"'));
@@ -233,6 +240,9 @@ check('no external resource references', externalRefs.length === 0, externalRefs
   const home = readFileSync(join(dist, 'index.html'), 'utf8');
   check('launcher carries the logo upload', home.includes('id="logo-file"') && home.includes('id="logo-pick"'));
   check('launcher logo module is inlined', /<script type="module"[^>]*>[^<]{200,}/.test(home));
+  check('launcher offers to install', home.includes('id="install-banner"') && home.includes('id="install-go"'));
+  check('launcher registers the offline worker', home.includes('sw.js'));
+  check('launcher carries the About section', home.includes('id="about"') && home.includes('linkedin.com/in/tahoggatt'));
 }
 // The app was shared and opened to one company's campus list, a hall at its
 // site and SLAs named after its customers. A handful of the old catalog's

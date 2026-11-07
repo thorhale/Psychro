@@ -102,6 +102,43 @@
   .lk-note:empty { display:none; }
   .lk-note[data-kind="warn"] { color:#f0a500; }
 
+  /* Install offer: same markup and IDs as the planner's banner, driven by the
+     same module (src/app/install-offer.js). Hidden until it has something
+     true to say for this browser. */
+  .install-banner { display:none; align-items:center; gap:12px; padding:10px 16px;
+    background:var(--surface); border-bottom:1px solid var(--border); }
+  .install-banner.show { display:flex; }
+  .install-icon { width:34px; height:34px; border-radius:8px; flex:none; }
+  .install-copy { flex:1; min-width:0; }
+  .install-title { font-size:.82rem; font-weight:700; }
+  .install-sub { font-size:.7rem; color:var(--muted); margin-top:1px; line-height:1.4; }
+  .install-actions { display:flex; gap:8px; flex:none; align-items:center; }
+  .install-btn { font:inherit; font-size:.78rem; font-weight:700; cursor:pointer; min-height:36px;
+    padding:7px 14px; border-radius:8px; border:none; background:var(--brand-accent); color:#062a33; }
+  .install-alt { font-size:.74rem; font-weight:600; color:var(--brand-accent); text-decoration:none; white-space:nowrap;
+    padding:7px 10px; border-radius:8px; border:1px solid color-mix(in srgb, var(--brand-accent) 40%, transparent); }
+  .install-dismiss { font:inherit; background:none; border:none; color:var(--muted); font-size:1rem; cursor:pointer;
+    padding:6px 8px; line-height:1; }
+  .install-btn:focus-visible, .install-alt:focus-visible, .install-dismiss:focus-visible {
+    outline:2px solid var(--brand-accent); outline-offset:2px; }
+  @media (max-width:520px) { .install-alt { display:none; } }
+
+  .update-note { display:none; align-items:center; justify-content:center; gap:10px; padding:8px 16px;
+    font-size:.74rem; background:var(--surface); border-bottom:1px solid var(--border); }
+  .update-note.show { display:flex; }
+  .update-note button { font:inherit; font-weight:700; cursor:pointer; padding:5px 12px; border-radius:6px;
+    border:1px solid var(--brand-accent); background:transparent; color:var(--brand-accent); }
+
+  .about { margin-top:18px; background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:16px 18px; }
+  .about h2 { font-size:.85rem; font-weight:700; margin:0 0 4px; }
+  .about-by { font-size:.76rem; color:var(--muted); margin:0 0 10px; line-height:1.5; }
+  .about a { color:var(--brand-accent); }
+  .about ul { margin:0; padding-left:18px; font-size:.74rem; line-height:1.55; color:var(--text); }
+  .about li { margin:0 0 5px; }
+  .about li b { font-weight:700; }
+  .about-links { margin:10px 0 0; font-size:.72rem; color:var(--muted); }
+
   footer { color:var(--muted); font-size:.68rem; padding:0 16px 26px; text-align:center; line-height:1.6; }
   footer a { color:var(--brand-accent); }
 </style>
@@ -143,6 +180,24 @@
   <span class="mh-sub" data-brand="companySub">DATA CENTERS</span>
 </div>
 
+<div class="install-banner" id="install-banner">
+  <img class="install-icon" src="icon-192.png" alt="" data-brand-icon>
+  <div class="install-copy">
+    <div class="install-title" id="install-title">Install this app</div>
+    <div class="install-sub" id="install-sub">Works offline · opens fullscreen like a native app</div>
+  </div>
+  <div class="install-actions">
+    <button type="button" class="install-btn" id="install-go">Install</button>
+    <a class="install-alt" id="install-download" href="./StreamHallPlanner.html"
+       download="StreamHallPlanner.html">⤓ Planner file</a>
+    <button type="button" class="install-dismiss" id="install-dismiss" title="Dismiss" aria-label="Dismiss">✕</button>
+  </div>
+</div>
+<div class="update-note" id="update-note" role="status">
+  <span>A new version is ready.</span>
+  <button type="button" id="update-reload">Reload</button>
+</div>
+
 <main>
   <h1>Critical environment tools</h1>
   <p class="lede">Everything works offline. Pick a tool.</p>
@@ -164,6 +219,32 @@
       <div class="t-tags"><span class="t-tag">Liquid</span><span class="t-tag">ε–NTU</span><span class="t-tag">Direct-to-chip</span></div>
     </a>
   </div>
+
+  <section class="about" id="about" aria-labelledby="about-title">
+    <h2 id="about-title">About</h2>
+    <!-- The credit, exactly as its author asked for it. One place to change. -->
+    <p class="about-by">Built by
+      <a href="https://www.linkedin.com/in/tahoggatt/" target="_blank" rel="noopener noreferrer">linkedin.com/in/tahoggatt</a>
+      for data center critical-environment teams.
+      <a href="https://github.com/thorhale/Psychro" target="_blank" rel="noopener noreferrer">Source on GitHub</a>.</p>
+    <ul>
+      <li><b>Psychrometrics:</b> ASHRAE Handbook — Fundamentals (2021), Chapter 1: saturation
+        pressure (Hyland–Wexler), humidity ratio, enthalpy and specific volume. Dew point and
+        wet bulb are solved from their definitions, not shortcuts.</li>
+      <li><b>Your site's real pressure:</b> from elevation (ASHRAE Eq. 3) or a measured barometer.
+        Every property and envelope is computed at it.</li>
+      <li><b>Checked, not assumed:</b> against CoolProp's ASHRAE RP-1485 real-gas model at 3,898
+        points, worst humidity-ratio error 0.0013 %, with IAPWS-95 as a second source. The planner
+        re-runs a self-test every time it opens.</li>
+      <li><b>Envelopes:</b> ASHRAE TC 9.9 (Recommended, A1–A4), plus your own SLA limits and ramp rates.</li>
+      <li><b>Timing a move:</b> a moisture mass balance on the hall's air against your plant's rates,
+        scaled by efficiency and today's derates. The slowest limit, plant or SLA ramp, sets the time.</li>
+      <li><b>CDU calculator:</b> a counterflow ε–NTU plate exchanger, with glycol and water
+        properties fitted to CoolProp.</li>
+    </ul>
+    <p class="about-links"><a href="docs/bibliography.md">Sources</a> ·
+      <a href="docs/coolprop-comparison.md">Validation report</a></p>
+  </section>
 
   <!-- Hidden until the module runs: without it the button could do nothing. -->
   <section class="logo-kit" id="logo-kit" aria-labelledby="lk-title" hidden>

@@ -20,6 +20,10 @@ Everything else in the app supports that question.
 
 ---
 
+**Install it.** Open the link and the home page offers to install the app
+(on iPhone and iPad: Share → Add to Home Screen). Installed, it opens full
+screen and works offline.
+
 ## 1. Describe your hall (Data Hall card)
 
 The app opens empty: no sites, no halls of anyone else's, no contracts. Press

@@ -66,6 +66,8 @@ test.describe('logo upload on the home screen', () => {
     // Tab icon and Add-to-Home-Screen icon are the logo.
     expect(await href(page, 'icon')).toMatch(/^data:image\/png;base64,/);
     expect(await href(page, 'apple-touch-icon')).toMatch(/^data:image\/png;base64,/);
+    // The install banner shows the icon you would actually get.
+    expect(await page.locator('#install-banner img[data-brand-icon]').getAttribute('src')).toMatch(/^data:image\/png;base64,/);
     // The install manifest carries the logo icons and keeps the app's identity.
     await expect.poll(() => href(page, 'manifest')).toMatch(/^blob:/);
     // Ask the browser for the manifest IT loaded, through the same CSP the page
